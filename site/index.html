@@ -1,0 +1,366 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Jac Studio — Challenge Tracker</title>
+<style>
+  :root {
+    --bg: #f7f7f5;
+    --bg-elevated: #ffffff;
+    --bg-inset: #f0efec;
+    --border: #e3e1db;
+    --text: #1c1c1a;
+    --text-muted: #6b6a63;
+    --text-faint: #9a988f;
+    --accent: #7c5cff;
+    --accent-weak: #efeaff;
+    --sev-blocker: #d94f4f;
+    --sev-blocker-bg: #fbeaea;
+    --sev-major: #c8791a;
+    --sev-major-bg: #fbf0e0;
+    --sev-minor: #3a7d5c;
+    --sev-minor-bg: #e7f3ec;
+    --sev-note: #5b6b8c;
+    --sev-note-bg: #eaeef6;
+    --status-open: #d94f4f;
+    --status-workaround: #c8791a;
+    --status-resolved: #3a7d5c;
+    --status-upstream: #5b6b8c;
+    --code-bg: #efedf9;
+    --shadow: 0 1px 2px rgba(20,20,15,0.04), 0 4px 14px rgba(20,20,15,0.05);
+    font-family: -apple-system, "Segoe UI", "Inter", system-ui, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #16161a;
+      --bg-elevated: #1e1e24;
+      --bg-inset: #131317;
+      --border: #2c2c34;
+      --text: #ecebf0;
+      --text-muted: #a3a1ad;
+      --text-faint: #6f6d78;
+      --accent: #a48bff;
+      --accent-weak: #2a2340;
+      --sev-blocker: #ff8080;
+      --sev-blocker-bg: #3a2226;
+      --sev-major: #f0aa5c;
+      --sev-major-bg: #3a2f1c;
+      --sev-minor: #6fcfa0;
+      --sev-minor-bg: #1d3128;
+      --sev-note: #93a8e0;
+      --sev-note-bg: #232a3f;
+      --status-open: #ff8080;
+      --status-workaround: #f0aa5c;
+      --status-resolved: #6fcfa0;
+      --status-upstream: #93a8e0;
+      --code-bg: #232037;
+      --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 6px 20px rgba(0,0,0,0.35);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #16161a;
+    --bg-elevated: #1e1e24;
+    --bg-inset: #131317;
+    --border: #2c2c34;
+    --text: #ecebf0;
+    --text-muted: #a3a1ad;
+    --text-faint: #6f6d78;
+    --accent: #a48bff;
+    --accent-weak: #2a2340;
+    --sev-blocker: #ff8080;
+    --sev-blocker-bg: #3a2226;
+    --sev-major: #f0aa5c;
+    --sev-major-bg: #3a2f1c;
+    --sev-minor: #6fcfa0;
+    --sev-minor-bg: #1d3128;
+    --sev-note: #93a8e0;
+    --sev-note-bg: #232a3f;
+    --status-open: #ff8080;
+    --status-workaround: #f0aa5c;
+    --status-resolved: #6fcfa0;
+    --status-upstream: #93a8e0;
+    --code-bg: #232037;
+    --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 6px 20px rgba(0,0,0,0.35);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 960px; margin: 0 auto; padding: 48px 24px 96px; }
+  header.hero { margin-bottom: 36px; }
+  .eyebrow {
+    font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--accent); font-weight: 600; margin-bottom: 10px;
+  }
+  h1 { font-size: 30px; margin: 0 0 8px; letter-spacing: -0.01em; }
+  .lede { color: var(--text-muted); font-size: 15px; max-width: 62ch; margin: 0; }
+
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 12px; margin: 28px 0 32px; }
+  .stat {
+    background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 12px;
+    padding: 14px 16px; box-shadow: var(--shadow);
+  }
+  .stat .n { font-size: 24px; font-weight: 700; letter-spacing: -0.02em; }
+  .stat .l { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+  .stat.blocker .n { color: var(--sev-blocker); }
+  .stat.resolved .n { color: var(--sev-minor); }
+
+  .controls {
+    display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+    background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 12px;
+    padding: 12px; margin-bottom: 24px; box-shadow: var(--shadow);
+  }
+  .controls input[type="search"] {
+    flex: 1 1 200px; min-width: 160px; padding: 8px 12px; border-radius: 8px;
+    border: 1px solid var(--border); background: var(--bg-inset); color: var(--text); font-size: 13px;
+  }
+  .controls select {
+    padding: 7px 10px; border-radius: 8px; border: 1px solid var(--border);
+    background: var(--bg-inset); color: var(--text); font-size: 13px;
+  }
+  .controls .reset {
+    padding: 7px 12px; border-radius: 8px; border: 1px solid var(--border);
+    background: transparent; color: var(--text-muted); font-size: 13px; cursor: pointer;
+  }
+  .controls .reset:hover { color: var(--text); border-color: var(--text-faint); }
+
+  .count-line { font-size: 12px; color: var(--text-faint); margin: 0 0 14px 2px; }
+
+  .entries { display: flex; flex-direction: column; gap: 12px; }
+  .entry {
+    background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 12px;
+    padding: 16px 18px; box-shadow: var(--shadow); cursor: pointer;
+  }
+  .entry .row1 { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .entry .date { font-size: 12px; color: var(--text-faint); font-variant-numeric: tabular-nums; }
+  .entry .title { font-size: 15px; font-weight: 600; flex: 1 1 auto; }
+  .badges { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+  .badge {
+    font-size: 11px; font-weight: 600; padding: 3px 9px; border-radius: 999px;
+    letter-spacing: 0.01em; white-space: nowrap;
+  }
+  .badge.sev-blocker { color: var(--sev-blocker); background: var(--sev-blocker-bg); }
+  .badge.sev-major { color: var(--sev-major); background: var(--sev-major-bg); }
+  .badge.sev-minor { color: var(--sev-minor); background: var(--sev-minor-bg); }
+  .badge.sev-note { color: var(--sev-note); background: var(--sev-note-bg); }
+  .badge.status-open { color: var(--status-open); border: 1px solid var(--status-open); background: transparent; }
+  .badge.status-workaround { color: var(--status-workaround); border: 1px solid var(--status-workaround); background: transparent; }
+  .badge.status-resolved { color: var(--status-resolved); border: 1px solid var(--status-resolved); background: transparent; }
+  .badge.status-upstream-tracked { color: var(--status-upstream); border: 1px solid var(--status-upstream); background: transparent; }
+  .badge.tag { color: var(--text-muted); background: var(--bg-inset); }
+  .badge.subsystem { color: var(--accent); background: var(--accent-weak); }
+
+  .entry .body {
+    display: none; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border);
+    font-size: 13.5px; color: var(--text-muted);
+  }
+  .entry.open .body { display: block; }
+  .entry .body p { margin: 0 0 10px; }
+  .entry .body code {
+    background: var(--code-bg); padding: 1px 5px; border-radius: 5px; font-size: 12.5px;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace; color: var(--accent);
+  }
+  .entry .meta-line { font-size: 12px; color: var(--text-faint); margin-top: 12px; }
+  .entry .meta-line a { color: var(--accent); }
+
+  .empty { text-align: center; padding: 48px 0; color: var(--text-faint); font-size: 14px; }
+
+  footer { margin-top: 56px; font-size: 12px; color: var(--text-faint); text-align: center; }
+  footer a { color: var(--text-muted); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="hero">
+    <div class="eyebrow">Jac Studio · Reimplementation Log</div>
+    <h1>Challenge Tracker</h1>
+    <p class="lede">
+      Every blocker, compiler quirk, missing feature, and workaround hit while rebuilding
+      VS&nbsp;Code in Jac — logged as it happens, kept public so the pattern of what a huge
+      real-world Jac project actually runs into is visible, not lost in chat scrollback.
+    </p>
+  </header>
+
+  <div class="stats" id="stats"></div>
+
+  <div class="controls">
+    <input type="search" id="q" placeholder="Search title, tags, body…">
+    <select id="f-category"><option value="">Category: all</option></select>
+    <select id="f-severity"><option value="">Severity: all</option></select>
+    <select id="f-status"><option value="">Status: all</option></select>
+    <select id="f-subsystem"><option value="">Subsystem: all</option></select>
+    <select id="f-phase"><option value="">Phase: all</option></select>
+    <button class="reset" id="reset">Reset</button>
+  </div>
+
+  <p class="count-line" id="count-line"></p>
+  <div class="entries" id="entries"></div>
+  <div class="empty" id="empty" style="display:none;">No entries match these filters.</div>
+
+  <footer>
+    Source data lives under <code>/log</code> on the <code>tracking</code> branch of
+    <a href="https://github.com/SahanUday/jac-studio" target="_blank" rel="noopener">jac-studio</a>.
+    Architecture &amp; roadmap docs live on <code>main</code>.
+  </footer>
+</div>
+
+<script>
+(async function () {
+  const res = await fetch('./data.json', { cache: 'no-store' });
+  const data = await res.json();
+  const entries = data.entries || [];
+
+  const SEV_ORDER = { blocker: 0, major: 1, minor: 2, note: 3 };
+  const STATUS_LABEL = {
+    open: 'Open', workaround: 'Workaround', resolved: 'Resolved', 'upstream-tracked': 'Upstream tracked'
+  };
+
+  function titleFromEntry(e) {
+    return (e.id || e._file || 'untitled')
+      .replace(/^\d{4}-\d{2}-\d{2}-/, '')
+      .replace(/\.md$/, '')
+      .replace(/-/g, ' ')
+      .replace(/\b\w/g, c => c.toUpperCase());
+  }
+
+  function escapeHtml(s) {
+    return (s || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+
+  function renderBody(body) {
+    const esc = escapeHtml(body || '');
+    const withCode = esc.replace(/`([^`]+)`/g, '<code>$1</code>');
+    const withBold = withCode.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+    return withBold.split(/\n\s*\n/).map(p => `<p>${p.replace(/\n/g, ' ')}</p>`).join('');
+  }
+
+  function uniqueSorted(field) {
+    return [...new Set(entries.map(e => e[field]).filter(Boolean))].sort();
+  }
+
+  function fillSelect(id, values) {
+    const el = document.getElementById(id);
+    values.forEach(v => {
+      const opt = document.createElement('option');
+      opt.value = v; opt.textContent = v;
+      el.appendChild(opt);
+    });
+  }
+
+  fillSelect('f-category', uniqueSorted('category'));
+  fillSelect('f-severity', ['blocker', 'major', 'minor', 'note'].filter(s => entries.some(e => e.severity === s)));
+  fillSelect('f-status', uniqueSorted('status'));
+  fillSelect('f-subsystem', uniqueSorted('subsystem'));
+  fillSelect('f-phase', uniqueSorted('phase'));
+
+  function renderStats() {
+    const total = entries.length;
+    const open = entries.filter(e => e.status === 'open').length;
+    const blockers = entries.filter(e => e.severity === 'blocker' && e.status !== 'resolved').length;
+    const resolved = entries.filter(e => e.status === 'resolved').length;
+    const statsEl = document.getElementById('stats');
+    statsEl.innerHTML = [
+      ['Total entries', total, ''],
+      ['Open', open, ''],
+      ['Active blockers', blockers, 'blocker'],
+      ['Resolved', resolved, 'resolved'],
+    ].map(([label, n, cls]) => `
+      <div class="stat ${cls}"><div class="n">${n}</div><div class="l">${label}</div></div>
+    `).join('');
+  }
+  renderStats();
+
+  function currentFilters() {
+    return {
+      q: document.getElementById('q').value.trim().toLowerCase(),
+      category: document.getElementById('f-category').value,
+      severity: document.getElementById('f-severity').value,
+      status: document.getElementById('f-status').value,
+      subsystem: document.getElementById('f-subsystem').value,
+      phase: document.getElementById('f-phase').value,
+    };
+  }
+
+  function matches(e, f) {
+    if (f.category && e.category !== f.category) return false;
+    if (f.severity && e.severity !== f.severity) return false;
+    if (f.status && e.status !== f.status) return false;
+    if (f.subsystem && e.subsystem !== f.subsystem) return false;
+    if (f.phase && String(e.phase) !== f.phase) return false;
+    if (f.q) {
+      const hay = [titleFromEntry(e), e.body, ...(e.tags || [])].join(' ').toLowerCase();
+      if (!hay.includes(f.q)) return false;
+    }
+    return true;
+  }
+
+  function render() {
+    const f = currentFilters();
+    const filtered = entries
+      .filter(e => matches(e, f))
+      .sort((a, b) => (SEV_ORDER[a.severity] ?? 9) - (SEV_ORDER[b.severity] ?? 9) || (b.date || '').localeCompare(a.date || ''));
+
+    const list = document.getElementById('entries');
+    const empty = document.getElementById('empty');
+    document.getElementById('count-line').textContent =
+      `${filtered.length} of ${entries.length} entries`;
+
+    if (!filtered.length) {
+      list.innerHTML = '';
+      empty.style.display = 'block';
+      return;
+    }
+    empty.style.display = 'none';
+
+    list.innerHTML = filtered.map((e, i) => {
+      const tags = (e.tags || []).map(t => `<span class="badge tag">#${escapeHtml(t)}</span>`).join('');
+      const metaBits = [];
+      if (e.related_vscode_ref) metaBits.push(`vscode ref: <code>${escapeHtml(e.related_vscode_ref)}</code>`);
+      if (e.upstream_issue) metaBits.push(`upstream: <code>${escapeHtml(e.upstream_issue)}</code>`);
+      if (e.jac_version) metaBits.push(`jac: <code>${escapeHtml(e.jac_version)}</code>`);
+      return `
+        <article class="entry" data-idx="${i}">
+          <div class="row1">
+            <span class="date">${escapeHtml(e.date || '')}</span>
+            <span class="title">${escapeHtml(titleFromEntry(e))}</span>
+          </div>
+          <div class="badges">
+            <span class="badge sev-${escapeHtml(e.severity || 'note')}">${escapeHtml(e.severity || '')}</span>
+            <span class="badge status-${escapeHtml(e.status || '')}">${STATUS_LABEL[e.status] || e.status || ''}</span>
+            <span class="badge subsystem">${escapeHtml(e.subsystem || '')}</span>
+            <span class="badge tag">${escapeHtml(e.category || '')}</span>
+            ${e.phase !== undefined ? `<span class="badge tag">phase ${escapeHtml(String(e.phase))}</span>` : ''}
+            ${tags}
+          </div>
+          <div class="body">
+            ${renderBody(e.body)}
+            ${metaBits.length ? `<div class="meta-line">${metaBits.join(' · ')}</div>` : ''}
+          </div>
+        </article>
+      `;
+    }).join('');
+
+    list.querySelectorAll('.entry').forEach(el => {
+      el.addEventListener('click', () => el.classList.toggle('open'));
+    });
+  }
+
+  ['q', 'f-category', 'f-severity', 'f-status', 'f-subsystem', 'f-phase'].forEach(id => {
+    document.getElementById(id).addEventListener('input', render);
+  });
+  document.getElementById('reset').addEventListener('click', () => {
+    document.getElementById('q').value = '';
+    ['f-category', 'f-severity', 'f-status', 'f-subsystem', 'f-phase'].forEach(id => document.getElementById(id).value = '');
+    render();
+  });
+
+  render();
+})();
+</script>
+</body>
+</html>

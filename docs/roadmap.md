@@ -57,6 +57,11 @@ Goal: the app *looks* like an editor, using the shadcn-in-Jac primitives already
   spawn + streamed output, gated behind the `shell` desktop capability. This is core, not an
   extension, so it belongs here, not in a later extension phase — you should be able to run
   something from a terminal in the earliest usable build, same as upstream VS Code.
+- **Keybinding context ("when clause") system** (per
+  [`vscode-feature-gap-analysis.md`](vscode-feature-gap-analysis.md)) — a context-evaluation layer
+  on top of the same command registry the palette already needs, so keybindings can be scoped
+  (e.g. "only when the editor has focus") instead of only ever global. Cheap now, expensive to
+  retrofit once multiple features want the same key.
 
 Exit criteria: can open a folder, browse files in a tree, open multiple files in tabs, split the
 editor, run a handful of commands via the palette — a genuinely usable single-user local editor.
@@ -71,9 +76,16 @@ serialization.
   a session on reopen "for free" via the graph, no explicit save/load code.
 - Basic syntax highlighting via a TextMate-grammar-compatible tokenizer reached through Python/npm
   interop (evaluate before committing to a from-scratch tokenizer, per `architecture.md`).
+- **A diff-editor rendering mode** on the same text-buffer model — a core editing capability
+  (compare two versions of a file), not SCM-specific, and cheap to add here since it's a rendering
+  mode over infrastructure this phase already has, not new infrastructure of its own.
+- **A `Diagnostic` node type** attached to `File` in the workspace graph, with no producer yet —
+  just the data model, so Phase 4's task/problem-matcher work and later language-intelligence work
+  have somewhere to write to from day one.
 
 Exit criteria: closing and reopening the app restores the previous session exactly; settings
-persist across restarts; opened files show syntax highlighting for at least a few common languages.
+persist across restarts; opened files show syntax highlighting for at least a few common languages;
+two versions of a file can be diffed.
 
 ## Phase 4 — Extension system, Phase A (trusted, in-process)
 
@@ -82,12 +94,25 @@ Goal: prove the contribution-registry design end to end without solving sandboxi
 
 - "Extensions" are Jac modules loaded at build time, contributing commands/views/menus to the
   same registry the built-in workbench features use.
-- Port 2–3 genuinely useful built-in features this way (e.g., a simple search-in-files feature, a
-  basic git-status indicator) to prove the pattern isn't just a toy.
+- Port 3 genuinely useful built-in features this way, chosen deliberately (not arbitrarily) to
+  cover three different contribution shapes at once:
+  1. **Search-in-files** — a workspace-wide feature reading from the file graph.
+  2. **Source control (SCM) shell + a first git implementation** — a provider-agnostic SCM view
+     that any VCS could plug into, with git as the first real provider, talking to the `git` CLI
+     the same way the terminal work talks to any other process (per
+     [`vscode-feature-gap-analysis.md`](vscode-feature-gap-analysis.md); not "a status indicator,"
+     a real first-class workbench part with gutter/tree decorations).
+  3. **A task runner with problem matchers** — writes into the `Diagnostic` node type staged in
+     Phase 3, feeding a Problems panel. Proves the contribution model handles a feature with its
+     own persistent config format (a task-definitions equivalent to `tasks.json`), not just UI.
+- **Language-intelligence groundwork**: research whether a Python (or npm) LSP *client* library is
+  usable via interop — the same open question as the DAP client in Phase 5, worth answering once
+  for both. Build the editor-side consumption UI (completion popup, hover card) as a Phase
+  4-or-later increment once that research lands; don't block this phase's exit on it.
 
-Exit criteria: a third built-in feature can be added purely by writing a new contributing module,
+Exit criteria: a fourth built-in feature can be added purely by writing a new contributing module,
 with zero changes to existing workbench code — the actual test of whether the contribution model
-is real.
+is real; SCM shows real git status/diffs; a build task's errors show up in a Problems panel.
 
 ## Phase 5 — Extension system, Phase B (dynamic, still trusted)
 

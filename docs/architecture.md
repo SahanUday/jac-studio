@@ -4,8 +4,11 @@ Status: **proposal, v1** — 2026-08-22. This is the first pass at mapping VS Co
 onto Jac's grain. It will change as Phase 0/1 work (see [`roadmap.md`](roadmap.md)) surfaces real
 constraints; treat every "proposed" below as a hypothesis to be tested, not a commitment carved
 in stone. Grounded in [`research/vscode-architecture.md`](research/vscode-architecture.md),
-[`research/jac-capabilities.md`](research/jac-capabilities.md), and
-[`research/jac-examples-patterns.md`](research/jac-examples-patterns.md).
+[`research/jac-capabilities.md`](research/jac-capabilities.md),
+[`research/jac-examples-patterns.md`](research/jac-examples-patterns.md), and
+[`vscode-feature-gap-analysis.md`](vscode-feature-gap-analysis.md) (a second, targeted pass
+identifying upstream capabilities this document had not yet scoped — several of its findings are
+folded in below).
 
 ## Principles
 
@@ -222,6 +225,39 @@ ruled out either) would need real sandboxing of that shell execution — contain
 similar — which VS Code's own hosted offerings (Codespaces, github.dev) solve with exactly that
 kind of isolation. Not a blocker for anything currently planned; noted so it isn't rediscovered
 as a surprise if a hosted mode is ever pursued.
+
+## Language intelligence: IntelliSense is not syntax highlighting
+
+Worth stating plainly, since earlier drafts of this document conflated the two: **syntax
+highlighting** (coloring tokens) and **language intelligence** (autocomplete, hover docs,
+go-to-definition, find-references, rename, code actions, signature help) are almost entirely
+separate subsystems in VS Code, and only the first was scoped in Phase 3 originally. The second is
+what actually makes an editor useful for real work, and upstream implements it as a large,
+well-defined provider API (`registerCompletionItemProvider`, `registerHoverProvider`,
+`registerDefinitionProvider`, `registerCodeActionsProvider`, `registerRenameProvider`, and ~40
+more in `vscode.d.ts`) that extensions implement — usually by bridging to a real **Language Server
+Protocol** server process, not by the workbench having built-in per-language knowledge.
+
+Proposed shape for jac-studio, deliberately mirroring the Debug Adapter Protocol treatment above
+since it's the same category of problem:
+
+- The **editor-side consumption layer** (rendering a completion popup, a hover card, a peek view)
+  is workbench-core UI work, independent of any specific language — build it once, Phase 4-or-later,
+  against a generic provider interface.
+- **Providers themselves are extension-contributed**, same as upstream — a language extension
+  either implements the interface directly or bridges to a real LSP server subprocess (the same
+  `shell`-capability process-spawn mechanism already scoped for the terminal handles launching
+  one).
+- **Shared open question with the DAP client**: is there a usable Python (or npm) LSP client
+  library reachable via Jac's interop, or does this need building from the wire protocol up?
+  Worth researching once, since both DAP and LSP are JSON-RPC-shaped protocols with a similar
+  "spawn a subprocess, speak a wire format" integration story.
+
+See [`vscode-feature-gap-analysis.md`](vscode-feature-gap-analysis.md) for the full inventory this
+was drawn from, including several Tier 2/3 items (source control, tasks/problem-matchers, the
+keybinding context-evaluation system, and a genuinely surprising finding — VS Code's chat/agent
+subsystem is now larger than its entire editor core) that are tracked there rather than folded
+into every section of this document.
 
 ## Open questions this document deliberately does not resolve
 

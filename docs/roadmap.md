@@ -53,6 +53,10 @@ Goal: the app *looks* like an editor, using the shadcn-in-Jac primitives already
 - Command palette (`Command`) wired to a minimal command registry (the first real consumer of the
   contribution-registry pattern from `architecture.md`).
 - Basic status bar, no contributions yet beyond cursor position.
+- **Integrated terminal** (per `architecture.md`'s Process Execution section) — raw OS process
+  spawn + streamed output, gated behind the `shell` desktop capability. This is core, not an
+  extension, so it belongs here, not in a later extension phase — you should be able to run
+  something from a terminal in the earliest usable build, same as upstream VS Code.
 
 Exit criteria: can open a folder, browse files in a tree, open multiple files in tabs, split the
 editor, run a handful of commands via the palette — a genuinely usable single-user local editor.
@@ -93,8 +97,13 @@ Goal: extensions become separate packages with a manifest, loaded at runtime.
   vscode-API-compatibility question here, before this phase, since it changes the manifest shape
   significantly).
 - Dynamic loading at runtime, still fully trusted — no isolation yet.
+- **Debug Adapter Protocol client** (per `architecture.md`'s Process Execution section) — a
+  from-scratch scoped design effort, not something that falls out of the general contribution
+  model. First step: check whether a Python DAP client library is usable via Python interop
+  before building one from the wire protocol up.
 
-Exit criteria: a extension can be installed/removed without a rebuild of the app itself.
+Exit criteria: an extension can be installed/removed without a rebuild of the app itself, and a
+language extension can register a debug adapter that gets real breakpoint/step/inspect support.
 
 ## Phase 6 — Extension sandboxing (Phase C) — treat as its own research track
 

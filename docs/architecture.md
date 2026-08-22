@@ -171,6 +171,58 @@ described in `jac-desktop-app.md`, plus the per-OS installer/signing pipeline de
 [`research/vscodium-packaging.md`](research/vscodium-packaging.md) — expect to build that pipeline
 ourselves; Jac doesn't ship one yet (tracked gap, upstream issue #6436).
 
+## Process execution: terminal, tasks, and debugging
+
+Worth separating explicitly, because the two halves of "run my code" in VS Code sit on opposite
+sides of the extension boundary, and the Jac mapping differs accordingly.
+
+**The integrated terminal is core, not an extension**, in both VS Code and this proposal. VS Code
+just spawns a real OS shell process on a pseudo-terminal from the main process and streams
+stdin/stdout/stderr to the renderer over IPC — no language knowledge, no extension involved.
+Proposed Jac equivalent:
+
+- Terminal UI is an ordinary workbench-core client component. Jac has no native terminal-emulator
+  primitive, so this is one of the few UI pieces reached via npm interop rather than shadcn (e.g.
+  `import from "xterm" {...}`), not a from-scratch build.
+- A command typed into it is sent to the backend the same way everything else is —
+  `root spawn RunInTerminal(cmd)`, ordinary client→server RPC, no special mechanism.
+- The walker spawns the actual OS process. In desktop mode this runs in the same in-process
+  embedded CPython host (`jac-desktop-app.md`) via Python's own `subprocess`, but gated behind the
+  `@jac/desktop` `shell` capability — **deny-by-default**, must be explicitly granted in
+  `jac.toml`. This is a genuine improvement on VS Code's own model: Electron's main process has
+  unrestricted OS access by default, where Jac forces the capability to be an explicit, visible
+  grant. Output streams back incrementally via the SSE/`Generator` pattern already used for
+  LLM-token streaming (`jac-sv-streaming.md`) — the same mechanism, a different payload.
+- **This subsystem belongs in the Phase 2 workbench-shell MVP** (updated in `roadmap.md`), not a
+  later extension phase — you should be able to open a terminal and run something in the earliest
+  usable build, same as VS Code.
+
+**"Run"/"Debug" (the Run button, F5, breakpoints) is genuinely extension territory** in VS Code,
+and stays that way here — but the two halves of it are very different sizes of problem:
+
+- *Run without debugging* is nearly free once the terminal above exists: a language extension
+  (Phase 4/5) contributes a command that knows how to construct the right shell invocation for a
+  file type (`python foo.py`, `cargo run`, ...) and hands it to the same `RunInTerminal` walker.
+  No new mechanism needed.
+- *Real debugging* — breakpoints, stepping, call stack, variable inspection — is a gap this
+  document had not previously scoped. VS Code's generic Debug Adapter Protocol (DAP) client, and
+  the convention of extensions plugging in a per-language debug adapter process that speaks DAP,
+  is a substantial piece of core infrastructure (`src/vs/workbench/contrib/debug/`) with **no Jac
+  precedent to lean on** — no skill file, no example app addresses anything like it. Proposed
+  placement: design a DAP-compatible client as its own workbench-core subsystem alongside Phase
+  4/5 (extensions can *plug into* it the same way they do in VS Code), but treat it as its own
+  scoped design effort rather than assuming it falls out of the general extension-contribution
+  model — it won't. Track the design as its own doc once Phase 4 begins.
+
+**A security question this raises that desktop mode sidesteps but a hosted/browser deployment
+would not**: the `shell` capability is safe to grant in desktop mode because the process it spawns
+runs on the user's own machine, under their own OS permissions — same trust level as them opening
+their own terminal. A server-hosted, multi-tenant deployment (not on the current roadmap, but not
+ruled out either) would need real sandboxing of that shell execution — container-per-session or
+similar — which VS Code's own hosted offerings (Codespaces, github.dev) solve with exactly that
+kind of isolation. Not a blocker for anything currently planned; noted so it isn't rediscovered
+as a surprise if a hosted mode is ever pursued.
+
 ## Open questions this document deliberately does not resolve
 
 - Root-graph-as-service-registry: validated or replaced with `glob` singletons? (Phase 0 spike)
@@ -180,3 +232,6 @@ ourselves; Jac doesn't ship one yet (tracked gap, upstream issue #6436).
   compatibility with (enabling existing extensions to port over) vs. a from-scratch API idiomatic
   to Jac's walker/node model? Not decided — affects Phase B scope significantly and deserves its
   own design doc once Phase A ships.
+- Debug Adapter Protocol client: is a Jac/Python DAP client library reachable via Python interop
+  (there's a real ecosystem of DAP libraries in Python), or does this need building from the wire
+  protocol up? Not researched yet — first task if Phase 4/5 picks up debugging support.

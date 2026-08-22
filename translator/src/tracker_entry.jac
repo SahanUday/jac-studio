@@ -28,7 +28,7 @@ def scaffold_blocker(
     output_dir: str = "blocked",
 ) -> str {
     today = date.today().isoformat();
-    slug = slugify(summary);
+    slug = slugify(summary) or slugify(record.id) or "entry";
     filename = f"{today}-{slug}.md";
     os.makedirs(output_dir, exist_ok=True);
     out_path = os.path.join(output_dir, filename);

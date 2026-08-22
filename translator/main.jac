@@ -182,7 +182,7 @@ def build_parser() -> any {
     return parser;
 }
 
-with entry {
+with entry:__main__ {
     parser = build_parser();
     args = parser.parse_args();
     sys.`exit(args.func(args));

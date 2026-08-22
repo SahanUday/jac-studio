@@ -1,0 +1,9 @@
+{
+  "name": "jac-studio-translator-extract",
+  "private": true,
+  "type": "module",
+  "description": "Structural extraction for the TS->Jac translator (TypeScript compiler API). Exists as a standalone Node script because Jac's npm interop is confirmed client-only -- see docs/translator-strategy.md and tracking/log/2026-08-22-npm-interop-server-only-blocked.md.",
+  "dependencies": {
+    "typescript": "^5.9.3"
+  }
+}

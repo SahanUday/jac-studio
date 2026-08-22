@@ -1,0 +1,38 @@
+[[modules]]
+id = "prefix-sum-computer"
+upstream_path = "src/vs/editor/common/model/prefixSumComputer.ts"
+upstream_commit = ""
+jac_path = ""
+test_upstream_path = "src/vs/editor/test/common/viewModel/prefixSumComputer.test.ts"
+test_jac_path = ""
+status = "queued"
+risk_tier = "low"
+verification = "tests"
+phase = 0
+notes = ""
+
+[[modules]]
+id = "interval-tree"
+upstream_path = "src/vs/editor/common/model/intervalTree.ts"
+upstream_commit = ""
+jac_path = ""
+test_upstream_path = "src/vs/editor/test/common/model/intervalTree.test.ts"
+test_jac_path = ""
+status = "queued"
+risk_tier = "low"
+verification = "tests"
+phase = 0
+notes = ""
+
+[[modules]]
+id = "piece-tree-base"
+upstream_path = "src/vs/editor/common/model/pieceTreeTextBuffer/pieceTreeBase.ts"
+upstream_commit = ""
+jac_path = ""
+test_upstream_path = "src/vs/editor/test/common/model/pieceTreeTextBuffer/pieceTreeTextBuffer.test.ts"
+test_jac_path = ""
+status = "queued"
+risk_tier = "foundational"
+verification = "tests"
+phase = 1
+notes = ""

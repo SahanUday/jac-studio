@@ -28,8 +28,11 @@ test "round-trips a manifest through save and load" {
 }
 
 test "load_manifest returns empty list for a missing file" {
-    entries = load_manifest("/tmp/definitely-does-not-exist-12345.toml");
-    assert entries == [];
+    with tempfile.TemporaryDirectory() as tmpdir {
+        missing_path = os.path.join(tmpdir, "does-not-exist.toml");
+        entries = load_manifest(missing_path);
+        assert entries == [];
+    }
 }
 
 test "find_entry locates by id, returns None when absent" {

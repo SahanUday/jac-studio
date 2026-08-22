@@ -81,3 +81,31 @@ test "extraction runs against a test file too when one is given" {
         assert data["test"]["symbols"][0]["name"] == "checkNoop";
     }
 }
+
+test "extracting a nonexistent source file raises with diagnosable detail" {
+    with tempfile.TemporaryDirectory() as tmpdir {
+        missing = os.path.join(tmpdir, "does-not-exist.ts");
+        try {
+            run_extraction(missing);
+            assert False, "expected RuntimeError for a nonexistent source file";
+        } except RuntimeError as e {
+            message = str(e);
+            assert "exit code" in message;
+            assert "stderr" in message;
+        }
+    }
+}
+
+test "export let and export var are labeled distinctly from export const" {
+    with tempfile.TemporaryDirectory() as tmpdir {
+        source = write_temp(
+            tmpdir, "vars.ts",
+            "export const A = 1;\nexport let B = 2;\nexport var C = 3;\n",
+        );
+        data = run_extraction(source);
+        by_name = {s["name"]: s["kind"] for s in data["source"]["symbols"]};
+        assert by_name["A"] == "const";
+        assert by_name["B"] == "let";
+        assert by_name["C"] == "var";
+    }
+}

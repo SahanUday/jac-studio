@@ -21,7 +21,12 @@ def run_extraction(
     }
     result = subprocess.run(args, capture_output=True, text=True);
     if result.returncode != 0 {
-        raise RuntimeError(f"extraction failed: {result.stderr}");
+        message = (
+            f"extraction failed (exit code {result.returncode})\n"
+            f"stdout:\n{result.stdout}\n"
+            f"stderr:\n{result.stderr}"
+        );
+        raise RuntimeError(message);
     }
     return json.loads(result.stdout);
 }

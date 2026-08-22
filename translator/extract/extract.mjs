@@ -29,6 +29,13 @@ function isExported(node) {
   return (mods & ts.ModifierFlags.Export) !== 0;
 }
 
+function variableDeclarationKind(declarationList) {
+  const flags = declarationList.flags;
+  if (flags & ts.NodeFlags.Const) return "const";
+  if (flags & ts.NodeFlags.Let) return "let";
+  return "var";
+}
+
 function extractSymbols(sourceFile) {
   const symbols = [];
   sourceFile.forEachChild((node) => {
@@ -52,8 +59,9 @@ function extractSymbols(sourceFile) {
     } else if (ts.isEnumDeclaration(node)) {
       symbols.push({ kind: "enum", name: node.name.text, doc: getLeadingDocComment(node, sourceFile), signature: node.getText(sourceFile) });
     } else if (ts.isVariableStatement(node)) {
+      const kind = variableDeclarationKind(node.declarationList);
       for (const decl of node.declarationList.declarations) {
-        symbols.push({ kind: "const", name: decl.name.getText(sourceFile), doc: getLeadingDocComment(node, sourceFile), signature: decl.getText(sourceFile) });
+        symbols.push({ kind, name: decl.name.getText(sourceFile), doc: getLeadingDocComment(node, sourceFile), signature: decl.getText(sourceFile) });
       }
     }
   });

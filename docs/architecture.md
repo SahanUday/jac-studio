@@ -1,0 +1,182 @@
+# Jac Studio — proposed architecture
+
+Status: **proposal, v1** — 2026-08-22. This is the first pass at mapping VS Code's architecture
+onto Jac's grain. It will change as Phase 0/1 work (see [`roadmap.md`](roadmap.md)) surfaces real
+constraints; treat every "proposed" below as a hypothesis to be tested, not a commitment carved
+in stone. Grounded in [`research/vscode-architecture.md`](research/vscode-architecture.md),
+[`research/jac-capabilities.md`](research/jac-capabilities.md), and
+[`research/jac-examples-patterns.md`](research/jac-examples-patterns.md).
+
+## Principles
+
+1. **Jactastic over literal.** We are not transliterating VS Code's TypeScript into Jac
+   syntax line-by-line. VS Code's patterns (constructor-injected services, event-driven
+   contributions, a separate extension process talking over RPC) exist because TypeScript/
+   Electron have no persistent graph, no inferred codespace placement, and no automatic
+   client/server RPC. Jac already gives us the last three for free. We should use them, not
+   rebuild DI and IPC by hand out of habit.
+2. **Everything in Jac unless it's genuinely blocked — and every block gets logged, not
+   silently worked around.** Where a component *can* be built natively in Jac, it should be,
+   even where an existing JS library (Monaco, a syntax-highlighting engine) would be faster to
+   integrate. Where it truly can't (see the open risks below), we track why in the
+   [challenge tracker](challenge-tracking.md) and make a deliberate, documented call — not a
+   silent shortcut.
+3. **MVP, then widen.** Ship a single-pane editor before a workbench; a workbench before an
+   extension system; trusted in-process extensions before a sandboxed marketplace; a working dev
+   build before a signed cross-platform installer. See [`roadmap.md`](roadmap.md) for the actual
+   sequencing — this document describes target-state shape, not build order.
+4. **Desktop packaging is a late-stage concern.** Jac's webview-based desktop shell is a thin
+   layer over the same client bundle the browser target uses (unlike Electron, there's no separate
+   "desktop app" codebase to maintain in parallel) — so there's no cost to deferring it.
+
+## Layer mapping
+
+| VS Code layer | Size (measured) | Jac Studio equivalent |
+|---|---|---|
+| `src/vs/base` | 154k lines | Ordinary Jac stdlib/utility modules — no special treatment needed; Jac's own base language (collections, async, `obj` helpers) already covers most of what `base` exists to provide in a language that has no such primitives. |
+| `src/vs/platform` (DI + services) | 580k lines | **The root-graph-as-registry pattern** (below) instead of a hand-built DI container. |
+| `src/vs/editor` (Monaco) | 279k lines | A from-scratch Jac text-editing core, bootstrapped by porting Monaco's *algorithms* (piece tree, interval tree, prefix-sum) via the [translator](translator-strategy.md); rendering/interaction rebuilt as Jac client components. Single biggest engineering effort in the project — see Editor Core below. |
+| `src/vs/workbench` (shell + contrib) | 1.42M lines | jac-cl components, overwhelmingly built on the **shadcn-in-Jac** primitive set (Sidebar, Resizable, Tabs, Command, ContextMenu, Tooltip, ScrollArea already exist) — see Workbench Shell below. This is the layer where Jac's built-in component library does the most work for us relative to upstream's line count. |
+| Extension host (`workbench/api`, `workbench/services/extensions`) | — | No Jac equivalent exists today. Biggest open risk in the project — see Extension System below. |
+| `src/vs/code` (Electron main) | 6k lines | `jac nacompile` native desktop host + OS webview — deferred to a late roadmap phase. |
+
+## Service registry: the graph replaces the DI container
+
+VS Code needs `IInstantiationService` + `createDecorator` because TypeScript objects have no
+persistent identity and no built-in registry. Jac has one already: **the graph reachable from
+`root` is the service registry.** A "service" (configuration, file-system access, the extension
+registry, the command registry) is modeled as a `node`, created once and attached to `root` (or
+`root.shared` for deployment-wide singletons), and reached by any walker or `def:pub` via a graph
+query — `[root--][?:ConfigService][0]` — rather than injected through a constructor chain.
+
+This is a genuine architectural bet, not a settled fact — it needs to be validated with a real
+multi-service slice (e.g., a `ConfigService` + `CommandRegistry` + `FileTreeService` interacting)
+early in Phase 0, before the workbench shell is built on top of it. If it doesn't hold up under
+real use (e.g., query-based lookup turns out too slow or too indirect for hot paths like
+keystroke handling), the fallback is plain module-level `glob` singletons for stateless/compute
+services, reserving the graph pattern for things that are genuinely persistent (workspace state,
+settings, extension registrations). Track the outcome of this validation as the first real entry
+in the challenge tracker, win or lose.
+
+## Data model: the workspace is the graph
+
+Files, folders, open editor groups, tabs, and cursor/selection state are **nodes and edges**, not
+in-memory arrays owned by a "workbench model" object:
+
+- `Workspace` (root-attached) `--Contains-->` `Folder` `--Contains-->` `File`
+- `EditorGroup` `--Shows-->` `Tab` `--Displays-->` `File`, with `Tab` carrying `has cursor: ...`,
+  `has scrollPosition: ...` etc. as plain fields
+- `Extension` nodes attached to a per-user `root`, `--Contributes-->` `Command`/`View`/`Menu`
+  nodes (the graph *is* the contribution registry — see below)
+- Settings/keybindings as `obj`s attached via edges from `Workspace`/`root`, which gives us
+  persistence-by-reachability for free: no settings-file serialization code to write or maintain.
+
+This directly follows the pattern proven in littleX/day_planner (root-anchored per-user graphs,
+`:priv` for isolation) and gets us multi-user/collaborative-editing groundwork essentially for
+free later, since Jac's access-control primitives (`grant`/`revoke`/`root.shared`) already exist
+for exactly this shape of problem — years before we'd need to build it by hand.
+
+## Workbench shell: shadcn-in-Jac primitives, not hand-rolled chrome
+
+VS Code's workbench parts map almost directly onto existing Jac shadcn primitives:
+
+| Workbench part | Jac primitive |
+|---|---|
+| Activity bar + sidebar | `Sidebar` |
+| Editor groups (split panes) | `Resizable` / `ResizablePanel` / `ResizableHandle` |
+| Tabs | `Tabs` |
+| Command palette | `Command` |
+| Right-click menus | `ContextMenu` |
+| Status bar hints, hover info | `Tooltip` |
+| File tree, output panels | `ScrollArea` (+ a tree component we likely build ourselves — not in the ~50-primitive shadcn set) |
+
+Because the primitive layer already exists, the workbench-shell phase of the roadmap is
+realistically a composition/layout effort, not a from-scratch UI-toolkit-building effort — this is
+the part of the reimplementation where "everything in Jac" is closest to free, and where we expect
+the fewest tracked blockers.
+
+Following the self-registering **contribution model** VS Code uses (rather than one monolithic
+layout file), each workbench feature (file explorer, search, settings UI, later: debug/terminal)
+should be its own set of Jac modules that attach `Command`/`View`/`Menu` nodes to the registry
+graph on load — the direct Jac analog of VS Code's `workbench/contrib/*` self-registration, and
+the mechanism that lets `workbench` scale to 4,000 files without a central switchboard.
+
+## Editor core: the hardest, most novel piece — build vs. bootstrap
+
+This is the component with no existing Jac precedent to lean on (no example app implements a real
+text-editing widget) and the one place where "everything in Jac" is genuinely expensive rather than
+mostly-free. Proposed approach, in order:
+
+1. **Port the algorithms first, headless, via the translator.** Piece-tree text buffer,
+   interval tree (decoration lookup), prefix-sum computer (line/offset math) are small, pure,
+   well-unit-tested TS modules with minimal DOM/Electron coupling — the best possible first targets
+   for the [TS→Jac translator](translator-strategy.md), and validated behavior-for-behavior against
+   VS Code's own unit tests before anything renders on screen.
+2. **Build the rendering/interaction surface as ordinary Jac client components** on top of the
+   ported model (cursor rendering, selection, line-by-line virtualized rendering, keyboard/IME
+   input handling) — this part has no good literal translation target (VS Code's DOM-manipulation
+   approach doesn't map onto JSX-style rendering) and should be designed idiomatically in Jac from
+   the start, informed by but not copied from Monaco's `view/` layer.
+3. **Tokenization/syntax highlighting** is a later increment (Phase 3+) — start with a
+   TextMate-grammar-compatible tokenizer if one is reachable via Python/npm interop before
+   committing to reimplementing tokenization from scratch.
+
+**Explicit fallback, to be decided with real data, not assumed away**: if the from-scratch text
+widget proves too costly for an early usable MVP, a temporary bridge embedding the real
+`monaco-editor` npm package via jac-cl's npm interop is architecturally possible and would unblock
+every layer above it (workbench, extensions) while the native Jac editor core matures in parallel.
+This would be tracked as a deliberate, visible, time-boxed decision in the tracker — not a quiet
+substitution — consistent with principle 2 above.
+
+## Extension system: the biggest open risk, phased trust model
+
+VS Code's hard guarantee — extension code never runs in the workbench's own process/thread — has
+**no ready-made Jac equivalent**. This is confirmed independently by both the docs research and
+the examples research: no skill file and no example app demonstrates a plugin sandbox. Proposed
+phasing, deliberately conservative:
+
+- **Phase A (trusted, in-process)**: "extensions" are just more Jac walkers/nodes defined
+  alongside the app's own code and loaded at build time — no isolation, no marketplace, no
+  security boundary. Enough to prove the contribution-registry pattern (commands, views, menus)
+  end to end without solving sandboxing first.
+- **Phase B (declared-manifest, still trusted)**: extensions become separate Jac packages with a
+  manifest (contributes/activation-events, mirroring `package.json`'s contract) loaded dynamically
+  at runtime, still fully trusted — proves dynamic loading without solving isolation.
+- **Phase C (sandboxed, untrusted)**: the real, hard problem — likely built on Jac's native+WASM
+  compilation path (`jac-native-wasm.md`), compiling extension code to WASM and building a
+  capability/permission model around it from scratch, since Jac provides the WASM *target* but not
+  a plugin *sandbox*. This is R&D, not integration work, and should be scoped as its own
+  multi-milestone research track, not a line item inside a later phase.
+
+Do not attempt Phase C before Phases A and B have validated the contribution-registry and
+extension-API-surface design against real usage — sandboxing a design that later turns out wrong
+would waste the hardest work in the project.
+
+## IPC / cross-boundary calls
+
+VS Code's extension-host/main-thread RPC split, and its general `IChannel`/`IServerChannel`
+transport abstraction, both exist to solve a problem Jac's inferred codespaces already solve:
+calling from client code to server code is `root spawn SomeWalker(...)`, a plain function call
+that the compiler turns into RPC across whatever codespace boundary applies — no protocol file to
+maintain by hand (VS Code's `extHost.protocol.ts` has no counterpart we need to write). This
+collapses an entire layer of VS Code's architecture into "just call the walker" for the
+client↔server boundary. It does **not** solve the workbench↔extension-host boundary from
+Extension System Phase C above — that boundary is a trust boundary, not a process/codespace
+boundary, and Jac's RPC inference doesn't imply sandboxing.
+
+## Desktop packaging
+
+Deferred by design (principle 4). When we get there: `jac nacompile` + the OS-native-webview shell
+described in `jac-desktop-app.md`, plus the per-OS installer/signing pipeline described in
+[`research/vscodium-packaging.md`](research/vscodium-packaging.md) — expect to build that pipeline
+ourselves; Jac doesn't ship one yet (tracked gap, upstream issue #6436).
+
+## Open questions this document deliberately does not resolve
+
+- Root-graph-as-service-registry: validated or replaced with `glob` singletons? (Phase 0 spike)
+- Monaco-embed bridge for the editor core: needed as a stopgap, or is the native port fast enough
+  to skip it? (Decide after the Phase 1 translator spike on the piece tree)
+- Extension API surface shape: how much of VS Code's actual `vscode` API do we aim for
+  compatibility with (enabling existing extensions to port over) vs. a from-scratch API idiomatic
+  to Jac's walker/node model? Not decided — affects Phase B scope significantly and deserves its
+  own design doc once Phase A ships.

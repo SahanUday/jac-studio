@@ -34,6 +34,45 @@ anything upstream unaccounted for").
    layer over the same client bundle the browser target uses (unlike Electron, there's no separate
    "desktop app" codebase to maintain in parallel) — so there's no cost to deferring it.
 
+## "Rewrite, don't mirror" — principle 1, made concrete
+
+Principle 1 isn't just a philosophical stance — it has already produced specific design decisions
+throughout this document, listed together here so the pattern is visible as one consistent stance
+rather than scattered individual calls:
+
+- **Service registry**: the graph reachable from `root`, instead of a hand-built DI container
+  (`IInstantiationService`/`createDecorator`) — see below.
+- **Cross-boundary calls**: `root spawn SomeWalker(...)`, instead of a hand-maintained RPC
+  protocol file (`extHost.protocol.ts`) — see IPC section below.
+- **Terminal process execution**: a deny-by-default `shell` capability, instead of Electron's
+  always-on OS access from the main process — a genuine security *improvement* over upstream, not
+  just a different way to do the same thing.
+- **Multi-root workspaces**: fall out of the existing `Workspace --Contains--> Folder` graph model
+  for free (multiple `Folder` nodes under one `Workspace`), instead of a bespoke
+  `.code-workspace` file format.
+- **Settings Sync and Local History** (both currently open design spikes, not built): the native
+  shape is visibly "the same root reached from two machines" / "retained prior graph states,"
+  instead of upstream's bespoke sync protocol and revision-snapshot mechanism, respectively.
+- **Chat/AI assistance**: `by llm()` and `sem` as the starting point (Tier 2.5 in the gap
+  analysis, tracked as `2026-08-22-chat-subsystem-scale.md`), instead of porting upstream's
+  442,661-line bolted-on chat subsystem — inline completions are tracked in the same family.
+
+**This does not conflict with the [TS→Jac translator](translator-strategy.md) — the two apply to
+different kinds of problem, and it's worth being precise about the boundary.** Everything above is
+a case where VS Code's *solution shape* is a consequence of TypeScript/Electron's limitations (no
+persistent graph, no inferred RPC, no native LLM calls, an untrusted-process boundary hand-built
+because the language has no capability system) — Jac removes the limitation, so the shape should
+change too. The translator, by contrast, is scoped only to problems whose solution shape is
+dictated by the *problem itself*, not by the source language: a piece-table text buffer is an
+O(log n) piece-table in any language, and reinventing that algorithm from scratch in the name of
+"Jactastic" would just be re-deriving the same wheel, slower and with more bugs. Even there, the
+translator targets idiomatic Jac (`obj`, not a transliterated `class`; Jac collection operations;
+no DI wiring the algorithm never needed) rather than syntax-for-syntax transliteration — so it's
+an application of the same principle at the algorithm level, not an exception to it. The dividing
+question for any future component: **is this shaped by TS/Electron's constraints, or by the
+problem's own math?** The former gets rewritten in Jac's shape; the latter gets translated, then
+verified for behavioral parity against upstream's own tests.
+
 ## Layer mapping
 
 | VS Code layer | Size (measured) | Jac Studio equivalent |

@@ -1,13 +1,18 @@
 # Complete triage: every upstream workbench feature area, one disposition each
 
-Status: v1 — 2026-08-22. Direct answer to "have we documented all of VS Code, covered by a Jac
+Status: v2 — 2026-08-22. Direct answer to "have we documented all of VS Code, covered by a Jac
 version?": **no, not fully designed — and that's intentional, per the MVP-first principle in
 [`architecture.md`](architecture.md).** What this document provides instead is a different,
-achievable bar: **every one of the 99 areas in `src/vs/workbench/contrib/*` has been looked at and
-assigned a disposition.** Nothing upstream is silently unaddressed anymore, even where the honest
-disposition is "deferred, not designed yet." `src/vs/editor/contrib/*` (59 areas) is not
-re-triaged item-by-item here — nearly all of it falls under **Language intelligence**
-(`architecture.md`) as a single cluster, noted once below rather than 59 times.
+achievable bar: **every one of the 99 areas in `src/vs/workbench/contrib/*`, and every one of the
+59 areas in `src/vs/editor/contrib/*`, has been looked at and assigned a disposition.** Nothing
+upstream is silently unaddressed anymore, even where the honest disposition is "deferred, not
+designed yet."
+
+v1 of this document clustered all 59 `editor/contrib` areas under Language Intelligence as a
+single group without checking them individually — on closer inspection that claim was wrong: about
+half of them are basic text-editing operations (cursor movement, clipboard, multi-cursor, find-in-
+file) that belong under core editor work, not language intelligence at all. Corrected below rather
+than left standing.
 
 Legend: **Scoped** = has real architecture + a roadmap phase. **Tracked** = named, disposition
 decided, not yet designed in detail. **Excluded** = deliberate non-goal, with a reason. **New** =
@@ -56,13 +61,77 @@ found during this triage pass, not previously mentioned anywhere in the docs.
 | onboarding, welcomeBanner, welcomeGettingStarted, welcomeOnboarding, welcomeViews, welcomeWalkthrough | New — Tracked | The "Getting Started" walkthrough experience. Polish-tier, no phase assigned. |
 | limitIndicator, meteredConnection, modernUI, emergencyAlert, relauncher, splash, performance, processExplorer, policyExport, scrollLocking, sash, list, browserView, imageCarousel | New — mostly not applicable | Internal plumbing/UI-kit details specific to VS Code's own Electron implementation (a splash screen, a "reload window" relauncher, a virtualized-list widget, Electron's own process explorer) or already covered by an existing choice (`sash` ≈ our `Resizable` shadcn primitive, per `architecture.md`'s workbench-shell mapping). Nothing to design here beyond what's already decided. |
 
+## Editor-level feature areas (`src/vs/editor/contrib`, 59 areas)
+
+Corrected, per the note above — split by what they actually are, not clustered as one group.
+
+**Core editor UX — Phase 1 (Editor core), expanding on the deliberately-basic MVP** (basic
+insert/delete/cursor was explicitly scoped for Phase 1; these are the natural next increment, not
+a new subsystem): `clipboard`, `caretOperations`, `cursorUndo`, `lineSelection`,
+`linesOperations`, `multicursor` (Phase 1 explicitly deferred this — this confirms it as the
+right thing to defer, not an oversight), `wordOperations`, `wordPartOperations`, `anchorSelect`,
+`smartSelect`, `indentation`, `find` (in-file find/replace — distinct from the workspace-wide
+`search` already Scoped in Phase 4), `dnd`, `bracketMatching`, `inPlaceReplace`,
+`insertFinalNewLine`, `unusualLineTerminators`, `unicodeHighlighter`, `longLinesHelper` (text-
+buffer edge cases — tie directly to the Phase 1 piece-tree/text-model port, same translator work).
+
+**Language-intelligence cluster — Phase 4+, consuming provider data** (this is what the original
+v1 clustering was gesturing at, correctly for this subset): `codeAction`, `codelens`,
+`colorPicker`, `documentSymbols`, `folding`, `format`, `gotoError` (jumps between diagnostics —
+ties to `markers`/Problems), `gotoSymbol`, `hover`, `inlayHints`, `linkedEditing`, `links`,
+`parameterHints`, `peekView`, `rename`, `semanticTokens` (language-server-driven highlighting,
+richer than TextMate grammars), `snippet` (expansion engine — ties to the already-Tracked
+`snippets` workbench contrib), `suggest`, `wordHighlighter` (highlight other occurrences of the
+selected symbol), `quickAccess` (editor-level "Go to Symbol in File"), `sectionHeaders`,
+`stickyScroll` (both need code-structure awareness, i.e. symbol/outline data), `symbolIcons`
+(icon set for symbol kinds, cosmetic layer on top of the same data).
+
+**AI-adjacent, cross-reference not duplicate**: `inlineCompletions` (ghost-text suggestions) is
+architecturally the same category as `chat`/`inlineChat` in the workbench-level triage above —
+Tier 2.5, deliberately not scoped as a port target, revisit alongside that decision since Jac's
+`by llm()` may give it a different natural shape than upstream's.
+
+**Chrome/plumbing — build as needed, no dedicated design**: `contextmenu` (uses the `ContextMenu`
+primitive already in the workbench-shell mapping), `message`, `inlineProgress`, `placeholderText`,
+`readOnlyMessage`, `floatingMenu`, `zoneWidget`, `comment` (toggle-line-comment — a command, not a
+feature), `fontZoom`, `toggleTabFocusMode`, `middleScroll`, `editorState` (ties to the Phase 3
+session-persistence work already scoped), `diffEditorBreadcrumbs` (ties to the Phase 3 diff-editor
+mode), `tokenization` (the base layer under both TextMate-grammar highlighting and semantic
+tokens — already implicit in Phase 1/3, not a separate feature), `dropOrPasteInto` (already listed
+in the workbench table above — it's the same feature, cross-cutting both layers), `gpu`
+(Monaco's Canvas/WebGL rendering backend — a performance detail specific to upstream's renderer
+choice, revisit only if our own rendering performance requires it, not a feature to port).
+
 ## What this settles vs. what it doesn't
 
-Settled: no upstream feature area is unaccounted for anymore — everything above has a name, a
-disposition, and (where relevant) a phase. Six real gaps came out of this pass that hadn't been
-written down anywhere before (`authentication`+`encryption`, `bulkEdit`, `mergeEditor`, `themes`,
-`localization`, `workspace`/multi-root) — folded into existing phases where cheap, left as open
-questions where genuinely undecided (`themes`).
+**Settled — the two `contrib` trees (158 areas total: 99 workbench + 59 editor)**: no feature area
+in either is unaccounted for anymore — everything has a name, a disposition, and (where relevant)
+a phase. Six real gaps came out of the workbench pass that hadn't been written down anywhere
+before (`authentication`+`encryption`, `bulkEdit`, `mergeEditor`, `themes`, `localization`,
+`workspace`/multi-root); the editor pass corrected a wrong claim from v1 rather than finding new
+gaps. This is genuinely complete triage of the parts of VS Code a user directly interacts with.
+
+**Not covered by this document, and worth being explicit about rather than implying otherwise**:
+
+- **`extensions/`** — the 106 built-in extensions (language grammars, `git`, `github-
+  authentication`, `emmet`, `markdown-language-features`, `docker`, `ipynb`, ...) have been listed
+  (`research/vscode-architecture.md`) but not individually triaged the way the two `contrib` trees
+  were. Most of them aren't independent design problems for us — they're proof that, once the
+  Phase 4/5 extension system and Phase 3 syntax-highlighting exist, each of these becomes "an
+  ordinary extension someone writes" rather than core infrastructure to design. A few
+  (`github-authentication`, `microsoft-authentication`) are the real-world consumers of the
+  `authentication` broker above, and `debug-auto-launch` is a small DAP-adjacent convenience.
+  Not triaged item-by-item because the payoff is low relative to the two `contrib` trees — say so
+  if you want that done anyway.
+- **`platform/`** (580,107 lines, 2,338 files) — only the DI mechanism and IPC transport were
+  investigated (`research/vscode-architecture.md`), not a service-by-service inventory (there are
+  dozens of `IFooService` interfaces — configuration, storage, quick-input, notifications,
+  progress, workspace trust, policy, request/HTTP, extension management, ...). Most back a
+  workbench feature already triaged above (e.g. `ISecretStorageService` backs `encryption`,
+  `IExtensionGalleryService` backs the Extensions view) rather than being independently
+  user-facing — but this hasn't been verified service-by-service, only assumed. The honest
+  disposition is: architecturally covered (the root-graph-as-registry proposal is meant to replace
+  this whole layer's *pattern*, per `architecture.md`), not feature-by-feature triaged.
 
 Not settled, and not meant to be yet: most "Tracked" rows above have a one-paragraph rationale, not
 an architecture section like the Tier 1 items in

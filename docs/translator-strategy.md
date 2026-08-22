@@ -58,6 +58,112 @@ designed fresh in Jac, informed by reading the TS source rather than translating
 6. **Land the ported module with its tests passing** before moving to the next target — no
    partially-translated modules sitting in the tree.
 
+## Implementation architecture
+
+Not a hand-built TS→Jac compiler — building a real transpiler would be its own large project, and
+it would fight the "rewrite, don't mirror" principle (`architecture.md`): we want *idiomatic* Jac
+output, which needs judgment, not mechanical syntax substitution. The translator is a **repeatable,
+tool-assisted workflow with the model as the translation engine**, wrapped in deterministic
+tooling for the parts that shouldn't depend on judgment at all. Five components, realizing the six
+workflow steps above:
+
+1. **Manifest / ledger** — the single source of truth for what's in scope and what's landed. A
+   plain, git-tracked file (not Jac graph storage, deliberately — see Language below), one entry
+   per module:
+
+   ```toml
+   [[modules]]
+   id = "prefix-sum-computer"
+   upstream_path = "src/vs/editor/common/model/prefixSumComputer.ts"
+   upstream_commit = "<sha at translation time>"
+   jac_path = "src/editor/model/prefix_sum_computer.jac"
+   test_upstream_path = "src/vs/editor/test/common/model/prefixSumComputer.test.ts"
+   test_jac_path = "src/editor/model/prefix_sum_computer.test.jac"
+   status = "queued"       # queued | in-progress | landed | blocked
+   risk_tier = "low"       # low | foundational — see Automation below
+   verification = "tests"  # tests | tests+differential — see Verification below
+   ```
+
+   Recording `upstream_commit` is what makes drift detection possible later: if upstream changes a
+   file we've already ported, a manifest check can tell us, rather than the port silently going
+   stale.
+
+2. **Eligibility guard** — checks a candidate module against the Tier-1 criteria (`What it's for`
+   above) mechanically before anyone attempts it: no DOM/Electron/browser imports, under a size
+   threshold, has a co-located upstream test file. Fails fast, refuses out-of-scope modules rather
+   than wasting an attempt on something that was always "build fresh" territory.
+
+3. **Structural extraction** — parses the TS module and its test file to pull out exported
+   symbols, type signatures, doc comments, and real dependency imports, as *structured* context
+   rather than raw text the model has to re-derive that structure from every time. This is where
+   most of the token-efficiency and accuracy gain comes from: mechanical extraction removes an
+   entire category of context-parsing error before translation even starts, and frees the model's
+   reasoning budget for the actual judgment calls.
+
+4. **Translation + iteration loop** — the model, working from the idiom ruleset in `Workflow`
+   above and the structured context from step 3: translate, `jac check`, fix, repeat.
+
+5. **Verification gate + outcome recorder** — `jac check` then `jac test` against the ported
+   suite; on pass, land the module and flip its manifest status; on failure, auto-scaffold a
+   tracker log entry (category `translator-blocker`) pre-filled with the TS reference, the Jac
+   attempt, and the actual error, so logging it costs nothing extra in the moment it's hit.
+
+### Automation: hybrid by risk tier
+
+Not uniformly supervised, not uniformly autonomous. Each manifest entry carries a `risk_tier`:
+
+- **`low`** (`prefixSumComputer`, `intervalTree` — small, pure, narrowly scoped): can run through
+  the translate→verify loop as an unattended batch, landing passes and logging blockers for
+  failures, checked in on periodically rather than watched step by step.
+- **`foundational`** (`pieceTreeTextBuffer/` — everything else in the editor core depends on this
+  one getting it right): always a supervised, single-module session with deliberate human review
+  before landing, regardless of how cleanly it passes verification. The cost of a subtle bug here
+  is silent text corruption, not a failed test — worth the slower pace.
+
+### Verification: differential testing for the piece tree specifically
+
+The default bar is "ported unit tests pass" (`Workflow`, step 4) — sufficient for most targets.
+The piece-tree buffer gets one thing more, because it's the one module where a bug wouldn't just
+fail a test, it would silently corrupt user-visible text: run the original TS module and the Jac
+port side by side on the same randomized sequences of edits (insert/delete at random offsets,
+including edge cases like empty-buffer and boundary offsets) and diff the resulting buffer state
+after each step. This is a `verification = "tests+differential"` entry in the manifest, not a
+different workflow — same land/block outcome, one extra gate specific to this module's stakes.
+
+### Where this lives
+
+A permanent, versioned `translator/` directory in the jac-studio repo (on `main`, alongside the
+code it's porting into — not the `tracking` branch, which is for the challenge log itself, not the
+tooling that feeds it). The manifest's drift-detection value compounds over the life of the whole
+project only if it's actually preserved, not thrown away per session.
+
+### Language: Jac-first, one spike to verify how far that goes
+
+The manifest, eligibility guard, and verification-harness invocation (`jac check`/`jac test`,
+subprocess calls, file I/O) are plain scripts with no dependency that Jac lacks — written in Jac,
+no exceptions, run via the Jac CLI. This is deliberately different from the challenge tracker's
+choice to avoid Jac: the tracker has to be an unbreakable observability backstop (if it broke
+because of a Jac bug, there'd be no way to even report that bug), while the translator's
+orchestration has no such requirement — if it breaks, a tracker entry can still be written by
+hand. Dogfooding it directly serves the project's own mission: a blocker hit while building the
+orchestrator *is* signal, the same as a blocker hit translating a module.
+
+Extraction (step 3) needs the TypeScript compiler API, which is an npm package — Jac has real npm
+interop, so the first attempt is `import from "typescript" { createSourceFile, ... }` directly
+from Jac, not a separate Node script. **This is genuinely unverified and is the first task before
+building anything else**: npm interop is documented mainly in the context of `jac-cl` browser
+components bundled via Vite (`jac-cl-js-interop.md`, `jac-npm-packages.md`); whether it works the
+same way in a plain CLI/native Jac script with no browser involved has not been checked. Spike
+this first. If it works, the translator ends up close to fully Jac. If it doesn't, extraction
+alone falls back to a small Node subprocess shim invoked *from* the Jac orchestrator — and that
+boundary gets logged as a real finding (category `doc-gap` or `missing-feature`, subsystem
+`tooling`), not quietly worked around.
+
+The manifest itself stays a plain TOML file on disk, not Jac's graph persistence, despite
+everything else being Jac — deliberately: its value partly *is* being diffable and reviewable in
+git/PR history, which a server-side graph wouldn't give us the same way. The file format is plain;
+every piece of code that reads or writes it is Jac.
+
 ## Who does the translation
 
 The model (Claude, via this same working relationship) does the mechanical translation pass and

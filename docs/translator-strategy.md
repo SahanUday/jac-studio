@@ -148,16 +148,22 @@ orchestration has no such requirement — if it breaks, a tracker entry can stil
 hand. Dogfooding it directly serves the project's own mission: a blocker hit while building the
 orchestrator *is* signal, the same as a blocker hit translating a module.
 
-Extraction (step 3) needs the TypeScript compiler API, which is an npm package — Jac has real npm
-interop, so the first attempt is `import from "typescript" { createSourceFile, ... }` directly
-from Jac, not a separate Node script. **This is genuinely unverified and is the first task before
-building anything else**: npm interop is documented mainly in the context of `jac-cl` browser
-components bundled via Vite (`jac-cl-js-interop.md`, `jac-npm-packages.md`); whether it works the
-same way in a plain CLI/native Jac script with no browser involved has not been checked. Spike
-this first. If it works, the translator ends up close to fully Jac. If it doesn't, extraction
-alone falls back to a small Node subprocess shim invoked *from* the Jac orchestrator — and that
-boundary gets logged as a real finding (category `doc-gap` or `missing-feature`, subsystem
-`tooling`), not quietly worked around.
+Extraction (step 3) needs the TypeScript compiler API, which is an npm package. **Settled by a
+Phase 0 spike (2026-08-22, `2026-08-22-npm-interop-server-only-blocked.md`): this cannot be done
+in Jac.** String-path npm imports are categorically client-only — `jac-codespaces.md`'s evidence
+rules seed them client, and in a project kind with no client codespace the whole dependent module
+(including the entry point) silently gets pulled client with nothing to execute it. Forcing it
+server via `[placement.pins]` doesn't work either: it fails hard with
+`error[E5001]: String literal imports are only supported in client (cl) imports, not Python
+imports.` This is a deliberate compiler restriction, not a gap to report upstream.
+
+So extraction is a **small Node subprocess shim, invoked from the Jac orchestrator** — confirmed
+necessary, not a hedge. Concretely: a short Node script wrapping `typescript`'s
+`createSourceFile`/`forEachChild` to emit the structured extraction (exported symbols, signatures,
+doc comments, imports) as JSON on stdout; the Jac orchestration code (manifest, eligibility guard,
+verification harness) calls it via Python's `subprocess` interop and parses the JSON result. Every
+other component stays Jac as planned — this is the one confirmed exception, not evidence the
+Jac-first approach was wrong elsewhere.
 
 The manifest itself stays a plain TOML file on disk, not Jac's graph persistence, despite
 everything else being Jac — deliberately: its value partly *is* being diffable and reviewable in

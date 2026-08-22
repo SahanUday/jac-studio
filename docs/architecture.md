@@ -8,7 +8,9 @@ in stone. Grounded in [`research/vscode-architecture.md`](research/vscode-archit
 [`research/jac-examples-patterns.md`](research/jac-examples-patterns.md), and
 [`vscode-feature-gap-analysis.md`](vscode-feature-gap-analysis.md) (a second, targeted pass
 identifying upstream capabilities this document had not yet scoped — several of its findings are
-folded in below).
+folded in below), and [`vscode-complete-triage.md`](vscode-complete-triage.md) (every one of
+upstream's 99 workbench feature areas, triaged to a disposition — the definitive answer to "is
+anything upstream unaccounted for").
 
 ## Principles
 
@@ -66,7 +68,11 @@ in the challenge tracker, win or lose.
 Files, folders, open editor groups, tabs, and cursor/selection state are **nodes and edges**, not
 in-memory arrays owned by a "workbench model" object:
 
-- `Workspace` (root-attached) `--Contains-->` `Folder` `--Contains-->` `File`
+- `Workspace` (root-attached) `--Contains-->` `Folder` `--Contains-->` `File` — this already
+  supports multiple top-level `Folder` nodes under one `Workspace` with no changes, i.e.
+  multi-root workspaces (VS Code's `.code-workspace` equivalent) fall out of the data model for
+  free; add UI for managing multiple roots whenever it's convenient, not as its own subsystem
+  (see [`vscode-complete-triage.md`](vscode-complete-triage.md)'s `workspace`/`workspaces` row)
 - `EditorGroup` `--Shows-->` `Tab` `--Displays-->` `File`, with `Tab` carrying `has cursor: ...`,
   `has scrollPosition: ...` etc. as plain fields
 - `Extension` nodes attached to a per-user `root`, `--Contributes-->` `Command`/`View`/`Menu`
@@ -252,6 +258,11 @@ since it's the same category of problem:
   library reachable via Jac's interop, or does this need building from the wire protocol up?
   Worth researching once, since both DAP and LSP are JSON-RPC-shaped protocols with a similar
   "spawn a subprocess, speak a wire format" integration story.
+- This cluster isn't just "show the results" — a rename provider is useless without something to
+  actually *apply* a multi-file edit, and a call-hierarchy/outline panel is just workbench UI over
+  the same provider data as the completion popup and hover card. Bulk-edit application and the
+  outline/call-hierarchy/breadcrumbs views belong in this same effort, not as separate features
+  discovered later (see [`vscode-complete-triage.md`](vscode-complete-triage.md)).
 
 See [`vscode-feature-gap-analysis.md`](vscode-feature-gap-analysis.md) for the full inventory this
 was drawn from, including several Tier 2/3 items (source control, tasks/problem-matchers, the
@@ -268,6 +279,11 @@ into every section of this document.
   compatibility with (enabling existing extensions to port over) vs. a from-scratch API idiomatic
   to Jac's walker/node model? Not decided — affects Phase B scope significantly and deserves its
   own design doc once Phase A ships.
+- Color/icon theming: adopt a VS-Code-compatible installable-theme-extension model (ecosystem-
+  compatible, more work), or lean entirely on Jac's own native `jac retheme` system (simpler,
+  native, incompatible with existing VS Code themes)? Not decided — see
+  [`vscode-complete-triage.md`](vscode-complete-triage.md)'s `themes` row. Decide once Phase 4/5
+  extensions exist to actually contribute a theme.
 - Debug Adapter Protocol client: is a Jac/Python DAP client library reachable via Python interop
   (there's a real ecosystem of DAP libraries in Python), or does this need building from the wire
   protocol up? Not researched yet — first task if Phase 4/5 picks up debugging support.

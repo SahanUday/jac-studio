@@ -109,10 +109,18 @@ Goal: prove the contribution-registry design end to end without solving sandboxi
   usable via interop — the same open question as the DAP client in Phase 5, worth answering once
   for both. Build the editor-side consumption UI (completion popup, hover card) as a Phase
   4-or-later increment once that research lands; don't block this phase's exit on it.
+- **An Output panel with a log-channel abstraction** — moved earlier than its upstream scale would
+  suggest, because it's needed to debug the extensions being written *in this phase*, not just as
+  a later user-facing feature (per [`vscode-complete-triage.md`](vscode-complete-triage.md)'s
+  `output`/`logs` row).
+- **A merge-conflict UI** alongside the SCM work above — real conflicts only exist once real git
+  integration does, so this is the natural phase for it, distinct from the two-way diff editor
+  already shipped in Phase 3.
 
 Exit criteria: a fourth built-in feature can be added purely by writing a new contributing module,
 with zero changes to existing workbench code — the actual test of whether the contribution model
-is real; SCM shows real git status/diffs; a build task's errors show up in a Problems panel.
+is real; SCM shows real git status/diffs and can resolve a merge conflict; a build task's errors
+show up in a Problems panel; extension output is visible in a log channel.
 
 ## Phase 5 — Extension system, Phase B (dynamic, still trusted)
 
@@ -126,6 +134,14 @@ Goal: extensions become separate packages with a manifest, loaded at runtime.
   from-scratch scoped design effort, not something that falls out of the general contribution
   model. First step: check whether a Python DAP client library is usable via Python interop
   before building one from the wire protocol up.
+- **Extensions view** (browse/install/enable/disable/uninstall) — now that extensions load
+  dynamically, they need a management UI; not previously called out as distinct from the trust
+  model itself (per [`vscode-complete-triage.md`](vscode-complete-triage.md)'s `extensions` row).
+- **An auth-provider broker + secret storage** — an extension needing to authenticate against an
+  external service (git hosting, a language server needing a license token, anything) needs
+  somewhere to request/share OAuth tokens and store credentials safely rather than each extension
+  reinventing it in plaintext settings. Small (upstream's `encryption` contrib is 48 lines, a thin
+  OS-keychain wrapper) but a real dependency once any auth-requiring extension is written.
 
 Exit criteria: an extension can be installed/removed without a rebuild of the app itself, and a
 language extension can register a debug adapter that gets real breakpoint/step/inspect support.

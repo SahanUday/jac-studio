@@ -68,10 +68,38 @@ O(log n) piece-table in any language, and reinventing that algorithm from scratc
 "Jactastic" would just be re-deriving the same wheel, slower and with more bugs. Even there, the
 translator targets idiomatic Jac (`obj`, not a transliterated `class`; Jac collection operations;
 no DI wiring the algorithm never needed) rather than syntax-for-syntax transliteration — so it's
-an application of the same principle at the algorithm level, not an exception to it. The dividing
-question for any future component: **is this shaped by TS/Electron's constraints, or by the
-problem's own math?** The former gets rewritten in Jac's shape; the latter gets translated, then
-verified for behavioral parity against upstream's own tests.
+an application of the same principle at the algorithm level, not an exception to it.
+
+### The actual decision procedure, applied per-feature at the start of its phase
+
+Not a one-time upfront judgment call for all 158 triaged feature areas — applied lazily, to
+whatever's in scope right as its phase begins (consistent with the MVP-first principle: design
+when the work starts, not years ahead). Two questions, in order:
+
+1. **Why is this complicated in VS Code — a TypeScript/Electron limitation, or the problem
+   itself?** If VS Code had to build a workaround because the language/runtime forced it (no
+   persistent graph → a hand-built DI container; no inferred cross-process calls → a hand-written
+   RPC protocol; no capability system → an always-on-access terminal; no native LLM syntax → a
+   442K-line bolted-on chat subsystem) → **redesign**, using whatever Jac primitive already
+   answers the underlying need. If the difficulty is inherent to the problem in any language (text
+   storage that supports fast edits, a diffing algorithm, offset/line math) → go to question 2.
+2. **(Only for "inherent to the problem") Is it small, self-contained, and does upstream have
+   tests to verify against?** Yes → **translate** it (the translator's own target-selection
+   criteria in `translator-strategy.md`) — genuinely close to free once the workflow exists, since
+   the algorithm doesn't need reinventing, only re-expressing idiomatically. No (large, tangled
+   with DOM/Electron, untested) → don't mechanically translate it; read it for understanding, then
+   **build fresh** — translating a mess just produces a Jac-flavored mess.
+
+That third outcome, **build fresh**, is worth naming as its own bucket, distinct from both: neither
+question resolves it "for free." The editor's rendering/interaction layer (cursor rendering,
+selection, keyboard/IME handling — see Editor Core below) is the clearest example: not TS-shaped
+(question 1 doesn't apply cleanly), not a clean translatable unit either (question 2 fails — it's
+DOM-coupled, not a pure algorithm) and no existing Jac primitive already does it. So it's simply
+new design work, informed by reading Monaco's approach rather than copying or translating it.
+
+Summary: **redesign** when Jac already has (or trivially could build) a better answer to the same
+underlying need; **translate** when it's pure, solved, testable math worth reusing as-is;
+**build fresh** when neither applies.
 
 ## Layer mapping
 

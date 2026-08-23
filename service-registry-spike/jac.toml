@@ -1,0 +1,10 @@
+[project]
+name = "jac-studio-service-registry-spike"
+version = "0.1.0"
+description = "Phase 0 spike: validate root-graph-as-service-registry (ConfigService + CommandRegistry + FileTreeService) before the workbench shell is built on top of it"
+entry-point = "main.jac"
+kind = "cli"
+jac-version = "==0.36.1"
+
+[test]
+directory = "tests"

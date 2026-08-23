@@ -121,14 +121,37 @@ registry, the command registry) is modeled as a `node`, created once and attache
 `root.shared` for deployment-wide singletons), and reached by any walker or `def:pub` via a graph
 query — `[root--][?:ConfigService][0]` — rather than injected through a constructor chain.
 
-This is a genuine architectural bet, not a settled fact — it needs to be validated with a real
-multi-service slice (e.g., a `ConfigService` + `CommandRegistry` + `FileTreeService` interacting)
-early in Phase 0, before the workbench shell is built on top of it. If it doesn't hold up under
-real use (e.g., query-based lookup turns out too slow or too indirect for hot paths like
-keystroke handling), the fallback is plain module-level `glob` singletons for stateless/compute
-services, reserving the graph pattern for things that are genuinely persistent (workspace state,
-settings, extension registrations). Track the outcome of this validation as the first real entry
-in the challenge tracker, win or lose.
+**Validated in Phase 0** (`service-registry-spike/`, tracker entries
+`2026-08-23-service-registry-query-cost.md` and `2026-08-23-service-cache-test-isolation.md`) —
+with two caveats that change how the pattern must be implemented, not whether to use it. A real
+three-service slice (`ConfigService` + `CommandRegistry` + `FileTreeService`, interacting through
+the graph exactly as proposed) confirmed get-or-create idempotency and cross-service interaction
+hold up. But a fresh `[root-->[?:Type]]` query measured **~600us/call** under `jac run` — real, not
+hypothetical, and too slow to call on every access on a hot path like keystroke handling (a single
+lookup alone eats ~4% of a 16ms/60fps frame budget; a real command dispatch chains several).
+
+The fix, now a project-wide rule, not optional: **every service accessor resolves its node once
+per `root` and caches the reference in a module-level `glob` keyed by `jid(root)`** —
+`glob _cache: dict[str, ServiceType] = {}`, never a single bare `X | None = None`, and never a
+bare `[root-->[?:Type]]` at the call site. The keying is load-bearing, not stylistic: `root` is
+bound to whoever is calling, not a process-wide constant (a served app resolves a different `root`
+per authenticated user). A single non-keyed cached value was tried first, shipped as "resolved,"
+and then verifiably leaked one user's node into another user's request in a long-lived server
+process — reproduced with two logged-in users via `JacTestClient` before being caught. Keying by
+`jid(root)` fixes it: repeat reads within one user's session/request still hit the fast cached
+path (~0.06us/call, indistinguishable from a plain attribute read), and different users never see
+each other's cached instance. Unbounded growth of that dict (one entry per distinct root ever
+seen) is a known, unaddressed gap — fine for now, worth an eviction strategy before any long-lived
+production deployment.
+
+Separately: this keyed cache does **not** by itself fix test isolation. `jac test` reuses a worker
+process across multiple tests, and `jid(root)` turns out to be the *same* identity across
+different tests in one worker even though each test's graph *content* is otherwise isolated —
+verified directly, keying by root alone still leaked a value from one test into the next. Every
+service module must additionally export a `_reset_<x>_cache_for_tests()` hook (clearing the whole
+keyed dict), and every test exercising the accessor must call it. Two different problems, two
+different fixes; neither substitutes for the other. See `service-registry-spike/README.md` for the
+full writeup and measured numbers.
 
 ## Data model: the workspace is the graph
 
@@ -339,7 +362,9 @@ into every section of this document.
 
 ## Open questions this document deliberately does not resolve
 
-- Root-graph-as-service-registry: validated or replaced with `glob` singletons? (Phase 0 spike)
+- ~~Root-graph-as-service-registry: validated or replaced with `glob` singletons?~~ **Resolved in
+  Phase 0**: validated, with a mandatory caching + test-reset discipline — see the Service
+  registry section above.
 - Monaco-embed bridge for the editor core: needed as a stopgap, or is the native port fast enough
   to skip it? (Decide after the Phase 1 translator spike on the piece tree)
 - Extension API surface shape: how much of VS Code's actual `vscode` API do we aim for

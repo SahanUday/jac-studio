@@ -29,11 +29,11 @@ branch: a markdown+frontmatter log format, a dependency-free static dashboard, a
 script (deliberately not Jac — see `challenge-tracking.md`), deployed via GitHub Actions.
 11 entries logged so far (see "Findings logged" below).
 
-**The translator tool** (`translator/`, merged via PR #4) — the full five-component design from
+**The translator tool** (`internal/translator/`, merged via PR #4) — the full five-component design from
 `translator-strategy.md` implemented and validated against real targets, not synthetic ones:
 manifest/ledger, eligibility guard, structural extraction (Node/TypeScript-compiler-API shim,
 since a spike confirmed Jac's npm interop can't reach it), verification gate, outcome recorder.
-27 passing unit tests. Also `translator/land-blocker.sh` — a one-shot script to land a
+27 passing unit tests. Also `internal/translator/land-blocker.sh` — a one-shot script to land a
 scaffolded blocker onto `tracking` (deliberately plain bash, not Jac, since it touches the
 observability backstop itself — same reasoning as the tracker's own build script).
 
@@ -49,7 +49,7 @@ ask if you need it re-shared).
 - **Jac-first tooling, one confirmed exception**: the translator's own orchestration is plain
   Jac throughout; only structural extraction needs a small Node subprocess, confirmed necessary
   (not just assumed) by a real spike — see the `npm-interop-server-only-blocked` finding below.
-- **Root-graph-as-service-registry**: validated by a real spike (`service-registry-spike/`) — see
+- **Root-graph-as-service-registry**: validated by a real spike (`internal/service-registry-spike/`) — see
   the "Update" section below for the two mandatory implementation rules that came with it.
 - **Hybrid automation by risk tier**: small/pure modules can run the translate→verify loop with
   lighter supervision; the piece-tree buffer (foundational — everything else depends on it)
@@ -89,7 +89,7 @@ strategic/architectural notes surfaced during planning.
 
 ## Update — 2026-08-23: service-registry spike run and closed
 
-The **service-registry spike** (`service-registry-spike/`) is done: a real `ConfigService` +
+The **service-registry spike** (`internal/service-registry-spike/`) is done: a real `ConfigService` +
 `CommandRegistry` + `FileTreeService` slice, interacting through the graph exactly as
 `architecture.md` proposed. **Result: validated, with two mandatory implementation rules,** the
 second of which was only caught after an initial fix shipped incomplete:
@@ -110,7 +110,7 @@ and logged as tracker entries `2026-08-23-service-registry-query-cost` and
 `2026-08-23-service-cache-test-isolation` (plus a still-open, lower-priority question about
 whether jaseci could expose a runtime-level snapshot-read primitive instead:
 `2026-08-23-service-registry-snapshot-read-primitive`). Full writeup, including the multi-user
-regression test that caught rule 1's initial gap: `service-registry-spike/README.md`.
+regression test that caught rule 1's initial gap: `internal/service-registry-spike/README.md`.
 
 ## Update — 2026-08-23: minimal scaffold created, prefix-sum-computer translated and landed
 
@@ -126,7 +126,7 @@ Two more things happened, on a separate branch started before the update above m
    whole extract→translate→verify loop, not just the tooling around it. Both `PrefixSumComputer`
    (lazy, O(log n) `get_index_of`) and `ConstantTimePrefixSumComputer` (eager, O(1) amortized) are
    ported to `src/editor/model/prefix_sum_computer.jac`, with all 48 of upstream's ported tests
-   passing (`src/editor/model/prefix_sum_computer.test.jac`). `translator/manifest.toml`'s entry
+   passing (`src/editor/model/prefix_sum_computer.test.jac`). `internal/translator/manifest.toml`'s entry
    is `status = "landed"`, verified via the tool's own `verify` command, not just manually.
 
 Two real findings surfaced during the port, both logged:

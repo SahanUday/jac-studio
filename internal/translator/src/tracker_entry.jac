@@ -1,11 +1,11 @@
 """Outcome recorder: scaffolds a challenge-tracker log entry on translation failure, so logging
 a blocker in the same sitting it's hit costs nothing extra.
 
-Writes into a local staging directory (translator/blocked/, gitignored) rather than directly
+Writes into a local staging directory (internal/translator/blocked/, gitignored) rather than directly
 onto the `tracking` branch's log/ -- that branch isn't checked out while this tool runs on
 `main`, git branches don't let you write across each other's working trees. Landing a scaffolded
 entry is a manual step: `git checkout tracking`, move the file into `log/`, fill in the TODO,
-rebuild the site (`python3 site/build.py`), commit, push. See translator/README.md.
+rebuild the site (`python3 site/build.py`), commit, push. See internal/translator/README.md.
 """
 
 import os;

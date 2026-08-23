@@ -8,7 +8,7 @@ decision procedure, and why this tool is Jac-first with one confirmed exception 
 ## What's here
 
 ```
-translator/
+internal/translator/
   main.jac           CLI entry point (add / status / extract / verify / block)
   jac.toml
   manifest.toml       the ledger -- git-tracked, portable (paths relative to --vscode-root)
@@ -91,7 +91,7 @@ one working tree.
 automate. Then land it in one shot:
 
 ```bash
-translator/land-blocker.sh translator/blocked/<file>.md
+internal/translator/land-blocker.sh internal/translator/blocked/<file>.md
 ```
 
 It checks out `tracking`, pulls, copies the file into `log/`, rebuilds the site, commits, pushes,

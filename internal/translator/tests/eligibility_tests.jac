@@ -1,6 +1,6 @@
 """Tests for src/eligibility.jac -- the guard's mechanical checks, on synthetic fixtures so
 they're reproducible without the vscode checkout present. (The guard has also been validated by
-hand against the real targets -- see manifest.toml and translator/README.md.)
+hand against the real targets -- see manifest.toml and internal/translator/README.md.)
 """
 
 import os;

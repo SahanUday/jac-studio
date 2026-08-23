@@ -1,5 +1,5 @@
 """Direct server-side tests for `document_service.jac`, following the same pattern
-`service-registry-spike`'s `config_service_tests.jac` established for Phase 0's spike: idempotent
+`internal/service-registry-spike`'s `config_service_tests.jac` established for Phase 0's spike: idempotent
 lookup, and the RPC surface the client actually calls."""
 
 test "get_document_buffer is idempotent -- repeated lookup returns the same cached instance" {

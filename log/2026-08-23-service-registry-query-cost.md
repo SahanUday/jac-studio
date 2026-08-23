@@ -42,3 +42,12 @@ implementation rule for every service module built on this pattern from Phase 1 
 `get_<x>_service()` accessor that resolves once and caches — never a bare `[root-->[?:Type]]` at
 the call site. Nothing further to do for this specific finding — closing as resolved. Full
 measured numbers and the tests that pin them: `service-registry-spike/README.md`.
+
+**Root-cause note (added after landing, no change to the fix above)**: a follow-up dig into
+`jaseci`'s own source (`jaclang/runtimelib/store.jac`'s `PgStore`, `jaclang/jac0core/osp_graph_sv.jac`)
+found the in-memory traversal logic itself is cheap (plain dict/list lookups); the cost tracks with
+a consistency/freshness mechanism around it (`Session.read_barrier`, `TxnIsolation`), and persisted
+even inside a single already-open served request (tested via `JacTestClient`) — so this is not a
+"missing session reuse" bug, more likely a deliberate correctness-over-speed tradeoff in the
+Postgres-backed graph. See `2026-08-23-service-registry-snapshot-read-primitive` for the open
+question this raises for jaseci.

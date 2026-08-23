@@ -51,3 +51,21 @@ Resolved, not a workaround -- this is the permanent architectural decision, not 
 reflect it. Future phases build on the native client component; the Monaco-embed bridge described
 in `architecture.md`'s "Editor core" section remains documented as the path not taken, in case a
 future phase's performance data reopens the question -- but it is not the active plan.
+
+**Addendum -- 2026-08-23, reaffirmed after direct scrutiny.** Worth being precise about what this
+decision's evidence actually covers, since it was initially framed more confidently than it should
+have been. The prototype validates the *algorithmic* layer (the piece tree, and that Jac's
+client/server round trip is viable for it) and a bare insert/delete/arrow-key loop -- it does
+**not** validate the much larger "build fresh" rendering/interaction layer
+`docs/architecture.md`'s own Editor Core section already calls "the hardest, most novel piece":
+IME composition, multi-cursor, selection, bidi/RTL text, virtualized rendering for large files,
+accessibility, folding, the minimap. None of that has been built or tested yet. Monaco -- which
+*is* upstream VS Code's own editor component, not a third-party alternative to it -- ships all of
+that already, maintained by Microsoft.
+
+Reaffirmed as native anyway, explicitly eyes-open about that remaining scope: per
+`architecture.md` principle 2, that scope is exactly where jac-lang gets genuinely stress-tested,
+which is a stated goal of this project, not incidental to it -- and it's the piece that keeps the
+ported piece-tree buffer load-bearing rather than stranded. Recorded here so a future session
+doesn't read "decided: continue native" as "the hard part is proven out" -- it is not; only the
+foundation under it is.

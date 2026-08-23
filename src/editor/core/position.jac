@@ -17,7 +17,7 @@ empirically: `error[E0076]: Duplicate method 'equals' in class body`) -- but ups
 (`pos.equals(other)`) and once as a two-argument static (`Position.equals(a, b)`), with the
 instance form simply forwarding to the static one. Those three pairs are split here: the instance
 method keeps the exact upstream name, and the two-argument comparison logic moves to a
-module-level function (`position_equals`/`position_is_before`/`position_is_before_or_equal`,
+module-level function (`_position_equals`/`_position_is_before`/`_position_is_before_or_equal`,
 mirroring the free-function idiom already used in `interval_tree.jac`) that the instance method
 calls. `compare`, `lift`, and `is_i_position` have no instance-side twin upstream, so they stay
 as ordinary `static def` methods on `Position` with no renaming needed.
@@ -30,14 +30,14 @@ are evaluated at def time, not call time) -- ported as `int | None = None` senti
 inside the body instead.
 """
 
-def position_equals(a: Position | None, b: Position | None) -> bool {
+def _position_equals(a: Position | None, b: Position | None) -> bool {
     if a is None and b is None {
         return True;
     }
     return a is not None and b is not None and a.line_number == b.line_number and a.column == b.column;
 }
 
-def position_is_before(a: Position, b: Position) -> bool {
+def _position_is_before(a: Position, b: Position) -> bool {
     if a.line_number < b.line_number {
         return True;
     }
@@ -47,7 +47,7 @@ def position_is_before(a: Position, b: Position) -> bool {
     return a.column < b.column;
 }
 
-def position_is_before_or_equal(a: Position, b: Position) -> bool {
+def _position_is_before_or_equal(a: Position, b: Position) -> bool {
     if a.line_number < b.line_number {
         return True;
     }
@@ -79,17 +79,17 @@ obj Position {
 
     """Test if this position equals other position."""
     def equals(other: Position | None) -> bool {
-        return position_equals(self, other);
+        return _position_equals(self, other);
     }
 
     """Test if this position is before other position. Equal positions -> False."""
     def is_before(other: Position) -> bool {
-        return position_is_before(self, other);
+        return _position_is_before(self, other);
     }
 
     """Test if this position is before other position. Equal positions -> True."""
     def is_before_or_equal(other: Position) -> bool {
-        return position_is_before_or_equal(self, other);
+        return _position_is_before_or_equal(self, other);
     }
 
     """A function that compares positions, useful for sorting."""

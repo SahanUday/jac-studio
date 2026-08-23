@@ -55,9 +55,9 @@ test "equals matches upstream semantics, including both-None" {
     assert not a.equals(d);
     assert not a.equals(None);
 
-    assert position_equals(None, None);
-    assert not position_equals(a, None);
-    assert not position_equals(None, a);
+    assert _position_equals(None, None);
+    assert not _position_equals(a, None);
+    assert not _position_equals(None, a);
 }
 
 test "is_before is strict (equal positions are not before)" {

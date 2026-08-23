@@ -21,6 +21,10 @@ server's response; cursor movement (arrow keys) is pure client-side state, needi
 since the client already holds the current line lengths locally. Deliberately not virtualized or
 diffed -- the roadmap explicitly scopes performance characteristics out of this phase, and
 per-keystroke latency/feel is itself one of the signals the native-vs-Monaco decision point needs.
+
+Handler bodies live in the paired `text_editor.impl.jac` annex (the standard client-component
+"handler annex" pattern -- see `jac-impl-files`), keeping this file a readable state-plus-render
+surface.
 """
 
 import from src.editor.document_service { get_document_lines, apply_document_edit }
@@ -55,142 +59,23 @@ def:pub app -> JsxElement {
     has busy: bool = False;
     has queued_keys: list[str] = [];
 
-    async can with entry {
-        lines = await get_document_lines();
-        loaded = True;
-    }
+    async can with entry { await load(); }
 
-    def move_left {
-        if cursor_column > 1 {
-            cursor_column -= 1;
-        } elif cursor_line > 1 {
-            cursor_line -= 1;
-            cursor_column = len(lines[cursor_line - 1]) + 1;
-        }
-    }
+    async def load -> None;
 
-    def move_right {
-        current_line_text = lines[cursor_line - 1];
-        if cursor_column <= len(current_line_text) {
-            cursor_column += 1;
-        } elif cursor_line < len(lines) {
-            cursor_line += 1;
-            cursor_column = 1;
-        }
-    }
+    def move_left -> None;
+    def move_right -> None;
+    def move_up -> None;
+    def move_down -> None;
 
-    def move_up {
-        if cursor_line > 1 {
-            cursor_line -= 1;
-            cursor_column = min(cursor_column, len(lines[cursor_line - 1]) + 1);
-        }
-    }
+    async def insert_at_cursor(text: str) -> None;
+    async def delete_before_cursor -> None;
+    async def delete_after_cursor -> None;
 
-    def move_down {
-        if cursor_line < len(lines) {
-            cursor_line += 1;
-            cursor_column = min(cursor_column, len(lines[cursor_line - 1]) + 1);
-        }
-    }
-
-    async def insert_at_cursor(text: str) {
-        new_lines = await apply_document_edit(cursor_line, cursor_column, cursor_line, cursor_column, text);
-        lines = new_lines;
-        if text == "\n" {
-            cursor_line += 1;
-            cursor_column = 1;
-        } else {
-            cursor_column += len(text);
-        }
-    }
-
-    async def delete_before_cursor {
-        if cursor_column > 1 {
-            new_lines = await apply_document_edit(
-                cursor_line, cursor_column - 1, cursor_line, cursor_column, ""
-            );
-            lines = new_lines;
-            cursor_column -= 1;
-        } elif cursor_line > 1 {
-            prev_line_text = lines[cursor_line - 2];
-            prev_end_column = len(prev_line_text) + 1;
-            new_lines = await apply_document_edit(cursor_line - 1, prev_end_column, cursor_line, 1, "");
-            lines = new_lines;
-            cursor_line -= 1;
-            cursor_column = prev_end_column;
-        }
-    }
-
-    async def delete_after_cursor {
-        current_line_text = lines[cursor_line - 1];
-        if cursor_column <= len(current_line_text) {
-            new_lines = await apply_document_edit(
-                cursor_line, cursor_column, cursor_line, cursor_column + 1, ""
-            );
-            lines = new_lines;
-        } elif cursor_line < len(lines) {
-            new_lines = await apply_document_edit(cursor_line, cursor_column, cursor_line + 1, 1, "");
-            lines = new_lines;
-        }
-    }
-
-    def is_handled_key(key: str) -> bool {
-        return len(key) == 1 or key in [
-            "Enter", "Backspace", "Delete", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"
-        ];
-    }
-
-    async def apply_key(key: str) {
-        if len(key) == 1 {
-            await insert_at_cursor(key);
-        } elif key == "Enter" {
-            await insert_at_cursor("\n");
-        } elif key == "Backspace" {
-            await delete_before_cursor();
-        } elif key == "Delete" {
-            await delete_after_cursor();
-        } elif key == "ArrowLeft" {
-            move_left();
-        } elif key == "ArrowRight" {
-            move_right();
-        } elif key == "ArrowUp" {
-            move_up();
-        } elif key == "ArrowDown" {
-            move_down();
-        }
-    }
-
-    async def drain_key_queue {
-        busy = True;
-        while len(queued_keys) > 0 {
-            key = queued_keys.pop(0);
-            await apply_key(key);
-        }
-        busy = False;
-    }
-
-    async def handle_key_down(e: KeyboardEvent) {
-        if e.ctrlKey or e.metaKey or e.altKey {
-            return;
-        }
-
-        key = e.key;
-        if not is_handled_key(key) {
-            return;
-        }
-        e.preventDefault();
-
-        # Each edit is an await'd server round trip, so two keydowns fired before the first
-        # response lands would otherwise race -- both computing their insert position from the
-        # same stale cursor state (2026-08-23-client-editor-no-per-keystroke-request-queuing).
-        # Queuing here, rather than dropping or debouncing, keeps every keystroke and processes
-        # them strictly in order: nothing between `queued_keys.append` and `drain_key_queue`
-        # setting `busy = True` yields control, so at most one drain loop ever runs at a time.
-        queued_keys.append(key);
-        if not busy {
-            await drain_key_queue();
-        }
-    }
+    def is_handled_key(key: str) -> bool;
+    async def apply_key(key: str) -> None;
+    async def drain_key_queue -> None;
+    async def handle_key_down(e: KeyboardEvent) -> None;
 
     <div>
         <h1 style={{"fontFamily": "system-ui, sans-serif", "fontSize": "18px"}}>

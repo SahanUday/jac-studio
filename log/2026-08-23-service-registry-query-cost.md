@@ -37,23 +37,8 @@ three services in the spike now do this. This is the same "construct once" disci
 constructor-injected DI gets for free by only running its constructor once; Jac's version needs it
 written explicitly since the graph query isn't free to repeat.
 
-**A second, unplanned finding surfaced while fixing the first**: that cache is a plain Python
-module global. `jac test` isolates the persisted graph root per test (verified empirically — one
-test's `config_set` never leaks into another's `config_get`), but a worker process handles
-multiple tests sequentially, and the module-level cache is NOT reset between them — so a cached
-node reference from an earlier test silently leaked into a later one, returning stale
-(wrong-but-plausible, not a crash) data. Repro: `git log` the spike branch for the commit before
-the `_reset_*_for_tests` hooks were added — running the full suite (not a single file) reproduces
-one specific assertion failure in `file_tree_service_tests.jac` about 100% of the time; running
-each test file individually never reproduces it, which is what makes this the kind of bug that's
-easy to ship undetected if tests are only ever run per-file during development.
-
-**Plan**: both findings are now folded into `docs/architecture.md`'s service-registry section as
-concrete implementation rules for every service module built on this pattern from Phase 1 onward:
-(1) a `get_<x>_service()` accessor that resolves once and caches — never a bare
-`[root-->[?:Type]]` at the call site; (2) a paired `_reset_<x>_service_cache_for_tests()` hook,
-called at the top of any test that exercises the accessor. Nothing further to do for this specific
-finding — closing as resolved. Worth carrying the testing rule (2) into `jac-studio-implementation`
-or `jac-studio-architecture`'s skill guidance once Phase 1 starts writing real service modules, so
-it's not rediscovered the hard way per-module. Full measured numbers and the tests that pin them:
-`service-registry-spike/README.md`.
+**Plan**: folded into `docs/architecture.md`'s service-registry section as a concrete
+implementation rule for every service module built on this pattern from Phase 1 onward: a
+`get_<x>_service()` accessor that resolves once and caches — never a bare `[root-->[?:Type]]` at
+the call site. Nothing further to do for this specific finding — closing as resolved. Full
+measured numbers and the tests that pin them: `service-registry-spike/README.md`.

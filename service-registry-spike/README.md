@@ -86,6 +86,24 @@ these three** — worth carrying forward into `jac-studio-implementation`'s guid
 starts writing real service modules: (1) key any service cache by `jid(root)`, never a bare value;
 (2) give it a test-reset hook, and call it from any test that touches the accessor.
 
+## Correction: the "every service is a node" framing above is too broad
+
+The verdict above reads as "every service module built on this pattern ... should follow this
+exact shape" — meaning every service is a `node`. That's wrong as a blanket rule. Being a `node`
+at all is a separate choice from the caching discipline, and should only be made when a service
+genuinely needs to (1) survive a process restart, (2) be reached by graph traversal from another
+node, or (3) participate in the graph's permission model. `ConfigService` and `CommandRegistry` as
+built in this spike don't clearly need any of the three — they were made nodes here because that's
+what the spike set out to validate, not because the pattern requires it.
+
+For a service that doesn't need any of the three, use a plain `obj`, cached the same
+`dict[jid(root), T]`-keyed way but never attached to the graph — this skips the ~600us/call query
+cost entirely, not just amortizes it. `src/editor/document_service.jac`'s `DocumentBuffer` (built
+in Phase 1) is the real example: an `obj`, not a `node`. See `docs/architecture.md`'s "Not every
+service needs to be a node" for the full writeup. The caching rules above (keyed by `jid(root)`,
+reset hook for tests) still apply either way — this correction only narrows *when* to reach for a
+`node` in the first place.
+
 ## What's NOT covered by this spike
 
 - `root.shared` (deployment-wide singletons genuinely meant to be shared across all users) — none

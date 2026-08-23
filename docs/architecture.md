@@ -153,6 +153,38 @@ keyed dict), and every test exercising the accessor must call it. Two different 
 different fixes; neither substitutes for the other. See `service-registry-spike/README.md` for the
 full writeup and measured numbers.
 
+### Not every service needs to be a node
+
+The spike above (and the rules just described) validated the pattern for services that are graph
+nodes. But being a `node` at all is itself a choice, not the default every service must take —
+only make something a node if at least one of these is actually true:
+
+1. It needs to **survive a process restart** without hand-written save/load code (Jac's
+   persistence-by-reachability gives this for free to anything reachable from `root`).
+2. It needs to be **discoverable by other nodes via graph traversal/edges** (e.g. `Workspace
+   --Contains--> Folder`).
+3. It needs to **participate in the graph's permission model** (`:priv`, `grant`/`revoke`) for
+   per-user access control.
+
+If none of those apply, use a plain `obj`, created lazily and cached the same way —
+`glob _cache: dict[str, T] = {}` keyed by `jid(root)` — but never attached to the graph at all.
+This isn't a hypothetical alternative: `src/editor/document_service.jac`'s `DocumentBuffer` is
+exactly this shape (an `obj`, not a `node`, cached in a `jid(root)`-keyed dict), arrived at after
+an unrelated bug (a self-referential field structure crashing graph-persistence serialization —
+see the tracker) forced the question, but it holds up on the merits independent of that bug: a
+document buffer doesn't need to survive a restart independent of the file it mirrors on disk,
+isn't traversed to from another node, and needs no permission scoping beyond what the `jid(root)`
+key already gives it.
+
+The payoff isn't just conceptual cleanliness — it's the ~600us/call raw graph-query cost measured
+above. A cached `obj` never issues that query even once, not even the one-time per-root hit a
+cached node still pays; a plain object construction is the entire cost. For a service with a real
+persistence need (open tabs, file tree, cursor state — the Phase 3 candidates), that one-time
+per-`root` cost is negligible in practice — jac-studio runs as a long-lived, single-user, locally
+run process (`jac start`, or eventually the packaged desktop app), so the cost lands once at first
+interaction after launch, not once per call. So: default new services to `obj` + keyed cache;
+promote to `node` only when one of the three needs above is concretely present, not preemptively.
+
 ## Data model: the workspace is the graph
 
 Files, folders, open editor groups, tabs, and cursor/selection state are **nodes and edges**, not

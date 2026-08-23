@@ -1,0 +1,4 @@
+.jac/
+jac.local.toml
+extract/node_modules/
+blocked/*.md

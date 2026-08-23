@@ -77,17 +77,21 @@ jac run main.jac -- block --id prefix-sum-computer \
 
 `block` writes into `blocked/` (gitignored, local staging only) because the `tracking` branch
 isn't checked out while this tool runs on `main` — git doesn't let you write across branches in
-one working tree. Landing it is a manual step:
+one working tree.
+
+**First, fill in the `**Plan**: TODO` line by hand** — that's real judgment, not something to
+automate. Then land it in one shot:
 
 ```bash
-git checkout tracking
-cp translator/blocked/<file>.md log/
-# fill in the TODO under **Plan**
-python3 site/build.py
-git add log/<file>.md && git commit -m "..." && git push
-git checkout main   # or whatever branch you were on
-rm translator/blocked/<file>.md
+translator/land-blocker.sh translator/blocked/<file>.md
 ```
+
+It checks out `tracking`, pulls, copies the file into `log/`, rebuilds the site, commits, pushes,
+and switches back to whatever branch you started on — refusing to run if the Plan is still the
+TODO placeholder, if there are uncommitted changes on your current branch (it won't stash), or if
+a file of that name already exists on `tracking`. Deliberately plain bash, not Jac — see the
+script's own header comment for why (it touches the observability backstop itself, the same
+reasoning that kept `site/build.py` in Python).
 
 ## Automation tiers
 

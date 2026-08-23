@@ -41,3 +41,11 @@ explicitly since it wasn't obvious until it broke a test. Carry the rule forward
 once Phase 1 starts writing real ones: any `get_<x>_service()`-shaped accessor that caches must
 ship a paired test-reset hook, and any test touching it must call that hook first. Nothing further
 to do here — closing as resolved. Full details: `service-registry-spike/README.md`.
+
+**Update (same day)**: the linked entry's cache shape changed from a single value to
+`dict[jid(root), ServiceType]` after a separate, more serious correctness bug was found (see
+`2026-08-23-service-registry-query-cost`'s correction section — a non-keyed cache leaked data
+across users). This entry's finding and fix are unaffected: the reset hook now clears the whole
+dict instead of setting one value to `None`, still called the same way from tests, still needed
+for the same reason. Full suite is now 14/14 (one multi-user regression test added for the other
+entry).

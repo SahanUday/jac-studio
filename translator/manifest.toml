@@ -27,12 +27,12 @@ notes = "Full red-black tree with lazy delta offsets + maxEnd augmentation porte
 [[modules]]
 id = "piece-tree-base"
 upstream_path = "src/vs/editor/common/model/pieceTreeTextBuffer/pieceTreeBase.ts"
-upstream_commit = ""
-jac_path = ""
+upstream_commit = "a4ba39c710a50b04de75cbd55aef093e28266115"
+jac_path = "../src/editor/model/piece_tree_base.jac"
 test_upstream_path = "src/vs/editor/test/common/model/pieceTreeTextBuffer/pieceTreeTextBuffer.test.ts"
-test_jac_path = ""
-status = "queued"
+test_jac_path = "../src/editor/model/piece_tree_base.test.jac"
+status = "in-progress"
 risk_tier = "foundational"
 verification = "tests"
 phase = 1
-notes = ""
+notes = "Core module landed: rbTreeBase.ts merged into this file (see docstring -- circular-import degrades native lowering, tracker entry 2026-08-23-circular-import-degrades-native-lowering), 26 direct tests against PieceTreeBase's own API passing (not yet the full ported pieceTreeTextBuffer.test.ts, which drives everything through the PieceTreeTextBuffer/Builder wrapper -- that wrapper and full ported-test parity are still in progress). Dependencies landed alongside: position.jac, range.jac, word_character_classifier.jac, char_code.jac, strings.jac, model_types.jac. findMatchesInNode/findMatchesLineByLine (needs textModelSearch.ts's Searcher) not yet wired."

@@ -89,16 +89,26 @@ strategic/architectural notes surfaced during planning.
 
 The **service-registry spike** (`service-registry-spike/`) is done: a real `ConfigService` +
 `CommandRegistry` + `FileTreeService` slice, interacting through the graph exactly as
-`architecture.md` proposed. **Result: validated, with a mandatory implementation rule.** A fresh
-`[root-->[?:Type]]` query measured ~600us/call under `jac run` — too slow to call on every access
-on a hot path (keystroke handling); caching the resolved node reference per process (already
-applied to all three services in the spike) drops that to ~0.06us/call. A second finding: that
-cache is a plain Python-level `glob`, which survives across tests sharing one `jac test` worker
-even though the persisted graph root is isolated per test — every such service needs a
-`_reset_<x>_cache_for_tests()` hook, called at the top of any test exercising it. Both findings are
-folded into `architecture.md`'s service-registry section as concrete rules for Phase 1+ service
-code, and logged as tracker entry `2026-08-23-service-registry-query-cost`. Full writeup:
-`service-registry-spike/README.md`.
+`architecture.md` proposed. **Result: validated, with two mandatory implementation rules,** the
+second of which was only caught after an initial fix shipped incomplete:
+
+1. A fresh `[root-->[?:Type]]` query measured ~600us/call under `jac run` — too slow to call on
+   every access on a hot path (keystroke handling). Fix: cache the resolved node reference,
+   **keyed by `jid(root)`, not a single bare value** — `root` is bound to whoever is calling, not
+   a process-wide constant, and a non-keyed cache verifiably leaked one user's node into another
+   user's request once tested with two logged-in users. Keyed correctly, cached reads drop to
+   ~0.06us/call with no cross-user leakage.
+2. That keyed cache still doesn't fix cross-test leakage on its own: `jid(root)` is the *same*
+   identity across different tests sharing one `jac test` worker (unlike real distinct users),
+   so every such service also needs a `_reset_<x>_cache_for_tests()` hook, called at the top of
+   any test exercising it. Two different problems, two different fixes.
+
+Both rules are folded into `architecture.md`'s service-registry section for Phase 1+ service code,
+and logged as tracker entries `2026-08-23-service-registry-query-cost` and
+`2026-08-23-service-cache-test-isolation` (plus a still-open, lower-priority question about
+whether jaseci could expose a runtime-level snapshot-read primitive instead:
+`2026-08-23-service-registry-snapshot-read-primitive`). Full writeup, including the multi-user
+regression test that caught rule 1's initial gap: `service-registry-spike/README.md`.
 
 ## What's NOT done yet (Phase 0's remaining exit criteria)
 

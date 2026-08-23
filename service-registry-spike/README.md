@@ -20,7 +20,7 @@ will:
 - `main.jac` wires a `files.listRoot` command end to end: registry → file-tree service →
   config service, zero DI.
 
-Run the demo: `jac run main.jac`. Run the suite: `jac test` (13 tests, `jac check .` is clean
+Run the demo: `jac run main.jac`. Run the suite: `jac test` (14 tests, `jac check .` is clean
 except intentional `any`-typed fields on `ConfigService.values` and command handlers, which are
 genuinely heterogeneous).
 
@@ -43,44 +43,58 @@ A ~600us graph query is roughly 4% of a single 16ms (60fps) keystroke frame budg
 which would eat the whole frame. This is exactly the risk `architecture.md` flagged as the
 reason for this spike, now with a real number instead of a guess.
 
-**The fix is cheap and already applied to all three services here**: resolve the node once per
-process and cache the reference in a module-level `glob` (`get_config_service`,
-`get_file_tree_service`, `get_command_registry` all do this now — see the "uncached vs cached"
-tests in `tests/integration_tests.jac`, which measure both regimes explicitly so a regression in
-either direction fails loudly). After caching, field access is indistinguishable from a plain
-object attribute read. This is the same discipline constructor-injected DI gets for free by only
-constructing a service once — Jac's version just needs to do it explicitly via a cache, since the
-graph query itself isn't free to repeat.
+**The fix, corrected once**: resolve the node once per *root* and cache the reference in a
+module-level `glob` (`get_config_service`, `get_file_tree_service`, `get_command_registry` all do
+this now — see the "uncached vs cached" tests in `tests/integration_tests.jac`). The first version
+of this fix cached a single bare value (`glob X | None = None`) and shipped as "resolved" — that
+was wrong. `root` is bound to whoever is calling, not a process-wide constant (a served app
+resolves a different `root` per authenticated user, same as `is_mine`-style per-caller logic
+anywhere else in a Jac server). A single bare cached value verifiably leaks one user's node into
+another user's request in a long-lived server process — reproduced with two logged-in users via
+`JacTestClient` (`tests/multiuser_tests.jac`), fixed by keying the cache
+`dict[jid(root), ServiceType]` instead of caching one value. After caching (correctly keyed),
+field access is indistinguishable from a plain object attribute read. This is the same discipline
+constructor-injected DI gets for free by only constructing a service once *per request/user* —
+Jac's version needs it written explicitly, keyed by whose `root` it is.
 
 **Verdict for the roadmap**: keep the root-graph-as-registry pattern, but every service module built
-on it from Phase 1 onward should follow this shape: a `get_<x>_service()` accessor that resolves
-once and caches, never a bare `[root-->[?:Type]]` query inline at every call site. This should be
-written into `architecture.md`'s service-registry section as a concrete implementation rule, not
-left as a footnote (done — see the updated section).
+on it from Phase 1 onward should follow this exact shape: a `get_<x>_service()` accessor backed by
+`dict[jid(root), ServiceType]`, never a bare `[root-->[?:Type]]` query inline at every call site,
+and never a single non-keyed cached value. This is written into `architecture.md`'s
+service-registry section as a concrete implementation rule, not left as a footnote.
 
-## A second, unplanned finding: the cache breaks test isolation across a shared worker
+## A second finding: the keyed cache does NOT by itself fix test isolation
 
 `jac test` runs test blocks in parallel across isolated workers, but a worker handles **multiple
-tests sequentially**, not one test per process. The persisted graph root *is* isolated per test
-(confirmed empirically — one test's `config_set` never leaks into another's `config_get`), but a
-plain module-level `glob` cache is a Python-level binding that survives across tests sharing a
-worker, so a cached node reference from an earlier test can silently leak into a later one and
-return stale data (not a crash — a wrong-but-plausible-looking result, which is worse).
+tests sequentially**, not one test per process. The persisted graph *content* is isolated per test
+(confirmed empirically — one test's `config_set` never leaks into another's `config_get` when no
+caching is involved), but **`jid(root)` itself is the same across different tests in one worker**
+(the test harness resets graph content between tests but reuses the same root identity — unlike
+real users, who each genuinely get a distinct root node). So keying by `jid(root)` fixes the real
+multi-user leak above, but does *not*, by itself, fix cross-test leakage — verified directly: a
+cache keyed by `jid(root)` still leaked a value from one test into the next when tried without the
+reset hooks. Both fixes are needed, for different reasons; neither substitutes for the other.
 
-**The fix applied here**: every service module exports a `_reset_<x>_cache_for_tests()` function,
+**The test-isolation fix**: every service module additionally exports a
+`_reset_<x>_cache_for_tests()` function (now clearing the whole keyed dict, not a single value),
 and every test that exercises one of these accessors calls it first (see any test file in
 `tests/`). Verified by running the full suite 5x back to back both with and without `jac clean`
-between runs — 13/13 pass every time; removing the reset calls reproduces the original failure
-(a test asserting a freshly-created service's config-derived field got a stale cached instance's
-value instead).
+between runs — 14/14 pass every time; removing the reset calls reproduces the original failure.
 
-**This is a real, generalizable testing rule for every future service built on this pattern, not
-just these three** — worth carrying forward into `jac-studio-implementation`'s testing guidance
-once Phase 1 starts writing real service modules.
+**Both are real, generalizable rules for every future service built on this pattern, not just
+these three** — worth carrying forward into `jac-studio-implementation`'s guidance once Phase 1
+starts writing real service modules: (1) key any service cache by `jid(root)`, never a bare value;
+(2) give it a test-reset hook, and call it from any test that touches the accessor.
 
 ## What's NOT covered by this spike
 
-- Concurrent/multi-user access to a cached service reference (no `root.shared` slice tested here
-  — this spike is single-user, single-process, matching Phase 0's scope).
-- Cache invalidation for a service that could legitimately need to be re-created mid-process
-  (none of the three services here ever are — revisit if a future service needs that).
+- `root.shared` (deployment-wide singletons genuinely meant to be shared across all users) — none
+  of these three services are that; if a future service legitimately wants one shared instance
+  across everyone, the per-root-keyed shape here doesn't apply to it.
+- Cache eviction: `dict[jid(root), ServiceType]` grows one entry per distinct root ever seen in
+  the process's lifetime and nothing here ever removes an entry. Fine for this spike; a long-lived
+  production server with many users would want bounded eviction (e.g. an LRU) — not implemented or
+  measured here, flagged for whoever builds the first real service on this pattern.
+- Cache invalidation for a service that could legitimately need to be re-created mid-process for
+  the *same* root (none of the three services here ever are — revisit if a future service needs
+  that).

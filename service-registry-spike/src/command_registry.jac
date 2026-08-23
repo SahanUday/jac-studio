@@ -8,6 +8,12 @@ persistent"). What's genuinely persistent here is *which commands exist and thei
 UI-facing state, e.g. the command palette's listing); *how* a command id maps to code to run is a
 build-time, in-process concern, so it stays a plain module-level table, same as VS Code's own
 `CommandsRegistry` keeps its `ICommandHandler` map in memory rather than serializing it.
+
+`_handlers` is correctly a single shared table (command code is the same for every user, not
+per-user data), but `get_command_registry`'s cache is keyed by `jid(root)` -- the *registry node*
+itself lives under a specific user's `root`, so a single bare cached value would leak one user's
+registry into another's request the same way a naive ConfigService cache would (see
+config_service.jac's docstring).
 """
 
 node CommandRegistry {}
@@ -20,20 +26,21 @@ node Command {
 edge Contributes {}
 
 glob _handlers: dict[str, any] = {};
-glob _cached_command_registry: CommandRegistry | None = None;
+glob _cached_command_registries: dict[str, CommandRegistry] = {};
 
 def:pub get_command_registry -> CommandRegistry {
-    if _cached_command_registry is not None {
-        return _cached_command_registry;
+    key = jid(root);
+    if key in _cached_command_registries {
+        return _cached_command_registries[key];
     }
     existing = [root-->[?:CommandRegistry]];
     reg = existing[0] if existing else root ++> CommandRegistry();
-    _cached_command_registry = reg;
+    _cached_command_registries[key] = reg;
     return reg;
 }
 
 def:pub _reset_command_registry_cache_for_tests {
-    _cached_command_registry = None;
+    _cached_command_registries.clear();
     _handlers.clear();
 }
 

@@ -1,7 +1,7 @@
 ---
 id: 2026-08-23-service-cache-test-isolation
 date: 2026-08-23
-category: workaround-found
+category: resolved
 severity: minor
 status: resolved
 phase: 0

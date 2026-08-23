@@ -1,7 +1,7 @@
 ---
 id: 2026-08-23-service-registry-query-cost
 date: 2026-08-23
-category: workaround-found
+category: resolved
 severity: major
 status: resolved
 phase: 0

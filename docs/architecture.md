@@ -227,6 +227,11 @@ every layer above it (workbench, extensions) while the native Jac editor core ma
 This would be tracked as a deliberate, visible, time-boxed decision in the tracker — not a quiet
 substitution — consistent with principle 2 above.
 
+**Decided in Phase 1: not taken.** The from-scratch widget (step 2 above) is fast/far enough
+along with real data in hand — see the resolved open question below and
+`docs/phases/phase-1-editor-core.md`. This fallback stays documented here as the path considered
+and set aside, not deleted, in case a later phase's performance data reopens the question.
+
 ## Extension system: the biggest open risk, phased trust model
 
 VS Code's hard guarantee — extension code never runs in the workbench's own process/thread — has
@@ -365,8 +370,16 @@ into every section of this document.
 - ~~Root-graph-as-service-registry: validated or replaced with `glob` singletons?~~ **Resolved in
   Phase 0**: validated, with a mandatory caching + test-reset discipline — see the Service
   registry section above.
-- Monaco-embed bridge for the editor core: needed as a stopgap, or is the native port fast enough
-  to skip it? (Decide after the Phase 1 translator spike on the piece tree)
+- ~~Monaco-embed bridge for the editor core: needed as a stopgap, or is the native port fast
+  enough to skip it?~~ **Resolved in Phase 1**: continue native. A working prototype
+  (`src/editor/client/text_editor.jac`, PRs #10/#11) round-trips real keyboard input through the
+  ported `PieceTreeTextBuffer` correctly, with two found gaps (request ordering, fixed; rendering
+  virtualization, deferred to a later phase) both ordinary bounded engineering, not genuine
+  blocks. The deciding factor: Monaco brings its own complete text model, so adopting it would
+  largely *replace* the ported piece-tree buffer's role in live editing rather than compose with
+  it -- and that buffer is the single largest translation this project has done. See
+  `2026-08-23-editor-core-native-vs-monaco-decided-native` and
+  `docs/phases/phase-1-editor-core.md`.
 - Extension API surface shape: how much of VS Code's actual `vscode` API do we aim for
   compatibility with (enabling existing extensions to port over) vs. a from-scratch API idiomatic
   to Jac's walker/node model? Not decided — affects Phase B scope significantly and deserves its

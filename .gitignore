@@ -1,3 +1,6 @@
 # Claude Code project skills: local guidance for driving implementation sessions, not a
 # project artifact collaborators need from git.
 .claude/
+
+# Jac build/runtime artifacts (cache, venv, persisted graph data) for the root jac-studio project.
+.jac/

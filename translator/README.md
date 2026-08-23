@@ -66,6 +66,14 @@ jac run main.jac -- extract --id prefix-sum-computer --vscode-root /path/to/vsco
 
 # 4. Once a Jac port exists, set jac_path in manifest.toml by hand, then:
 jac run main.jac -- verify --id prefix-sum-computer
+# `verify` only ever runs `jac check`/`jac test` against `jac_path` -- it never reads
+# `test_jac_path` directly. This means the ported tests MUST live in a `<mod>.test.jac` annex
+# (same basename as jac_path, `jac-testing`'s auto-discovered-by-`jac test <mod>.jac` form), not
+# a standalone `<mod>_tests.jac` file -- the latter is a valid general Jac pattern but `verify`
+# will silently report "no tests ran" and mark the module blocked if you use it here. An annex
+# sees the base module's declarations without importing them; importing them anyway causes a
+# circular-import error at test time. Set `test_jac_path` in the manifest to the annex's own path
+# for bookkeeping/portability, even though `verify` doesn't read it back.
 
 # 5. If verification fails and it's a real blocker (not something to just fix and retry):
 jac run main.jac -- block --id prefix-sum-computer \

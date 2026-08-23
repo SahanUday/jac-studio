@@ -1,0 +1,9 @@
+[project]
+name = "jac-studio"
+version = "0.1.0"
+description = "VS Code, reimplemented from scratch in Jac -- see docs/architecture.md and docs/roadmap.md"
+kind = "cli"
+jac-version = "==0.36.1"
+
+[test]
+directory = "src"

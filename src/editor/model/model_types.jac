@@ -8,6 +8,11 @@ Ported:
   (same idiom as `NodeColor`/`TrackedRangeStickiness` in interval_tree.jac and `CharCode` in
   core/char_code.jac -- a `const enum` is just inlined numbers, so a real Jac `enum` would add
   comparison-ambiguity risk for no benefit).
+- `EndOfLinePreference` -- upstream `const enum { TextDefined = 0, LF = 1, CRLF = 2 }`, added here
+  (not present when this file was first ported) for `PieceTreeTextBuffer`
+  (src/editor/model/piece_tree_text_buffer.jac)'s `get_value_in_range`/`get_value_length_in_range`/
+  `get_character_count_in_range`, which all take this preference upstream. Same plain-int-constant
+  idiom as `DefaultEndOfLine` above, for the same reason.
 - `FindMatch` -- a tiny value type (`range`, `matches`). `range` is typed as `Range`
   (src/editor/core/range.jac), ported in parallel by another agent as part of this same
   piece-tree effort; the forward reference resolves at check-time regardless of write order.
@@ -29,6 +34,10 @@ import from src.editor.core.word_character_classifier { WordCharacterClassifier 
 
 glob DEFAULT_END_OF_LINE_LF: int = 1;
 glob DEFAULT_END_OF_LINE_CRLF: int = 2;
+
+glob END_OF_LINE_PREFERENCE_TEXT_DEFINED: int = 0;
+glob END_OF_LINE_PREFERENCE_LF: int = 1;
+glob END_OF_LINE_PREFERENCE_CRLF: int = 2;
 
 obj FindMatch {
     has range: Range, matches: list[str] | None;

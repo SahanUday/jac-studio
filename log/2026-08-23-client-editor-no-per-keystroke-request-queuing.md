@@ -3,7 +3,7 @@ id: 2026-08-23-client-editor-no-per-keystroke-request-queuing
 date: 2026-08-23
 category: ergonomics
 severity: minor
-status: open
+status: resolved
 phase: 1
 subsystem: editor-core
 jac_version: "0.36.1"
@@ -50,3 +50,11 @@ surprise, and so it's an explicit input to that decision rather than a silent ga
 - If the decision lands on **the Monaco-embed bridge**: this specific gap is moot (Monaco owns its
   own model and input handling internally), and this finding becomes a data point *for* that
   direction rather than a task to carry forward.
+
+**Update -- 2026-08-23: decision made, fix landed.** The native-client-component direction was
+chosen (see `docs/architecture.md`'s open questions and `docs/phases/phase-1-editor-core.md`).
+Fixed in `text_editor.jac` (PR #11) with the strict-queue option named above: keydowns append to
+a `queued_keys` list and a `busy` flag ensures at most one drain loop processes them, strictly in
+order, rather than a monotonic-sequence-number approach. Verified against the exact scenario that
+reproduced this bug: 7 keystrokes fired with zero delay between `jac browse press` calls now land
+correctly and in order, repeated across runs.

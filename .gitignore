@@ -4,3 +4,7 @@
 
 # Jac build/runtime artifacts (cache, venv, persisted graph data) for the root jac-studio project.
 .jac/
+
+# Tracker site build output (tracking/site's build script writes here regardless of which
+# branch is checked out; the site is deployed via GitHub Actions, never committed).
+dist/

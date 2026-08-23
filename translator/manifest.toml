@@ -27,12 +27,51 @@ notes = "Full red-black tree with lazy delta offsets + maxEnd augmentation porte
 [[modules]]
 id = "piece-tree-base"
 upstream_path = "src/vs/editor/common/model/pieceTreeTextBuffer/pieceTreeBase.ts"
-upstream_commit = ""
-jac_path = ""
+upstream_commit = "a4ba39c710a50b04de75cbd55aef093e28266115"
+jac_path = "../src/editor/model/piece_tree_base.jac"
 test_upstream_path = "src/vs/editor/test/common/model/pieceTreeTextBuffer/pieceTreeTextBuffer.test.ts"
-test_jac_path = ""
-status = "queued"
+test_jac_path = "../src/editor/model/piece_tree_base.test.jac"
+status = "landed"
 risk_tier = "foundational"
 verification = "tests"
 phase = 1
-notes = ""
+notes = "rbTreeBase.ts merged into this file -- two Jac files importing each other's types still pass jac check but silently lose native compilation (2026-08-23-circular-import-degrades-native-lowering). find_matches_in_node/find_matches_line_by_line wired in, backed by text_model_search.jac's Searcher/create_find_match/is_valid_match (textModelSearch.ts subset). 81 tests passing, including all 4 real chunk-based-search cases from pieceTreeTextBuffer.test.ts. One of those (#45892, searching an empty document) proved node_at2's declared non-nullable return type was optimistic -- a genuinely reachable branch, not dead code; node_at2 now returns NodePosition | None for real. Dependencies landed alongside: position.jac, range.jac, word_character_classifier.jac, char_code.jac, strings.jac, model_types.jac."
+
+[[modules]]
+id = "piece-tree-text-buffer"
+upstream_path = "src/vs/editor/common/model/pieceTreeTextBuffer/pieceTreeTextBuffer.ts"
+upstream_commit = "f9b86d8e77d440f1dcc79b17641b96fe98be832e"
+jac_path = "../src/editor/model/piece_tree_text_buffer.jac"
+test_upstream_path = "src/vs/editor/test/common/model/pieceTreeTextBuffer/pieceTreeTextBuffer.test.ts"
+test_jac_path = "../src/editor/model/piece_tree_text_buffer.test.jac"
+status = "landed"
+risk_tier = "low"
+verification = "tests"
+phase = 1
+notes = "The ITextBuffer wrapper: apply_edits (position-mapping edit operations), BOM/RTL/unusual-line-terminator bookkeeping, EOL-preference-aware reads. Event/disposable machinery, undo/redo bookkeeping (textModel.ts's job), and the >=1000-op OOM-workaround batching are deliberate documented scope cuts -- see the module docstring. 99 tests passing."
+
+[[modules]]
+id = "piece-tree-text-buffer-builder"
+upstream_path = "src/vs/editor/common/model/pieceTreeTextBuffer/pieceTreeTextBufferBuilder.ts"
+upstream_commit = "6b924c51528e663dda5091a1493229a361676aca"
+jac_path = "../src/editor/model/piece_tree_text_buffer_builder.jac"
+test_upstream_path = "src/vs/editor/test/common/model/pieceTreeTextBuffer/pieceTreeTextBuffer.test.ts"
+test_jac_path = "../src/editor/model/piece_tree_text_buffer_builder.test.jac"
+status = "landed"
+risk_tier = "low"
+verification = "tests"
+phase = 1
+notes = "Chunk accumulation, EOL auto-detection (majority-vote over cr/lf/crlf, via piece_tree_base.jac's create_line_starts_with_counts), BOM stripping, RTL/unusual-line-terminator flagging, surrogate/CR chunk-boundary handling. Holds the full ported pieceTreeTextBuffer.test.ts suite (197 tests) minus the 3 search-dependent cases, which are ported against PieceTreeBase directly in piece_tree_base.jac instead."
+
+[[modules]]
+id = "text-model-search"
+upstream_path = "src/vs/editor/common/model/textModelSearch.ts"
+upstream_commit = "6b924c51528e663dda5091a1493229a361676aca"
+jac_path = "../src/editor/model/text_model_search.jac"
+test_upstream_path = ""
+test_jac_path = "../src/editor/model/text_model_search.test.jac"
+status = "landed"
+risk_tier = "low"
+verification = "tests"
+phase = 1
+notes = "Scoped subset only: Searcher, create_find_match, is_valid_match/left_is_word_bounday/right_is_word_bounday -- exactly what piece_tree_base.jac's find_matches_in_node/find_matches_line_by_line need. TextModelSearch/SearchParams/LineFeedCounter (model-wide orchestration, above the piece-tree layer) not ported -- belongs with a future TextModel port. No dedicated upstream test file for this subset; direct tests written against real usage shapes (10 tests)."

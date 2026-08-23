@@ -60,3 +60,21 @@ test "a module that compiles but fails its own test is caught at the test stage"
         assert result.test_output;
     }
 }
+
+test "a module with no ported test file fails verification, does not silently pass" {
+    with tempfile.TemporaryDirectory() as tmpdir {
+        # No <mod>.test.jac annex and no inline test {} block -- `jac test` exits nonzero
+        # ("No tests ran") rather than vacuously succeeding. This is the property the whole
+        # verification gate depends on: a translated module can't land without real ported
+        # tests just because it happens to compile cleanly.
+        mod_path = write_temp(
+            tmpdir, "untested.jac",
+            "def add(a: int, b: int) -> int {\n    return a + b;\n}\n",
+        );
+
+        result = verify(mod_path);
+        assert not result.passed;
+        assert result.failure_stage == "test";
+        assert "no tests" in result.test_output.lower();
+    }
+}

@@ -85,32 +85,43 @@ strategic/architectural notes surfaced during planning.
   `lsp-dap-client-unresearched`, `jac2js-compiler-quirks` — strategic/architectural notes from
   the planning pass, relevant to Phases 1–6
 
+## Update — 2026-08-23: service-registry spike run and closed
+
+The **service-registry spike** (`service-registry-spike/`) is done: a real `ConfigService` +
+`CommandRegistry` + `FileTreeService` slice, interacting through the graph exactly as
+`architecture.md` proposed. **Result: validated, with a mandatory implementation rule.** A fresh
+`[root-->[?:Type]]` query measured ~600us/call under `jac run` — too slow to call on every access
+on a hot path (keystroke handling); caching the resolved node reference per process (already
+applied to all three services in the spike) drops that to ~0.06us/call. A second finding: that
+cache is a plain Python-level `glob`, which survives across tests sharing one `jac test` worker
+even though the persisted graph root is isolated per test — every such service needs a
+`_reset_<x>_cache_for_tests()` hook, called at the top of any test exercising it. Both findings are
+folded into `architecture.md`'s service-registry section as concrete rules for Phase 1+ service
+code, and logged as tracker entry `2026-08-23-service-registry-query-cost`. Full writeup:
+`service-registry-spike/README.md`.
+
 ## What's NOT done yet (Phase 0's remaining exit criteria)
 
-Per `roadmap.md`: the **service-registry spike** (a real config-service + command-registry +
-toy-file-tree-service slice, to validate or replace the root-graph-as-DI proposal) hasn't run.
-The **minimal project scaffold** for jac-studio's actual app (as opposed to the translator's own
-`jac.toml`) doesn't exist yet. The translator has queued three real modules
-(`prefix-sum-computer`, `interval-tree`, `piece-tree-base` in `translator/manifest.toml`) but
-**no actual translation has happened** — extraction works, verification works, but no TS module
-has been ported into real Jac code yet.
+Per `roadmap.md`: the **minimal project scaffold** for jac-studio's actual app (as opposed to the
+translator's own `jac.toml`, or the service-registry spike's own throwaway one) doesn't exist yet.
+The translator has queued three real modules (`prefix-sum-computer`, `interval-tree`,
+`piece-tree-base` in `translator/manifest.toml`) but **no actual translation has happened** —
+extraction works, verification works, but no TS module has been ported into real Jac code yet.
 
 ## Suggested next steps
 
 In priority order, with reasoning:
 
-1. **Run the service-registry spike first.** It's cheap (a small 3-service slice, not a big
-   build) and it's the riskier of the two open architectural bets — if the root-graph pattern
-   doesn't hold up, that changes how the workspace data model and workbench shell get built in
-   Phases 2–3, so it's better to know now than after committing to it structurally.
-2. **Then the minimal project scaffold** (`jac create` for the actual jac-studio app, distinct
-   from `translator/`'s own project) — needed before Phase 1 can start regardless, and informed
-   by whatever the service-registry spike concludes.
-3. **Then run the translator for real on `prefix-sum-computer`** — the smallest, lowest-risk
+1. **The minimal project scaffold** (`jac create` for the actual jac-studio app, distinct from
+   `translator/`'s own project and the spike's throwaway one) — needed before Phase 1 can start
+   regardless, and now informed by the service-registry spike's caching + test-isolation rules
+   (bake the `get_<x>_service()` + `_reset_<x>_cache_for_tests()` shape into whatever service
+   modules the scaffold ships with, rather than rediscovering it later).
+2. **Then run the translator for real on `prefix-sum-computer`** — the smallest, lowest-risk
    queued module. This is the first genuine test of the whole extract→translate→verify loop
    end to end, not just the tooling around it. Expect this to surface its own findings; log them
    as they happen, not after.
-4. **Close Phase 0 formally** (flip this doc's status) once 1–3 are done, then start Phase 1
+3. **Close Phase 0 formally** (flip this doc's status) once 1–2 are done, then start Phase 1
    (editor core MVP) per `roadmap.md` — porting the piece-tree buffer is the anchor of that phase,
    and it should only start once the translator has proven itself on the two smaller modules
    first, per `translator-strategy.md`'s own ordering.

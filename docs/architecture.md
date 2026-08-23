@@ -121,14 +121,24 @@ registry, the command registry) is modeled as a `node`, created once and attache
 `root.shared` for deployment-wide singletons), and reached by any walker or `def:pub` via a graph
 query — `[root--][?:ConfigService][0]` — rather than injected through a constructor chain.
 
-This is a genuine architectural bet, not a settled fact — it needs to be validated with a real
-multi-service slice (e.g., a `ConfigService` + `CommandRegistry` + `FileTreeService` interacting)
-early in Phase 0, before the workbench shell is built on top of it. If it doesn't hold up under
-real use (e.g., query-based lookup turns out too slow or too indirect for hot paths like
-keystroke handling), the fallback is plain module-level `glob` singletons for stateless/compute
-services, reserving the graph pattern for things that are genuinely persistent (workspace state,
-settings, extension registrations). Track the outcome of this validation as the first real entry
-in the challenge tracker, win or lose.
+**Validated in Phase 0** (`service-registry-spike/`, tracker entry
+`2026-08-23-service-registry-query-cost.md`) — with a caveat that changes how the pattern must be
+implemented, not whether to use it. A real three-service slice (`ConfigService` +
+`CommandRegistry` + `FileTreeService`, interacting through the graph exactly as proposed) confirmed
+get-or-create idempotency and cross-service interaction hold up. But a fresh
+`[root-->[?:Type]]` query measured **~600us/call** under `jac run` — real, not hypothetical, and
+too slow to call on every access on a hot path like keystroke handling (a single lookup alone eats
+~4% of a 16ms/60fps frame budget; a real command dispatch chains several). The fix, now a
+project-wide rule, not optional: **every service accessor resolves its node once per process and
+caches the reference in a module-level `glob`** (`get_config_service()`-shaped, never a bare
+`[root-->[?:Type]]` at the call site) — after caching, field access measured ~0.06us/call,
+indistinguishable from a plain attribute read. This is the same "construct once" discipline
+constructor-injected DI gets for free; Jac's version just needs it written explicitly. A second
+finding from the same spike: this cache is a plain Python module global, so it survives across
+tests sharing one `jac test` worker even though the persisted graph root is isolated per test —
+every service module must also export a `_reset_<x>_cache_for_tests()` hook, and every test
+exercising the accessor must call it, or tests can silently read a stale cached instance from a
+different test. See `service-registry-spike/README.md` for the full writeup and measured numbers.
 
 ## Data model: the workspace is the graph
 
@@ -339,7 +349,9 @@ into every section of this document.
 
 ## Open questions this document deliberately does not resolve
 
-- Root-graph-as-service-registry: validated or replaced with `glob` singletons? (Phase 0 spike)
+- ~~Root-graph-as-service-registry: validated or replaced with `glob` singletons?~~ **Resolved in
+  Phase 0**: validated, with a mandatory caching + test-reset discipline — see the Service
+  registry section above.
 - Monaco-embed bridge for the editor core: needed as a stopgap, or is the native port fast enough
   to skip it? (Decide after the Phase 1 translator spike on the piece tree)
 - Extension API surface shape: how much of VS Code's actual `vscode` API do we aim for

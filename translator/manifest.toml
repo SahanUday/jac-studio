@@ -14,15 +14,15 @@ notes = "Both PrefixSumComputer and ConstantTimePrefixSumComputer ported; 48/48 
 [[modules]]
 id = "interval-tree"
 upstream_path = "src/vs/editor/common/model/intervalTree.ts"
-upstream_commit = ""
-jac_path = ""
+upstream_commit = "00cc2df8db2d5c4aee55d4ad14f0835da2e4729a"
+jac_path = "../src/editor/model/interval_tree.jac"
 test_upstream_path = "src/vs/editor/test/common/model/intervalTree.test.ts"
-test_jac_path = ""
-status = "queued"
+test_jac_path = "../src/editor/model/interval_tree.test.jac"
+status = "landed"
 risk_tier = "low"
 verification = "tests"
 phase = 0
-notes = ""
+notes = "Full red-black tree with lazy delta offsets + maxEnd augmentation ported faithfully; 25/25 ported test blocks pass (18 generated differential-testing regressions against a naive Oracle, a forced-delta-overflow case, 5 Cormen textbook search cases, and the 208-case nodeAcceptEdit table). options/range (ModelDecorationOptions/Range, both unported) are untyped placeholders; set_options() itself deliberately not ported -- see the module docstring."
 
 [[modules]]
 id = "piece-tree-base"

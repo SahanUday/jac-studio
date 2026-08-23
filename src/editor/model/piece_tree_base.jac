@@ -60,15 +60,39 @@ Idiom notes:
 - `startWithLF`/`endWithCR` are each a TS union overload (`string | TreeNode`); split into
   `start_with_lf_str`/`start_with_lf_node` and `end_with_cr_str`/`end_with_cr_node`, called
   according to what each real call site actually passes (verified against upstream, not guessed).
-- Search (`findMatchesInNode`/`findMatchesLineByLine`/`_findMatchesInLine`) is deliberately not in
-  this file -- it depends on `Searcher` (textModelSearch.ts), which is its own scoped port; see
-  `text_model_search.jac`, wired onto `PieceTreeBase` there instead of duplicating the class here.
+- `find_matches_in_node`/`find_matches_line_by_line`/`_find_matches_in_line` (search) depend on
+  `Searcher`/`create_find_match`, ported separately in `text_model_search.jac` (a one-way
+  dependency -- that file imports nothing back from here, so no circular-import risk). Upstream's
+  `resultLen: number` + `result[resultLen++] = x` pattern (threading an explicit index alongside a
+  pre-sized array, needed in JS to build a result array across several cooperating methods) is
+  dropped in favor of a plain `result: list[FindMatch]` mutated via `.append()` -- Jac lists, like
+  Python's, are passed by reference and track their own length, so the index has no job to do
+  here; call sites check `len(result)` against the limit directly instead of comparing a threaded
+  return value.
+- `nodeAt2`'s declared TS return type is the non-nullable `NodePosition`, and its final `return
+  null!` reads like dead-code protection -- until a real ported test (`#45892`, an empty document
+  searched via `find_matches_line_by_line`) proved it isn't: on an empty tree, both of `nodeAt2`'s
+  scan loops exit immediately without ever returning, so the `null!` path is genuinely reachable
+  and upstream's own type annotation is optimistic, not accurate. `node_at2` here is typed
+  `NodePosition | None` for real, and `find_matches_line_by_line` ports upstream's
+  `if (startPosition === null) return [];` guard as real, load-bearing logic rather than dead code.
+  The other two callers (`get_value_in_range`, `get_line_char_code`) don't hit this in practice --
+  a degenerate same-start/end range short-circuits before reaching it in the first, and nothing
+  currently calls the second against an out-of-bounds position -- so they assert non-null instead
+  of threading the `None` case through their own signatures, matching upstream's equally
+  unguarded behavior there while still failing loudly (not silently) if that assumption ever
+  breaks. `node_at` (the offset-based sibling) has the identical unreached-`null!`-that-isn't
+  shape and the identical unguarded callers upstream; left as raising on that path here since
+  nothing has yet proven it reachable the way `#45892` proved it for `node_at2` -- revisit with
+  the same fix if a future test does.
 """
 
 import re;
 import from src.editor.core.char_code { TAB, LINE_FEED, CARRIAGE_RETURN }
 import from src.editor.core.position { Position }
 import from src.editor.core.range { Range }
+import from src.editor.model.model_types { FindMatch, SearchData }
+import from src.editor.model.text_model_search { Searcher, create_find_match, is_valid_match }
 
 glob NODE_COLOR_BLACK: int = 0;
 glob NODE_COLOR_RED: int = 1;
@@ -528,6 +552,9 @@ obj PieceTreeBase {
 
         start_position = self.node_at2(rng.start_line_number, rng.start_column);
         end_position = self.node_at2(rng.end_line_number, rng.end_column);
+        assert start_position is not None and end_position is not None, (
+            "get_value_in_range: range out of bounds for this document"
+        );
 
         value = self.get_value_in_range2(start_position, end_position);
         if eol != "" and (eol != self.eol or not self.eol_normalized) {
@@ -707,6 +734,7 @@ obj PieceTreeBase {
 
     def get_line_char_code(line_number: int, index: int) -> int {
         node_pos = self.node_at2(line_number, index + 1);
+        assert node_pos is not None, "get_line_char_code: position out of bounds for this document";
         return self._get_char_code(node_pos);
     }
 
@@ -1392,7 +1420,7 @@ obj PieceTreeBase {
         raise ValueError("node_at: offset out of bounds -- unreachable for a valid offset");
     }
 
-    def node_at2(line_number: int, column: int) -> NodePosition {
+    def node_at2(line_number: int, column: int) -> NodePosition | None {
         x = self.tree_root;
         node_start_offset = 0;
 
@@ -1445,7 +1473,7 @@ obj PieceTreeBase {
             x = x.next();
         }
 
-        raise ValueError("node_at2: line/column out of bounds -- unreachable for a valid position");
+        return None;
     }
 
     def node_char_code_at(nd: TreeNode, offset: int) -> int {
@@ -1671,6 +1699,207 @@ obj PieceTreeBase {
             text += self.get_node_content(descendant);
         }
         return text;
+    }
+    # endregion
+
+    # region Search
+    def find_matches_in_node(
+        nd: TreeNode, searcher: Searcher, start_line_number: int, start_column: int,
+        start_cursor: BufferCursor, end_cursor: BufferCursor, capture_matches: bool,
+        limit_result_count: int, result: list[FindMatch]
+    ) {
+        buffer = self.buffers[nd.piece.buffer_index];
+        start_offset_in_buffer = self.offset_in_buffer(nd.piece.buffer_index, nd.piece.start);
+        start = self.offset_in_buffer(nd.piece.buffer_index, start_cursor);
+        end = self.offset_in_buffer(nd.piece.buffer_index, end_cursor);
+
+        if searcher.word_separators is not None {
+            search_text = buffer.buffer[start:end];
+            offset_delta = start;
+            searcher.reset(0);
+        } else {
+            search_text = buffer.buffer;
+            offset_delta = 0;
+            searcher.reset(start);
+        }
+
+        m = searcher.next(search_text);
+        while m is not None {
+            m_index = m.start() + offset_delta;
+            if m_index >= end {
+                return;
+            }
+            ret = self.position_in_buffer(nd, m_index - start_offset_in_buffer);
+            line_feed_cnt = self.get_line_feed_cnt(nd.piece.buffer_index, start_cursor, ret);
+            ret_start_column = (
+                ret.column - start_cursor.column + start_column if ret.line == start_cursor.line
+                else ret.column + 1
+            );
+            match_text = m.group(0);
+            ret_end_column = ret_start_column + len(match_text);
+            result.append(create_find_match(
+                Range(
+                    start_line_number=start_line_number + line_feed_cnt, start_column=ret_start_column,
+                    end_line_number=start_line_number + line_feed_cnt, end_column=ret_end_column
+                ),
+                m, capture_matches
+            ));
+
+            if m_index + len(match_text) >= end {
+                return;
+            }
+            if len(result) >= limit_result_count {
+                return;
+            }
+
+            m = searcher.next(search_text);
+        }
+    }
+
+    def find_matches_line_by_line(
+        search_range: Range, search_data: SearchData, capture_matches: bool, limit_result_count: int
+    ) -> list[FindMatch] {
+        result: list[FindMatch] = [];
+        searcher = Searcher(word_separators=search_data.word_separators, search_regex=search_data.regex);
+
+        start_position = self.node_at2(search_range.start_line_number, search_range.start_column);
+        if start_position is None {
+            return [];
+        }
+        end_position = self.node_at2(search_range.end_line_number, search_range.end_column);
+        if end_position is None {
+            return [];
+        }
+        start = self.position_in_buffer(start_position.nd, start_position.remainder);
+        end = self.position_in_buffer(end_position.nd, end_position.remainder);
+
+        if start_position.nd == end_position.nd {
+            self.find_matches_in_node(
+                start_position.nd, searcher, search_range.start_line_number, search_range.start_column,
+                start, end, capture_matches, limit_result_count, result
+            );
+            return result;
+        }
+
+        start_line_number = search_range.start_line_number;
+        current_nd = start_position.nd;
+        while current_nd != end_position.nd {
+            line_break_cnt = self.get_line_feed_cnt(current_nd.piece.buffer_index, start, current_nd.piece.end);
+
+            if line_break_cnt >= 1 {
+                line_starts = self.buffers[current_nd.piece.buffer_index].line_starts;
+                start_offset_in_buffer = self.offset_in_buffer(current_nd.piece.buffer_index, current_nd.piece.start);
+                next_line_start_offset = line_starts[start.line + line_break_cnt];
+                start_column = (
+                    search_range.start_column if start_line_number == search_range.start_line_number else 1
+                );
+                self.find_matches_in_node(
+                    current_nd, searcher, start_line_number, start_column, start,
+                    self.position_in_buffer(current_nd, next_line_start_offset - start_offset_in_buffer),
+                    capture_matches, limit_result_count, result
+                );
+
+                if len(result) >= limit_result_count {
+                    return result;
+                }
+                start_line_number += line_break_cnt;
+            }
+
+            start_column = search_range.start_column - 1 if start_line_number == search_range.start_line_number else 0;
+            if start_line_number == search_range.end_line_number {
+                text = self.get_line_content(start_line_number)[start_column:search_range.end_column - 1];
+                self._find_matches_in_line(
+                    search_data, searcher, text, search_range.end_line_number, start_column, result,
+                    capture_matches, limit_result_count
+                );
+                return result;
+            }
+
+            self._find_matches_in_line(
+                search_data, searcher, self.get_line_content(start_line_number)[start_column:],
+                start_line_number, start_column, result, capture_matches, limit_result_count
+            );
+
+            if len(result) >= limit_result_count {
+                return result;
+            }
+
+            start_line_number += 1;
+            start_position = self.node_at2(start_line_number, 1);
+            assert start_position is not None, (
+                "find_matches_line_by_line: advanced past the last line while still short of end_position"
+            );
+            current_nd = start_position.nd;
+            start = self.position_in_buffer(start_position.nd, start_position.remainder);
+        }
+
+        if start_line_number == search_range.end_line_number {
+            start_column = search_range.start_column - 1 if start_line_number == search_range.start_line_number else 0;
+            text = self.get_line_content(start_line_number)[start_column:search_range.end_column - 1];
+            self._find_matches_in_line(
+                search_data, searcher, text, search_range.end_line_number, start_column, result,
+                capture_matches, limit_result_count
+            );
+            return result;
+        }
+
+        start_column = search_range.start_column if start_line_number == search_range.start_line_number else 1;
+        self.find_matches_in_node(
+            end_position.nd, searcher, start_line_number, start_column, start, end, capture_matches,
+            limit_result_count, result
+        );
+        return result;
+    }
+
+    def _find_matches_in_line(
+        search_data: SearchData, searcher: Searcher, text: str, line_number: int, delta_offset: int,
+        result: list[FindMatch], capture_matches: bool, limit_result_count: int
+    ) {
+        word_separators = search_data.word_separators;
+        if not capture_matches and search_data.simple_search is not None and search_data.simple_search != "" {
+            search_string = search_data.simple_search;
+            search_string_len = len(search_string);
+            text_length = len(text);
+
+            last_match_index = -search_string_len;
+            last_match_index = text.find(search_string, last_match_index + search_string_len);
+            while last_match_index != -1 {
+                if word_separators is None or is_valid_match(
+                    word_separators, text, text_length, last_match_index, search_string_len
+                ) {
+                    result.append(FindMatch(
+                        range=Range(
+                            start_line_number=line_number, start_column=last_match_index + 1 + delta_offset,
+                            end_line_number=line_number,
+                            end_column=last_match_index + 1 + search_string_len + delta_offset
+                        ),
+                        matches=None
+                    ));
+                    if len(result) >= limit_result_count {
+                        return;
+                    }
+                }
+                last_match_index = text.find(search_string, last_match_index + search_string_len);
+            }
+            return;
+        }
+
+        searcher.reset(0);
+        m = searcher.next(text);
+        while m is not None {
+            match_text = m.group(0);
+            result.append(create_find_match(
+                Range(
+                    start_line_number=line_number, start_column=m.start() + 1 + delta_offset,
+                    end_line_number=line_number, end_column=m.start() + 1 + len(match_text) + delta_offset
+                ),
+                m, capture_matches
+            ));
+            if len(result) >= limit_result_count {
+                return;
+            }
+            m = searcher.next(text);
+        }
     }
     # endregion
 }

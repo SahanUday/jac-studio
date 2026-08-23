@@ -7,6 +7,8 @@ directly -- construction from chunks, insert/delete, line/offset math, CRLF spli
 and `equal()` -- as the real verification for this foundational module while the wrapper layer is
 built. Full ported-test parity against pieceTreeTextBuffer.test.ts lives with the wrapper port."""
 
+import from src.editor.core.word_character_classifier { WordCharacterClassifier }
+
 def make_tree(text: str) -> PieceTreeBase {
     return PieceTreeBase(
         init_chunks=[StringBuffer(buffer=text, line_starts=create_line_starts(text))],
@@ -218,6 +220,81 @@ test "create_line_starts_with_counts flags non-basic-ASCII content" {
 
 test "create_line_starts_with_counts treats tab as basic ASCII" {
     assert create_line_starts_with_counts("a\tb").is_basic_ascii;
+}
+
+"""Ported from pieceTreeTextBuffer.test.ts's "chunk based search" suite (4 real upstream cases),
+constructed directly against `PieceTreeBase` (via `make_tree`) rather than through
+`PieceTreeTextBuffer`/`Builder` -- all four operate on single-chunk text where the two
+construction paths produce an identical tree, and the wrapper layer (built separately, see
+`piece_tree_text_buffer.jac`) has its own full ported-test-suite parity pass."""
+
+def re_compile(pattern: str) -> re.Pattern[str] {
+    return re.compile(pattern, re.IGNORECASE);
+}
+
+test "#45892: an empty-after-delete buffer can still be searched without error" {
+    tree = make_tree("");
+    tree.delete(0, 1);
+    ret = tree.find_matches_line_by_line(
+        Range(start_line_number=1, start_column=1, end_line_number=1, end_column=1),
+        SearchData(
+            regex=re.compile("abc"),
+            word_separators=WordCharacterClassifier(word_separators=",./", intl_segmenter_locales=[]),
+            simple_search="abc"
+        ),
+        True, 1000
+    );
+    assert len(ret) == 0;
+}
+
+test "#45770: findMatchesInNode does not cross a node boundary" {
+    tree = make_tree(
+        "balabalababalabalababalabalaba\nbalabalababalabalababalabalaba\n\n* [ ] task1\n"
+        "* [x] task2 balabalaba\n* [ ] task 3"
+    );
+    tree.delete(0, 62);
+    tree.delete(16, 1);
+    tree.insert(16, " ");
+    ret = tree.find_matches_line_by_line(
+        Range(start_line_number=1, start_column=1, end_line_number=4, end_column=13),
+        SearchData(
+            regex=re_compile(r"\["),
+            word_separators=WordCharacterClassifier(word_separators=",./", intl_segmenter_locales=[]),
+            simple_search="["
+        ),
+        True, 1000
+    );
+    assert len(ret) == 3;
+    assert ret[0].range.start_line_number == 2 and ret[0].range.start_column == 3;
+    assert ret[0].range.end_line_number == 2 and ret[0].range.end_column == 4;
+    assert ret[1].range.start_line_number == 3 and ret[1].range.start_column == 3;
+    assert ret[1].range.end_line_number == 3 and ret[1].range.end_column == 4;
+    assert ret[2].range.start_line_number == 4 and ret[2].range.start_column == 3;
+    assert ret[2].range.end_line_number == 4 and ret[2].range.end_column == 4;
+}
+
+test "search searching from the middle" {
+    tree = make_tree("def\ndbcabc");
+
+    tree.delete(4, 1);
+    ret = tree.find_matches_line_by_line(
+        Range(start_line_number=2, start_column=3, end_line_number=2, end_column=6),
+        SearchData(regex=re_compile("a"), word_separators=None, simple_search="a"),
+        True, 1000
+    );
+    assert len(ret) == 1;
+    assert ret[0].range.start_line_number == 2 and ret[0].range.start_column == 3;
+    assert ret[0].range.end_line_number == 2 and ret[0].range.end_column == 4;
+
+    tree.delete(4, 1);
+    ret = tree.find_matches_line_by_line(
+        Range(start_line_number=2, start_column=2, end_line_number=2, end_column=5),
+        SearchData(regex=re_compile("a"), word_separators=None, simple_search="a"),
+        True, 1000
+    );
+    assert len(ret) == 1;
+    assert ret[0].range.start_line_number == 2 and ret[0].range.start_column == 2;
+    assert ret[0].range.end_line_number == 2 and ret[0].range.end_column == 3;
 }
 
 test "TreeNode.next and .prev traverse pieces in document order" {

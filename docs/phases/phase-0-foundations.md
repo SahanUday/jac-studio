@@ -1,9 +1,11 @@
 # Phase 0 — Foundations
 
-Status: **in progress** — 2026-08-23. Living document: updated as Phase 0 continues, finalized
-(status flipped to "complete") once its exit criteria in [`../roadmap.md`](../roadmap.md) are
-all met. Read this before touching anything in the project — it's the fastest way to get
-oriented without re-reading every doc and PR from scratch.
+Status: **complete** — 2026-08-23. All exit criteria in [`../roadmap.md`](../roadmap.md) are met:
+service registry validated, translator workflow proven on two modules, tracker live with real
+entries. This doc stays as the record of how Phase 0 actually went; Phase 1 (editor core MVP) is
+next, starting with the piece-tree buffer per `translator-strategy.md`'s ordering. Read this
+before touching anything in the project — it's the fastest way to get oriented without
+re-reading every doc and PR from scratch.
 
 ## Goal (from roadmap.md)
 
@@ -149,23 +151,54 @@ Also worth knowing for next time (not tracker-worthy, just a workflow note): `ja
 --force` wipes a project's `.jac/venv` along with cache/data, so `jac install` needs re-running
 after — cost a few minutes rediscovering this on the translator's own project mid-session.
 
-## What's NOT done yet (Phase 0's remaining exit criteria)
+## Update — 2026-08-23: interval-tree translated and landed — Phase 0 exit criteria met
 
-Per `roadmap.md`, the translator workflow needs to be "proven on **two** small modules" —
-`prefix-sum-computer` is done; `interval-tree` is still `status = "queued"` in
-`translator/manifest.toml`, not yet attempted. Everything else in Phase 0's scope (service
-registry, project scaffold, challenge tracker) is done.
+`interval-tree` (`intervalTree.ts` → `src/editor/model/interval_tree.jac`) is the second and
+last of the two small modules `roadmap.md`'s Phase 0 exit criteria called for. Much larger and
+more tightly coupled than `prefix-sum-computer` (a full red-black tree with lazy delta-offset
+propagation and `maxEnd` augmentation, ~1281 upstream lines) — a real test of the translator
+workflow at a size that actually stresses it, not just a toy case. 25/25 ported test blocks pass:
+18 generated differential-testing regressions against a naive Oracle (asserting tree invariants —
+red-black coloring, augmented `maxEnd`, in-order sort order — after every mutation), a
+forced-delta-overflow case, 5 Cormen-textbook search cases, and a 208-case `nodeAcceptEdit` table
+(mechanically extracted from upstream's own test source via script, not hand-transcribed, to
+eliminate transcription risk on data that repetitive). Verified through the translator's own
+`verify` command, manifest status `landed`.
 
-## Suggested next steps
+**Scope call, made deliberately, not by omission**: `options: ModelDecorationOptions` and
+`range: Range | null` are untyped placeholders here. Neither `ModelDecorationOptions`
+(`textModel.ts`) nor `Range` (`core/range.ts`) is translated yet, and the ported upstream test
+suite never constructs or reads either field — every test drives the tree purely through
+start/end/id/owner_id and the bit-packed metadata flags. `set_options()` (the only method that
+touches `options`'s shape) is deliberately not ported; building it now would mean guessing at an
+unported class's shape with nothing to verify against. Port it for real once
+`ModelDecorationOptions` exists.
 
-In priority order, with reasoning:
+Two more real findings, both affecting future translations, especially `piece-tree-base`:
 
-1. **Run the translator for real on `interval-tree`** — the last of the two small modules
-   `roadmap.md`'s Phase 0 exit criteria calls for. Same shape of work as `prefix-sum-computer`,
-   now with the `obj`-equality and count/index-convention lessons already in hand, so it should go
-   faster and hit fewer surprises of its own kind (new ones, being a different algorithm, are
-   still possible — log them the same way).
-2. **Close Phase 0 formally** (flip this doc's status) once interval-tree lands — then start
-   Phase 1 (editor core MVP) per `roadmap.md`. Porting the piece-tree buffer is that phase's
-   anchor, and per `translator-strategy.md`'s own ordering, it should only start once the
-   translator has proven itself on both smaller modules first — which this step completes.
+- **`node` and `include` are reserved Jac keywords** — not just `root`, which is all this
+  project's `jac-language` skill had previously flagged. `node` is the single most natural
+  variable name for any tree/graph algorithm, and this file used it ~280 times (matching
+  upstream's own naming) before a whole-file rename to `nd` was needed — 205 cascading parse
+  errors from that single collision. `piece-tree-base` (also a tree) will hit this at larger
+  scale if not anticipated going in. Logged as `2026-08-23-node-is-a-reserved-keyword`, resolved
+  (not a doc gap — `jac-core-cheatsheet` already lists the full reserved set; this was a
+  translation session not cross-checking it first), added to the `jac-language` skill's gotcha
+  list so the next translation checks variable names before writing the bulk of a module.
+- **A method calling a bare name matching a module-level function of the same name recurses into
+  itself, not the free function** — unlike TS/JS, which resolve a bare (non-`this.`-prefixed)
+  call inside a method to module scope. Upstream's `IntervalTree.search(...)` relies on exactly
+  this TS-only trick to call a same-named top-level `search(this, ...)`. Fixed by giving the free
+  functions an `_impl` suffix, called explicitly from the methods that wrap them. No tracker entry
+  (an ordinary translation bug, not a Jac limitation) — added to the `jac-language` skill's
+  gotcha list since it's a real scoping-model difference worth knowing before the next module
+  with this same upstream pattern (piece-tree-base's `TextBuffer` class likely has it too).
+
+**Phase 0 is now formally complete.** All three exit criteria from `roadmap.md` are met:
+service-registry pattern validated (with its two caching rules), translator workflow proven on
+two modules (`prefix-sum-computer`, `interval-tree`), tracker live with 18 real entries from this
+phase's own friction. See `roadmap.md`'s Phase 1 section for what's next — the piece-tree buffer,
+this project's largest and highest-stakes translation so far (`risk_tier = "foundational"` in the
+manifest, meaning a supervised single-module session with real review, not the lighter-touch pace
+`prefix-sum-computer`/`interval-tree` got), plus the first native Jac client component built on
+top of it.

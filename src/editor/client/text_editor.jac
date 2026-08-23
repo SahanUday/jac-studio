@@ -52,6 +52,8 @@ def:pub app -> JsxElement {
     has cursor_line: int = 1;
     has cursor_column: int = 1;
     has loaded: bool = False;
+    has busy: bool = False;
+    has queued_keys: list[str] = [];
 
     async can with entry {
         lines = await get_document_lines();
@@ -132,36 +134,61 @@ def:pub app -> JsxElement {
         }
     }
 
+    def is_handled_key(key: str) -> bool {
+        return len(key) == 1 or key in [
+            "Enter", "Backspace", "Delete", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"
+        ];
+    }
+
+    async def apply_key(key: str) {
+        if len(key) == 1 {
+            await insert_at_cursor(key);
+        } elif key == "Enter" {
+            await insert_at_cursor("\n");
+        } elif key == "Backspace" {
+            await delete_before_cursor();
+        } elif key == "Delete" {
+            await delete_after_cursor();
+        } elif key == "ArrowLeft" {
+            move_left();
+        } elif key == "ArrowRight" {
+            move_right();
+        } elif key == "ArrowUp" {
+            move_up();
+        } elif key == "ArrowDown" {
+            move_down();
+        }
+    }
+
+    async def drain_key_queue {
+        busy = True;
+        while len(queued_keys) > 0 {
+            key = queued_keys.pop(0);
+            await apply_key(key);
+        }
+        busy = False;
+    }
+
     async def handle_key_down(e: KeyboardEvent) {
         if e.ctrlKey or e.metaKey or e.altKey {
             return;
         }
 
         key = e.key;
-        if len(key) == 1 {
-            e.preventDefault();
-            await insert_at_cursor(key);
-        } elif key == "Enter" {
-            e.preventDefault();
-            await insert_at_cursor("\n");
-        } elif key == "Backspace" {
-            e.preventDefault();
-            await delete_before_cursor();
-        } elif key == "Delete" {
-            e.preventDefault();
-            await delete_after_cursor();
-        } elif key == "ArrowLeft" {
-            e.preventDefault();
-            move_left();
-        } elif key == "ArrowRight" {
-            e.preventDefault();
-            move_right();
-        } elif key == "ArrowUp" {
-            e.preventDefault();
-            move_up();
-        } elif key == "ArrowDown" {
-            e.preventDefault();
-            move_down();
+        if not is_handled_key(key) {
+            return;
+        }
+        e.preventDefault();
+
+        # Each edit is an await'd server round trip, so two keydowns fired before the first
+        # response lands would otherwise race -- both computing their insert position from the
+        # same stale cursor state (2026-08-23-client-editor-no-per-keystroke-request-queuing).
+        # Queuing here, rather than dropping or debouncing, keeps every keystroke and processes
+        # them strictly in order: nothing between `queued_keys.append` and `drain_key_queue`
+        # setting `busy = True` yields control, so at most one drain loop ever runs at a time.
+        queued_keys.append(key);
+        if not busy {
+            await drain_key_queue();
         }
     }
 

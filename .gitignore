@@ -8,3 +8,6 @@
 # Tracker site build output (tracking/site's build script writes here regardless of which
 # branch is checked out; the site is deployed via GitHub Actions, never committed).
 dist/
+
+# Client (web-app) build tooling.
+node_modules/

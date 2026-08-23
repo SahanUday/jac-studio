@@ -36,3 +36,34 @@ test "leading newline yields leading empty element" {
 test "consecutive newlines yield empty elements between them" {
     assert split_lines("a\n\nb") == ["a", "", "b"];
 }
+
+test "contains_rtl is false for plain ASCII" {
+    assert not contains_rtl("hello world");
+}
+
+test "contains_rtl is true for a BMP Hebrew character" {
+    assert contains_rtl("hello " + chr(0x05D0));
+}
+
+
+# No test for contains_rtl's supplementary-plane scope cut (documented in the module docstring,
+# see 2026-08-23-supplementary-plane-string-crashes-js-codegen): both a literal escape AND a
+# runtime `chr(0x10900)` call reliably crash the compiler's JS codegen pass with the same
+# UnicodeEncodeError, so there's no way to safely exercise a supplementary-plane character in a
+# test right now either.
+
+test "contains_unusual_line_terminators detects U+2028 and U+2029" {
+    assert contains_unusual_line_terminators(chr(0x2028));
+    assert contains_unusual_line_terminators("a" + chr(0x2029) + "b");
+    assert not contains_unusual_line_terminators("plain text\n");
+}
+
+test "UTF8_BOM_CHARACTER is U+FEFF" {
+    assert ord(UTF8_BOM_CHARACTER) == 0xFEFF;
+}
+
+test "starts_with_utf8_bom detects a leading BOM" {
+    assert starts_with_utf8_bom(UTF8_BOM_CHARACTER + "hello");
+    assert not starts_with_utf8_bom("hello");
+    assert not starts_with_utf8_bom("");
+}

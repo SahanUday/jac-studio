@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
 # Lands a finished challenge-tracker blocker entry (scaffolded by `translator ... block` into
-# translator/blocked/) onto the `tracking` branch in one shot: checkout, copy, rebuild the
+# internal/translator/blocked/) onto the `tracking` branch in one shot: checkout, copy, rebuild the
 # site, commit, push, switch back to wherever you started.
 #
 # Deliberately plain bash, not Jac -- this script touches the `tracking` branch itself, the
 # observability backstop. If it broke because of a Jac issue, you could lose the ability to
 # report that issue. Same reasoning that kept the tracker's own site/build.py in Python, not
-# Jac -- see docs/translator-strategy.md and translator/README.md.
+# Jac -- see docs/translator-strategy.md and internal/translator/README.md.
 #
 # Scope: git mechanics only. The **Plan** section of the file must already be filled in --
 # this script never writes content, only moves an already-finished file across branches.
 #
-# Usage: translator/land-blocker.sh translator/blocked/<file>.md
+# Usage: internal/translator/land-blocker.sh internal/translator/blocked/<file>.md
 
 set -euo pipefail
 
@@ -43,7 +43,7 @@ if [ -n "$(git status --porcelain)" ]; then
   exit 1
 fi
 
-# Resolve to an absolute path before switching branches: translator/ isn't part of tracking's
+# Resolve to an absolute path before switching branches: internal/translator/ isn't part of tracking's
 # tree, so it survives the checkout as an untracked leftover, but a relative path could
 # resolve differently once we're operating from a different point in that same working tree.
 SRC_FILE_ABS="$(cd "$(dirname "$SRC_FILE")" && pwd)/$FILENAME"

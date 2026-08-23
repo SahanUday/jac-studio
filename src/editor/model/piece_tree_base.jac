@@ -4,7 +4,7 @@ storage: an augmented red-black tree of `Piece`s pointing into either the origin
 buffer(s) or a single append-only "changes" buffer, giving O(log n) insert/delete/line-offset
 lookups without ever copying the whole document on every edit. This is the foundational module
 everything else in the editor core is layered on -- `risk_tier = "foundational"` in
-translator/manifest.toml, per the project's own risk-tiering.
+internal/translator/manifest.toml, per the project's own risk-tiering.
 
 Merged from two upstream files (`rbTreeBase.ts` + `pieceTreeBase.ts`) into one Jac module --
 deliberate redesign of the *module boundary*, not the algorithm. Upstream splits them because

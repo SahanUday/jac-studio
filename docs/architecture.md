@@ -121,7 +121,7 @@ registry, the command registry) is modeled as a `node`, created once and attache
 `root.shared` for deployment-wide singletons), and reached by any walker or `def:pub` via a graph
 query — `[root--][?:ConfigService][0]` — rather than injected through a constructor chain.
 
-**Validated in Phase 0** (`service-registry-spike/`, tracker entries
+**Validated in Phase 0** (`internal/service-registry-spike/`, tracker entries
 `2026-08-23-service-registry-query-cost.md` and `2026-08-23-service-cache-test-isolation.md`) —
 with two caveats that change how the pattern must be implemented, not whether to use it. A real
 three-service slice (`ConfigService` + `CommandRegistry` + `FileTreeService`, interacting through
@@ -150,7 +150,7 @@ different tests in one worker even though each test's graph *content* is otherwi
 verified directly, keying by root alone still leaked a value from one test into the next. Every
 service module must additionally export a `_reset_<x>_cache_for_tests()` hook (clearing the whole
 keyed dict), and every test exercising the accessor must call it. Two different problems, two
-different fixes; neither substitutes for the other. See `service-registry-spike/README.md` for the
+different fixes; neither substitutes for the other. See `internal/service-registry-spike/README.md` for the
 full writeup and measured numbers.
 
 ### Not every service needs to be a node

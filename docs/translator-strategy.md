@@ -132,7 +132,7 @@ different workflow — same land/block outcome, one extra gate specific to this 
 
 ### Where this lives
 
-A permanent, versioned `translator/` directory in the jac-studio repo (on `main`, alongside the
+A permanent, versioned `internal/translator/` directory in the jac-studio repo (on `main`, alongside the
 code it's porting into — not the `tracking` branch, which is for the challenge log itself, not the
 tooling that feeds it). The manifest's drift-detection value compounds over the life of the whole
 project only if it's actually preserved, not thrown away per session.

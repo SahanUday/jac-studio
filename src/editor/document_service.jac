@@ -4,7 +4,7 @@ consumer holding a *ported tree structure* -- and it hit a real blocker doing so
 before touching this file.
 
 **Not a graph `node`, despite this project's own established service-registry pattern**
-(`service-registry-spike/src/config_service.jac`'s `ConfigService`, a `node` reachable from
+(`internal/service-registry-spike/src/config_service.jac`'s `ConfigService`, a `node` reachable from
 `root`). Attaching a node whose fields transitively hold a self-referential object graph -- which
 is exactly what a ported red-black-tree sentinel is (`piece_tree_base.jac`'s `SENTINEL.parent ==
 SENTINEL`, the same idiom `interval_tree.jac` already established and documented) -- crashes with
@@ -34,7 +34,7 @@ import from src.editor.model.piece_tree_text_buffer_builder { PieceTreeTextBuffe
 glob SEED_TEXT: str = (
     "Welcome to jac-studio's editor core.\n\n"
     "This text is stored in a real piece-tree buffer -- the same data structure VS Code's own\n"
-    "editor uses -- ported to Jac in translator/manifest.toml's piece-tree-base/piece-tree-\n"
+    "editor uses -- ported to Jac in internal/translator/manifest.toml's piece-tree-base/piece-tree-\n"
     "text-buffer entries. Type here to try it out.\n"
 );
 

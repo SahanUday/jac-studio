@@ -24,21 +24,26 @@ be active and consider writing one at that phase's end.
   intelligence/LSP, the **"rewrite, don't mirror" decision procedure** (see below), open
   questions not yet resolved. Read this before designing any new component.
 - **`docs/roadmap.md`** — the 8 phases, in dependency order, each phase's scope and exit criteria.
-- **`docs/translator-strategy.md`** — the TS→Jac translator's design and workflow (see the
-  `jac-studio-workflow` skill for how to actually run it).
-- **`docs/challenge-tracking.md`** — the tracker's design (see `jac-studio-workflow` for the
-  logging habit itself).
+- **`docs/translator-strategy.md`** — the TS→Jac translator's design (see the
+  `jac-studio-translator` skill for how to actually run the tool).
+- **`docs/challenge-tracking.md`** — the tracker's design (see `jac-studio-challenge-tracking`
+  for the logging habit itself).
 - **`docs/vscode-feature-gap-analysis.md`** and **`docs/vscode-complete-triage.md`** — before
   assuming a VS Code feature isn't planned for, check the triage doc first; every one of
   upstream's 158 `workbench/contrib`+`editor/contrib` feature areas has an assigned disposition
   (Scoped/Tracked/Excluded/New). Don't re-investigate something already triaged; do add to it if
   a genuinely new upstream feature area comes up that isn't covered.
-- **`docs/research/*.md`** — grounding research (upstream VS Code architecture, VSCodium
-  packaging, Jac's documented capabilities, idioms from Jac's real example apps). Reference
-  material, not decisions — the decisions live in `architecture.md`/`roadmap.md`.
+- **`docs/research/*.md`** — grounding research already done: `vscode-architecture.md`,
+  `vscodium-packaging.md`, `jac-capabilities.md`, `jac-examples-patterns.md`. Check these before
+  re-investigating upstream VS Code, VSCodium, or Jac's capabilities from scratch — reference
+  material, not decisions (the decisions live in `architecture.md`/`roadmap.md`). These are
+  point-in-time findings (dated), not living docs — if something's changed since, note the
+  discrepancy rather than silently trusting a stale claim, and consider whether the discrepancy
+  itself is worth a tracker entry (a doc-gap on our own docs, same as a doc-gap on jac's — see
+  `jac-studio-challenge-tracking`).
 - **`docs/phases/*.md`** — one file per completed/in-progress roadmap phase: what got built, key
-  decisions, deviations from plan, blockers hit, and suggested next steps. Write one at the end
-  of each phase (see `jac-studio-workflow`).
+  decisions, deviations from plan, blockers hit, and suggested next steps. Written at the end of
+  each phase (see `jac-studio-git-workflow`).
 
 ## The decision procedure (the one thing worth restating, since it governs everything)
 
@@ -73,8 +78,7 @@ of each before assuming an answer.
 
 ## Stuck, surprised, or found a real gap?
 
-Don't work around it silently and don't guess past it. See the `jac-studio-workflow` skill's
-"When you hit a blocker" section — it applies to every phase and every subsystem (editor core,
-workbench, extensions, persistence, desktop, tooling, translator — not just the translator, even
-though most tracker entries so far happen to be translator-related since that's the only thing
-built so far).
+Don't work around it silently and don't guess past it. See the `jac-studio-challenge-tracking`
+skill — it applies to every phase and every subsystem (editor core, workbench, extensions,
+persistence, desktop, tooling, translator — not just the translator, even though most tracker
+entries so far happen to be translator-related since that's the only thing built so far).

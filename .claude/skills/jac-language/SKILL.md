@@ -102,6 +102,6 @@ If a new gotcha gets found, add it to this list (grounded, with the actual error
 than letting it stay tribal knowledge for one session. And if it's a genuine Jac limitation or
 missing capability — not just a syntax detail with a quick escape/rename fix — **it must be
 logged to the challenge tracker, not silently worked around or left unrecorded.** See the
-`jac-studio-workflow` skill's "When you hit a blocker" section for the exact procedure. This is
+`jac-studio-challenge-tracking` skill for the exact procedure. This is
 not optional or translator-specific — it applies no matter what part of jac-studio is being
 built when the blocker is hit.

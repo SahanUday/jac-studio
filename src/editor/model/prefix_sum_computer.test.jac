@@ -206,6 +206,15 @@ test "getPrefixSum with empty array" {
     for_both([], lambda (psc: any) { assert psc.get_prefix_sum(0) == 0; });
 }
 
+test "raw PrefixSumComputer.get_prefix_sum(0) on empty values does not crash outside the wrapper" {
+    # _PrefixSumComputerAsCount special-cases count==0 before ever calling the raw method, so the
+    # test above never exercises this path. A real caller using PrefixSumComputer directly (not
+    # through that test-only adapter) could still call get_prefix_sum(0) on an empty computer --
+    # caught by PR review, not by the ported suite; see the module docstring.
+    psc = PrefixSumComputer(values=[]);
+    assert psc.get_prefix_sum(0) == 0;
+}
+
 test "getPrefixSum with leading/trailing zeroes" {
     def check(psc: any) {
         assert psc.get_prefix_sum(0) == 0;

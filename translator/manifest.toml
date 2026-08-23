@@ -1,15 +1,15 @@
 [[modules]]
 id = "prefix-sum-computer"
 upstream_path = "src/vs/editor/common/model/prefixSumComputer.ts"
-upstream_commit = ""
-jac_path = ""
+upstream_commit = "00cc2df8db2d5c4aee55d4ad14f0835da2e4729a"
+jac_path = "../src/editor/model/prefix_sum_computer.jac"
 test_upstream_path = "src/vs/editor/test/common/viewModel/prefixSumComputer.test.ts"
-test_jac_path = ""
-status = "queued"
+test_jac_path = "../src/editor/model/prefix_sum_computer.test.jac"
+status = "landed"
 risk_tier = "low"
 verification = "tests"
 phase = 0
-notes = ""
+notes = "Both PrefixSumComputer and ConstantTimePrefixSumComputer ported; 48/48 ported tests pass. First real translation -- see docs/phases/phase-0-foundations.md and the challenge tracker for findings hit along the way."
 
 [[modules]]
 id = "interval-tree"

@@ -47,8 +47,8 @@ ask if you need it re-shared).
 - **Jac-first tooling, one confirmed exception**: the translator's own orchestration is plain
   Jac throughout; only structural extraction needs a small Node subprocess, confirmed necessary
   (not just assumed) by a real spike — see the `npm-interop-server-only-blocked` finding below.
-- **Root-graph-as-service-registry**: proposed in `architecture.md`, **not yet validated** — the
-  Phase 0 spike for this (a real 3-service slice) hasn't run yet. Don't treat it as settled.
+- **Root-graph-as-service-registry**: validated by a real spike (`service-registry-spike/`) — see
+  the "Update" section below for the two mandatory implementation rules that came with it.
 - **Hybrid automation by risk tier**: small/pure modules can run the translate→verify loop with
   lighter supervision; the piece-tree buffer (foundational — everything else depends on it)
   always gets a single-module session with real review, plus differential testing beyond just
@@ -110,28 +110,62 @@ whether jaseci could expose a runtime-level snapshot-read primitive instead:
 `2026-08-23-service-registry-snapshot-read-primitive`). Full writeup, including the multi-user
 regression test that caught rule 1's initial gap: `service-registry-spike/README.md`.
 
+## Update — 2026-08-23: minimal scaffold created, prefix-sum-computer translated and landed
+
+Two more things happened, on a separate branch started before the update above merged:
+
+1. **The minimal project scaffold now exists** — a hand-written `jac.toml` at the repo root
+   (`[project] kind = "cli"`, deliberately minimal: no client yet, since Phase 1's editor core is
+   headless-only per `roadmap.md`; upgrading to `web-app` is a cheap jac.toml edit deferred to
+   Phase 2's workbench shell, not a rebuild). `src/` is where ported/built editor-core modules
+   live, matching the path convention `translator-strategy.md`'s manifest example already assumed
+   (`src/editor/model/...`).
+2. **`prefix-sum-computer` is translated and landed** — the first real translation through the
+   whole extract→translate→verify loop, not just the tooling around it. Both `PrefixSumComputer`
+   (lazy, O(log n) `get_index_of`) and `ConstantTimePrefixSumComputer` (eager, O(1) amortized) are
+   ported to `src/editor/model/prefix_sum_computer.jac`, with all 48 of upstream's ported tests
+   passing (`src/editor/model/prefix_sum_computer.test.jac`). `translator/manifest.toml`'s entry
+   is `status = "landed"`, verified via the tool's own `verify` command, not just manually.
+
+Two real findings surfaced during the port, both logged:
+
+- **A translation bug caught by the ported tests, not by review**: upstream's own test file wraps
+  `PrefixSumComputer` in an adapter (`IPrefixSumComputer`/`createBoth`) that converts its
+  index-based `get_prefix_sum` (`0<=j<=index`) to the count-based convention
+  (`0<=j<count`) the shared test assertions and `ConstantTimePrefixSumComputer` both use. Missing
+  that adapter and calling the raw method directly is a real bug (`get_prefix_sum(0)` returns
+  `values[0]`, not `0`) — this is exactly the value of porting the *tests*, not just eyeballing
+  the port for correctness (`translator-strategy.md`'s own point). Fixed with a small
+  `_PrefixSumComputerAsCount` wrapper in the test annex, mirroring upstream's own structure.
+- **`obj` equality does not match its documented behavior** — logged as
+  `2026-08-23-obj-equality-not-structural`, still open. `==` on a plain `obj` is identity
+  comparison, not the dataclass-style structural equality the language docs claim, and a
+  hand-written `__eq__` override has no effect on `==` either. Every value-object comparison in
+  the ported test file compares fields directly instead of upstream's
+  `assert.deepStrictEqual`-equivalent style. This will recur on `interval-tree` and
+  `piece-tree-base`, both of which return comparable result structs from their own tests.
+
+Also worth knowing for next time (not tracker-worthy, just a workflow note): `jac clean --all
+--force` wipes a project's `.jac/venv` along with cache/data, so `jac install` needs re-running
+after — cost a few minutes rediscovering this on the translator's own project mid-session.
+
 ## What's NOT done yet (Phase 0's remaining exit criteria)
 
-Per `roadmap.md`: the **minimal project scaffold** for jac-studio's actual app (as opposed to the
-translator's own `jac.toml`, or the service-registry spike's own throwaway one) doesn't exist yet.
-The translator has queued three real modules (`prefix-sum-computer`, `interval-tree`,
-`piece-tree-base` in `translator/manifest.toml`) but **no actual translation has happened** —
-extraction works, verification works, but no TS module has been ported into real Jac code yet.
+Per `roadmap.md`, the translator workflow needs to be "proven on **two** small modules" —
+`prefix-sum-computer` is done; `interval-tree` is still `status = "queued"` in
+`translator/manifest.toml`, not yet attempted. Everything else in Phase 0's scope (service
+registry, project scaffold, challenge tracker) is done.
 
 ## Suggested next steps
 
 In priority order, with reasoning:
 
-1. **The minimal project scaffold** (`jac create` for the actual jac-studio app, distinct from
-   `translator/`'s own project and the spike's throwaway one) — needed before Phase 1 can start
-   regardless, and now informed by the service-registry spike's caching + test-isolation rules
-   (bake the `get_<x>_service()` + `_reset_<x>_cache_for_tests()` shape into whatever service
-   modules the scaffold ships with, rather than rediscovering it later).
-2. **Then run the translator for real on `prefix-sum-computer`** — the smallest, lowest-risk
-   queued module. This is the first genuine test of the whole extract→translate→verify loop
-   end to end, not just the tooling around it. Expect this to surface its own findings; log them
-   as they happen, not after.
-3. **Close Phase 0 formally** (flip this doc's status) once 1–2 are done, then start Phase 1
-   (editor core MVP) per `roadmap.md` — porting the piece-tree buffer is the anchor of that phase,
-   and it should only start once the translator has proven itself on the two smaller modules
-   first, per `translator-strategy.md`'s own ordering.
+1. **Run the translator for real on `interval-tree`** — the last of the two small modules
+   `roadmap.md`'s Phase 0 exit criteria calls for. Same shape of work as `prefix-sum-computer`,
+   now with the `obj`-equality and count/index-convention lessons already in hand, so it should go
+   faster and hit fewer surprises of its own kind (new ones, being a different algorithm, are
+   still possible — log them the same way).
+2. **Close Phase 0 formally** (flip this doc's status) once interval-tree lands — then start
+   Phase 1 (editor core MVP) per `roadmap.md`. Porting the piece-tree buffer is that phase's
+   anchor, and per `translator-strategy.md`'s own ordering, it should only start once the
+   translator has proven itself on both smaller modules first — which this step completes.

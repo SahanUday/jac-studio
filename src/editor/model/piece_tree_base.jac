@@ -46,10 +46,11 @@ Idiom notes:
   large real document.
 - Typed-array buffer sizing (`createUintArray` picking `Uint16Array` vs `Uint32Array`) is a V8
   memory micro-optimization with no correctness role; line-start offsets are plain `list[int]`
-  here. `createLineStarts` (the `LineStarts`-returning variant that also tracks cr/lf/crlf counts
-  and an `isBasicASCII` flag) is not ported -- those extra fields fed a since-superseded fast path
-  and nothing in this module's own logic or its ported tests reads them; only the simpler
-  `createLineStartsFast` behavior is needed, ported here as `create_line_starts`.
+  here. Upstream's `createLineStartsFast` (no cr/lf/crlf/isBasicASCII tracking) is ported as
+  `create_line_starts`, used throughout this module's own internal logic, which never reads those
+  extra fields. The counting variant, `createLineStarts`, is also ported
+  (`create_line_starts_with_counts`/`LineStarts`) despite nothing in *this* module needing it --
+  `PieceTreeTextBufferBuilder` (a separate file) does, for EOL auto-detection.
 - `Math.floor` guards on offsets are dropped where the parameter is typed `int` -- JS numbers are
   always float64, Jac has a real `int` type, so the guard is structurally unnecessary.
 - `positionInBuffer(node, remainder, ret?)`'s in-place-mutate overload (avoids one allocation in a
@@ -106,6 +107,48 @@ def create_line_starts(text: str) -> list[int] {
         i += 1;
     }
     return starts;
+}
+
+"""Line-start offsets plus per-buffer cr/lf/crlf counts and an `is_basic_ascii` flag (upstream's
+`createLineStarts`, the counting variant `create_line_starts` above deliberately didn't port).
+Needed by `PieceTreeTextBufferBuilder` (see piece_tree_text_buffer.jac) for EOL auto-detection
+(majority-vote over cr/lf/crlf across every accepted chunk) and RTL/unusual-line-terminator
+gating (skip the regex scan on already-known-ASCII chunks) -- real behavior the builder layer
+needs, unlike `PieceTreeBase`'s own internal use of line starts, which never reads these counts."""
+obj LineStarts {
+    has line_starts: list[int], cr: int, lf: int, crlf: int, is_basic_ascii: bool;
+}
+
+def create_line_starts_with_counts(text: str) -> LineStarts {
+    starts: list[int] = [0];
+    cr = 0;
+    lf = 0;
+    crlf = 0;
+    is_basic_ascii = True;
+    i = 0;
+    length = len(text);
+    while i < length {
+        ch = ord(text[i]);
+        if ch == CARRIAGE_RETURN {
+            if i + 1 < length and ord(text[i + 1]) == LINE_FEED {
+                crlf += 1;
+                starts.append(i + 2);
+                i += 1;
+            } else {
+                cr += 1;
+                starts.append(i + 1);
+            }
+        } elif ch == LINE_FEED {
+            lf += 1;
+            starts.append(i + 1);
+        } else {
+            if is_basic_ascii and ch != TAB and (ch < 32 or ch > 126) {
+                is_basic_ascii = False;
+            }
+        }
+        i += 1;
+    }
+    return LineStarts(line_starts=starts, cr=cr, lf=lf, crlf=crlf, is_basic_ascii=is_basic_ascii);
 }
 
 obj TreeNode {

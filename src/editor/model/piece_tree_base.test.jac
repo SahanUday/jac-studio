@@ -203,6 +203,23 @@ test "a piece larger than the average buffer size is split across multiple buffe
     assert len(tree.buffers) > 1;
 }
 
+test "create_line_starts_with_counts tallies cr/lf/crlf separately" {
+    result = create_line_starts_with_counts("a\r\nb\nc\rd");
+    assert result.cr == 1;
+    assert result.lf == 1;
+    assert result.crlf == 1;
+    assert result.line_starts == create_line_starts("a\r\nb\nc\rd");
+}
+
+test "create_line_starts_with_counts flags non-basic-ASCII content" {
+    assert create_line_starts_with_counts("plain ascii").is_basic_ascii;
+    assert not create_line_starts_with_counts("caf" + chr(0x00E9)).is_basic_ascii;
+}
+
+test "create_line_starts_with_counts treats tab as basic ASCII" {
+    assert create_line_starts_with_counts("a\tb").is_basic_ascii;
+}
+
 test "TreeNode.next and .prev traverse pieces in document order" {
     tree = make_tree("ab");
     tree.insert(1, "X");

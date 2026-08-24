@@ -17,10 +17,17 @@ every callback instead of the parent baking group identity into a per-iteration 
 laid out with shadcn's `Resizable` primitive -- `ResizablePanelGroup` + one `ResizablePanel` per
 group + a `ResizableHandle` between each pair, so panes are drag-resizable like every other
 multi-pane split in a real editor.
+
+**Command palette (2026-08-25, `docs/roadmap.md` Phase 2)** -- `CommandPaletteApp` mounts here
+because it needs to invoke the same group-mutating abilities (`split_group`, `close_tab`) that
+`EditorTabsApp`'s buttons already call directly; `handle_command` is the one place that maps a
+command id from the palette onto one of them, so adding a new palette-reachable command later is a
+one-line dispatch addition here, not a new prop threaded through every layer.
 """
 
 import from src.workbench.file_tree.file_tree { app as FileTreeApp }
 import from src.workbench.editor_tabs.editor_tabs { app as EditorTabsApp }
+import from src.workbench.command_palette.command_palette { app as CommandPaletteApp }
 import from components.ui.resizable { ResizablePanelGroup, ResizablePanel, ResizableHandle }
 
 def:pub app -> JsxElement {
@@ -32,6 +39,7 @@ def:pub app -> JsxElement {
     def select_tab(group_id: str, path: str) -> None;
     def close_tab(group_id: str, path: str) -> None;
     def split_group(group_id: str) -> None;
+    def handle_command(command_id: str) -> None;
 
     panel_count = len(groups);
     panel_children = [];
@@ -55,6 +63,7 @@ def:pub app -> JsxElement {
     }
 
     <div style={{"display": "flex", "height": "100vh"}}>
+        <CommandPaletteApp onRunCommand={handle_command} />
         <div style={{"width": "260px", "flexShrink": "0", "borderRight": "1px solid #3c3c3c", "overflow": "hidden"}}>
             <FileTreeApp onOpenFile={open_tab} />
         </div>

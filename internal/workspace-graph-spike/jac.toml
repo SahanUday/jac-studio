@@ -1,0 +1,10 @@
+[project]
+name = "jac-studio-workspace-graph-spike"
+version = "0.1.0"
+description = "Phase 2 spike: validate the workspace-as-graph data model (Workspace/Folder/File nodes) at realistic scale before the file-tree feature is built on it"
+entry-point = "main.jac"
+kind = "cli"
+jac-version = "==0.36.1"
+
+[test]
+directory = "tests"

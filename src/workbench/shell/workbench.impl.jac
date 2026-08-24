@@ -19,5 +19,4 @@ impl app.close_tab(path: str) -> None {
     if was_active {
         active_path = remaining[-1]["path"] if len(remaining) > 0 else "";
     }
-    await close_document(path);
 }

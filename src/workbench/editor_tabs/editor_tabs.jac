@@ -26,9 +26,24 @@ inactive panels by default.
 **`MonacoEditorApp` (2026-08-25)**, not the archived native `TextEditorApp` -- see
 `docs/architecture.md`'s Editor Core section. The mounted-per-tab shape here is unaffected by that
 switch either way.
+
+**Editor-group splitting (2026-08-25, `docs/roadmap.md` Phase 2)**: this component still renders
+exactly one group's tab row + content, unaware it's one of possibly several -- `workbench.jac` owns
+the list of groups and mounts one `EditorTabs` per group inside a `ResizablePanelGroup`. Rather than
+handing each instance a pre-bound closure (which would mean building N distinct closures in a JSX
+list -- a loop-variable-capture footgun to avoid, not a real need here), this component takes a
+plain `groupId` prop and forwards it as the first argument on every callback (`onSelectTab(groupId,
+path)`, `onCloseTab(groupId, path)`, `onSplitGroup(groupId)`), same "leaf reports, parent owns
+identity" shape `file_tree.jac`'s `FileTreeNode` already uses for `onSelect`/`onToggle`. VS Code's
+real split duplicates the *active* editor into a new group beside it, so the split button is a
+no-op (still shown, per real-editor convention of always offering it) when this group has no active
+tab to duplicate -- `workbench.impl.jac`'s `split_group` is where that guard lives, not here.
 """
 
 import from src.editor.client.monaco_editor { app as MonacoEditorApp }
+import from components.ui.button { Button }
+import from "@hugeicons/react" { HugeiconsIcon }
+import from "@hugeicons/core-free-icons" { SquareSplitHorizontalIcon }
 
 glob TAB_STYLE: dict[str, str] = {
     "display": "flex",
@@ -44,33 +59,46 @@ glob TAB_STYLE: dict[str, str] = {
 };
 
 def:pub app(props: any) -> JsxElement {
+    group_id = props["groupId"];
     open_tabs = props["openTabs"];
     active_path = props["activePath"];
     on_select_tab = props["onSelectTab"];
     on_close_tab = props["onCloseTab"];
+    on_split_group = props["onSplitGroup"];
 
     <div style={{"display": "flex", "flexDirection": "column", "height": "100%", "overflow": "hidden"}}>
-        <div style={{"display": "flex", "borderBottom": "1px solid #3c3c3c", "background": "#252526", "flexShrink": "0"}}>
-            {[
-                <div
-                    key={t["path"]}
-                    onClick={lambda (e: any) { on_select_tab(t["path"]); }}
-                    style={{
-                        **TAB_STYLE,
-                        "background": "#1e1e1e" if t["path"] == active_path else "transparent",
-                        "color": "#d4d4d4" if t["path"] == active_path else "#969696"
-                    }}
-                >
-                    <span>{t["name"]}</span>
-                    <span
-                        onClick={lambda (e: any) { e.stopPropagation(); on_close_tab(t["path"]); }}
-                        style={{"opacity": "0.6", "fontSize": "13px", "lineHeight": "1"}}
+        <div style={{"display": "flex", "alignItems": "center", "borderBottom": "1px solid #3c3c3c", "background": "#252526", "flexShrink": "0"}}>
+            <div style={{"display": "flex", "flex": "1", "overflow": "auto"}}>
+                {[
+                    <div
+                        key={t["path"]}
+                        onClick={lambda (e: any) { on_select_tab(group_id, t["path"]); }}
+                        style={{
+                            **TAB_STYLE,
+                            "background": "#1e1e1e" if t["path"] == active_path else "transparent",
+                            "color": "#d4d4d4" if t["path"] == active_path else "#969696"
+                        }}
                     >
-                        &times;
-                    </span>
-                </div>
-                for t in open_tabs
-            ]}
+                        <span>{t["name"]}</span>
+                        <span
+                            onClick={lambda (e: any) { e.stopPropagation(); on_close_tab(group_id, t["path"]); }}
+                            style={{"opacity": "0.6", "fontSize": "13px", "lineHeight": "1"}}
+                        >
+                            &times;
+                        </span>
+                    </div>
+                    for t in open_tabs
+                ]}
+            </div>
+            <Button
+                variant="ghost"
+                size="icon-sm"
+                title="Split editor right"
+                onClick={lambda (e: any) { on_split_group(group_id); }}
+                style={{"flexShrink": "0", "marginRight": "0.25rem"}}
+            >
+                <HugeiconsIcon icon={SquareSplitHorizontalIcon} strokeWidth={2} className="size-4" />
+            </Button>
         </div>
         <div style={{"flex": "1", "overflow": "auto", "padding": "0.75rem"}}>
             {(

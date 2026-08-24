@@ -1,44 +1,93 @@
 """Direct server-side tests for `document_service.jac`, following the same pattern
-`internal/service-registry-spike`'s `config_service_tests.jac` established for Phase 0's spike: idempotent
-lookup, and the RPC surface the client actually calls."""
+`workspace_service.test.jac` established for the workspace graph: everything goes through the
+client-facing functions (`open_document`, `apply_document_edit`, `close_document`) against a real
+temp-file fixture, and asserts the per-path isolation the Tabs feature depends on -- editing one
+open file must never touch another's buffer."""
 
-test "get_document_buffer is idempotent -- repeated lookup returns the same cached instance" {
-    _reset_document_buffer_cache_for_tests();
-    first = get_document_buffer();
-    second = get_document_buffer();
-    assert first == second;
+import os;
+import tempfile;
+
+def make_fixture(content: str) -> str {
+    fd_and_path = tempfile.mkstemp(suffix=".txt");
+    path = fd_and_path[1];
+    with open(path, "w") as f {
+        f.write(content);
+    }
+    return path;
 }
 
-test "get_document_lines returns the seeded content, split into lines" {
+test "open_document reads a real file's content from disk, split into lines" {
     _reset_document_buffer_cache_for_tests();
-    lines = get_document_lines();
-    assert lines[0] == "Welcome to jac-studio's editor core.";
-    assert len(lines) > 1;
+    path = make_fixture("hello\nworld\n");
+
+    result = open_document(path);
+
+    assert result["path"] == path;
+    assert result["name"] == os.path.basename(path);
+    assert result["lines"] == ["hello", "world", ""];
 }
 
-test "apply_document_edit inserts text and returns the updated lines" {
+test "open_document on a path with no file yet starts from empty content" {
     _reset_document_buffer_cache_for_tests();
-    lines = apply_document_edit(1, 1, 1, 1, "Hi! ");
-    assert lines[0].startswith("Hi! Welcome");
+    missing_path = os.path.join(tempfile.mkdtemp(), "not_on_disk.txt");
+
+    result = open_document(missing_path);
+
+    assert result["lines"] == [""];
 }
 
-test "apply_document_edit deletes a range when text is empty" {
+test "apply_document_edit mutates only the buffer for its own path" {
     _reset_document_buffer_cache_for_tests();
-    lines = apply_document_edit(1, 1, 1, 1, "X");
-    assert lines[0].startswith("XWelcome");
-    lines = apply_document_edit(1, 1, 1, 2, "");
-    assert lines[0].startswith("Welcome");
+    path_a = make_fixture("aaa\n");
+    path_b = make_fixture("bbb\n");
+    open_document(path_a);
+    open_document(path_b);
+
+    lines_a = apply_document_edit(path_a, 1, 1, 1, 1, "X");
+
+    assert lines_a[0].startswith("Xaaa");
+    lines_b = open_document(path_b)["lines"];
+    assert lines_b[0] == "bbb";
+}
+
+test "re-opening an already-open path returns the live edited content, not a fresh disk read" {
+    _reset_document_buffer_cache_for_tests();
+    path = make_fixture("original\n");
+    open_document(path);
+    apply_document_edit(path, 1, 1, 1, 1, "X");
+
+    result = open_document(path);
+
+    assert result["lines"][0].startswith("Xoriginal");
+}
+
+test "close_document frees the buffer so a later open re-reads from disk" {
+    _reset_document_buffer_cache_for_tests();
+    path = make_fixture("original\n");
+    open_document(path);
+    apply_document_edit(path, 1, 1, 1, 1, "X");
+
+    close_document(path);
+    result = open_document(path);
+
+    assert result["lines"][0] == "original";
+}
+
+test "close_document on a never-opened path is a no-op, not an error" {
+    _reset_document_buffer_cache_for_tests();
+    close_document("/nonexistent/path.txt");
 }
 
 test "apply_document_edit can insert a newline, splitting a line in two" {
     _reset_document_buffer_cache_for_tests();
-    original_lines = get_document_lines();
+    path = make_fixture("hello world\n");
+    original_lines = open_document(path)["lines"];
     original_line_count = len(original_lines);
     original_first_line = original_lines[0];
 
-    lines = apply_document_edit(1, 8, 1, 8, "\n");
+    lines = apply_document_edit(path, 1, 6, 1, 6, "\n");
 
     assert len(lines) == original_line_count + 1;
-    assert lines[0] == original_first_line[0:7];
-    assert lines[1] == original_first_line[7:];
+    assert lines[0] == original_first_line[0:5];
+    assert lines[1] == original_first_line[5:];
 }

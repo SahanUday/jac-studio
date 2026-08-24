@@ -17,8 +17,10 @@ already calls this out: shadcn's ~50-primitive set doesn't ship a tree component
 `SidebarHeader`/`SidebarContent`/`ScrollArea` provide the real outer chrome; `FileTreeNode` below
 is the hand-built, self-recursive row renderer the roadmap anticipated.
 
-**Selecting a file only highlights it for now** -- wiring a selected file's content into a real
-editor buffer is Tabs/editor-group work, a separate roadmap bullet, out of scope here.
+**Selecting a file highlights it and calls the `onOpenFile` prop** -- Phase 2's Tabs shell
+(`src/workbench/shell/workbench.jac`) passes down its own `open_tab` method, so a click here opens
+(or activates) that file's tab. This component itself still owns no tab/editor state -- it only
+reports which file was clicked, matching the file tree's job in a real editor.
 
 Handler bodies live in the paired `file_tree.impl.jac` annex, per the client-component
 "handler annex" pattern -- see `jac-studio-code-organization`.
@@ -60,7 +62,7 @@ def:pub FileTreeNode(props: any) -> JsxElement {
 
     <div>
         <div
-            onClick={lambda (e: any) { on_toggle(path) if is_dir else on_select(path); }}
+            onClick={lambda (e: any) { on_toggle(path) if is_dir else on_select(path, item["name"]); }}
             style={{
                 **ROW_BASE_STYLE,
                 "paddingLeft": str(indent) + "px",
@@ -90,7 +92,8 @@ def:pub FileTreeNode(props: any) -> JsxElement {
     </div>
 }
 
-def:pub app -> JsxElement {
+def:pub app(props: any) -> JsxElement {
+    has on_open_file: any = props["onOpenFile"];
     has opened: bool = False;
     has root_path: str = "";
     has root_name: str = "";
@@ -101,7 +104,7 @@ def:pub app -> JsxElement {
 
     async def open_folder -> None;
     async def toggle_folder(path: str) -> None;
-    def select_file(path: str) -> None;
+    def select_file(path: str, name: str) -> None;
 
     <SidebarProvider>
         <Sidebar>

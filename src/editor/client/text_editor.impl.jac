@@ -1,5 +1,6 @@
 impl app.load -> None {
-    lines = await get_document_lines();
+    result = await open_document(path);
+    lines = result["lines"];
     loaded = True;
 }
 
@@ -37,7 +38,7 @@ impl app.move_down -> None {
 }
 
 impl app.insert_at_cursor(text: str) -> None {
-    new_lines = await apply_document_edit(cursor_line, cursor_column, cursor_line, cursor_column, text);
+    new_lines = await apply_document_edit(path, cursor_line, cursor_column, cursor_line, cursor_column, text);
     lines = new_lines;
     if text == "\n" {
         cursor_line += 1;
@@ -50,14 +51,14 @@ impl app.insert_at_cursor(text: str) -> None {
 impl app.delete_before_cursor -> None {
     if cursor_column > 1 {
         new_lines = await apply_document_edit(
-            cursor_line, cursor_column - 1, cursor_line, cursor_column, ""
+            path, cursor_line, cursor_column - 1, cursor_line, cursor_column, ""
         );
         lines = new_lines;
         cursor_column -= 1;
     } elif cursor_line > 1 {
         prev_line_text = lines[cursor_line - 2];
         prev_end_column = len(prev_line_text) + 1;
-        new_lines = await apply_document_edit(cursor_line - 1, prev_end_column, cursor_line, 1, "");
+        new_lines = await apply_document_edit(path, cursor_line - 1, prev_end_column, cursor_line, 1, "");
         lines = new_lines;
         cursor_line -= 1;
         cursor_column = prev_end_column;
@@ -68,11 +69,11 @@ impl app.delete_after_cursor -> None {
     current_line_text = lines[cursor_line - 1];
     if cursor_column <= len(current_line_text) {
         new_lines = await apply_document_edit(
-            cursor_line, cursor_column, cursor_line, cursor_column + 1, ""
+            path, cursor_line, cursor_column, cursor_line, cursor_column + 1, ""
         );
         lines = new_lines;
     } elif cursor_line < len(lines) {
-        new_lines = await apply_document_edit(cursor_line, cursor_column, cursor_line + 1, 1, "");
+        new_lines = await apply_document_edit(path, cursor_line, cursor_column, cursor_line + 1, 1, "");
         lines = new_lines;
     }
 }

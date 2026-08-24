@@ -7,6 +7,12 @@ beyond what the ported piece-tree buffer gives for free. This is the working pro
 roadmap's Phase 1 "decision point" (native rendering vs. a Monaco-embed bridge) gets made from --
 see `docs/architecture.md`'s open-questions section.
 
+**Phase 2 addition: takes a `path` prop.** `src/workbench/editor_tabs/editor_tabs.jac` mounts one
+instance of this component per open tab, keyed by path, so each tab gets its own independent
+`lines`/cursor state and its own server-side buffer (`document_service.jac`'s per-path cache) --
+switching tabs never reloads or cross-contaminates another tab's content. Used standalone (no
+parent Tabs shell) it still works exactly as it did in Phase 1, given any `path`.
+
 **Not a `<textarea>`.** A plain `<textarea value={...} onChange={...}>` (see `notes-app`'s example)
 would trivially "work" but wouldn't exercise anything this project built -- the browser's own
 native text editing would own every keystroke, and the piece-tree buffer would just be a mirror of
@@ -27,7 +33,7 @@ Handler bodies live in the paired `text_editor.impl.jac` annex (the standard cli
 surface.
 """
 
-import from src.editor.document_service { get_document_lines, apply_document_edit }
+import from src.editor.document_service { open_document, apply_document_edit }
 
 glob EDITOR_CONTAINER_STYLE: dict[str, str] = {
     "fontFamily": "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
@@ -51,7 +57,8 @@ glob CURSOR_STYLE: dict[str, str] = {
     "verticalAlign": "text-bottom"
 };
 
-def:pub app -> JsxElement {
+def:pub app(props: any) -> JsxElement {
+    has path: str = props["path"];
     has lines: list[str] = [];
     has cursor_line: int = 1;
     has cursor_column: int = 1;
@@ -78,12 +85,6 @@ def:pub app -> JsxElement {
     async def handle_key_down(e: KeyboardEvent) -> None;
 
     <div>
-        <h1 style={{"fontFamily": "system-ui, sans-serif", "fontSize": "18px"}}>
-            jac-studio -- editor core (Phase 1 prototype)
-        </h1>
-        <p style={{"fontFamily": "system-ui, sans-serif", "color": "#666", "fontSize": "13px"}}>
-            {"Click below, then type. Backed by a real ported piece-tree buffer, not a <textarea>."}
-        </p>
         <div tabIndex={0} onKeyDown={handle_key_down} style={EDITOR_CONTAINER_STYLE}>
             {"Loading..." if not loaded else None}
             {for (idx, line_text) in enumerate(lines) {

@@ -41,6 +41,7 @@ impl app.toggle_folder(path: str) -> None {
     expanded = updated_expanded;
 }
 
-impl app.select_file(path: str) -> None {
+impl app.select_file(path: str, name: str) -> None {
     selected_path = path;
+    on_open_file(path, name);
 }

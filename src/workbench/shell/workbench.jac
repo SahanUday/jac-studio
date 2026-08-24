@@ -23,23 +23,37 @@ because it needs to invoke the same group-mutating abilities (`split_group`, `cl
 `EditorTabsApp`'s buttons already call directly; `handle_command` is the one place that maps a
 command id from the palette onto one of them, so adding a new palette-reachable command later is a
 one-line dispatch addition here, not a new prop threaded through every layer.
+
+**Status bar (2026-08-25, `docs/roadmap.md` Phase 2)** -- `cursor_positions` is keyed by tab path,
+not a single global `(line, column)`, so switching to an already-open tab (no remount, so no fresh
+`onDidChangeCursorPosition` fires) still shows that tab's own last-known position instead of a
+stale reading left over from whichever tab was active before. The status bar itself always reflects
+`active_group_id`'s active tab -- `docs/roadmap.md` scopes this bullet to cursor position only, so
+there's no per-group status bar yet.
 """
 
 import from src.workbench.file_tree.file_tree { app as FileTreeApp }
 import from src.workbench.editor_tabs.editor_tabs { app as EditorTabsApp }
 import from src.workbench.command_palette.command_palette { app as CommandPaletteApp }
+import from src.workbench.status_bar.status_bar { app as StatusBarApp }
 import from components.ui.resizable { ResizablePanelGroup, ResizablePanel, ResizableHandle }
 
 def:pub app -> JsxElement {
     has groups: list[dict[str, any]] = [{"id": "group-1", "tabs": [], "activePath": ""}];
     has active_group_id: str = "group-1";
     has next_group_id: int = 2;
+    has cursor_positions: dict[str, dict[str, int]] = {};
 
     def open_tab(path: str, name: str) -> None;
     def select_tab(group_id: str, path: str) -> None;
     def close_tab(group_id: str, path: str) -> None;
     def split_group(group_id: str) -> None;
     def handle_command(command_id: str) -> None;
+    def handle_cursor_change(path: str, line: int, column: int) -> None;
+
+    active_group_list = [g for g in groups if g["id"] == active_group_id];
+    active_tab_path = active_group_list[0]["activePath"] if len(active_group_list) > 0 else "";
+    active_cursor = cursor_positions[active_tab_path] if active_tab_path in cursor_positions else {"line": 1, "column": 1};
 
     panel_count = len(groups);
     panel_children = [];
@@ -54,6 +68,7 @@ def:pub app -> JsxElement {
                     onSelectTab={select_tab}
                     onCloseTab={close_tab}
                     onSplitGroup={split_group}
+                    onCursorChange={handle_cursor_change}
                 />
             </ResizablePanel>
         );
@@ -62,15 +77,18 @@ def:pub app -> JsxElement {
         }
     }
 
-    <div style={{"display": "flex", "height": "100vh"}}>
+    <div style={{"display": "flex", "flexDirection": "column", "height": "100vh"}}>
         <CommandPaletteApp onRunCommand={handle_command} />
-        <div style={{"width": "260px", "flexShrink": "0", "borderRight": "1px solid #3c3c3c", "overflow": "hidden"}}>
-            <FileTreeApp onOpenFile={open_tab} />
+        <div style={{"display": "flex", "flex": "1", "overflow": "hidden"}}>
+            <div style={{"width": "260px", "flexShrink": "0", "borderRight": "1px solid #3c3c3c", "overflow": "hidden"}}>
+                <FileTreeApp onOpenFile={open_tab} />
+            </div>
+            <div style={{"flex": "1", "overflow": "hidden"}}>
+                <ResizablePanelGroup direction="horizontal">
+                    {panel_children}
+                </ResizablePanelGroup>
+            </div>
         </div>
-        <div style={{"flex": "1", "overflow": "hidden"}}>
-            <ResizablePanelGroup direction="horizontal">
-                {panel_children}
-            </ResizablePanelGroup>
-        </div>
+        <StatusBarApp line={active_cursor["line"]} column={active_cursor["column"]} path={active_tab_path} />
     </div>
 }

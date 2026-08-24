@@ -1,0 +1,113 @@
+"""Workspace-as-graph, production version: `Workspace --Contains--> Folder --Contains--> File`
+per `docs/architecture.md`'s data model, promoted from `internal/workspace-graph-spike/` once that
+spike validated the shape at real scale (2,974 nodes) -- see the spike's README and tracker entry
+`2026-08-24-workspace-graph-eager-traversal-too-slow-at-scale` for why this version scans lazily,
+one directory level at a time, instead of the spike's recursive eager scan: eagerly building and
+traversing a real-sized project took ~3 seconds combined, too slow for a file tree that needs to
+feel instant on open.
+
+`Workspace` is a real graph `node` (not a cached `obj`) for the same reason the spike's docstring
+gives: workspace state needs to survive a restart and be reached by graph traversal, not just
+process-lifetime lookup.
+
+Client-facing functions (`open_workspace`, `list_children_by_path`) return plain dicts/lists, not
+node objects, matching `document_service.jac`'s precedent -- nodes stay server-side.
+"""
+
+import os;
+
+node Workspace {
+    has root_path: str;
+    has scanned: bool = False;
+}
+
+node Folder {
+    has name: str, path: str;
+    has scanned: bool = False;
+}
+
+node File {
+    has name: str, path: str;
+}
+
+edge Contains {}
+
+glob DEFAULT_EXCLUDED_DIRS: list[str] = [
+    "node_modules", ".git", ".jac", "dist", "__pycache__", ".venv", "venv"
+];
+
+glob _cached_workspaces: dict[str, Workspace] = {};
+glob _path_index: dict[str, dict[str, (Workspace | Folder)]] = {};
+
+def:pub _reset_workspace_cache_for_tests {
+    _cached_workspaces.clear();
+    _path_index.clear();
+}
+
+def get_or_create_workspace(root_path: str) -> Workspace {
+    key = jid(root);
+    if key in _cached_workspaces {
+        return _cached_workspaces[key];
+    }
+    existing = [root-->[?:Workspace]];
+    ws = existing[0] if existing else root ++> Workspace(root_path=root_path);
+    _cached_workspaces[key] = ws;
+    _path_index[key] = {ws.root_path: ws};
+    return ws;
+}
+
+"""Materialize one directory level's worth of Folder/File children under `parent`, if it hasn't
+been scanned yet. Idempotent per `parent` via the `scanned` flag -- never re-reads the directory
+or duplicates children on repeat calls, which is what makes lazy expand-on-demand safe to call on
+every UI expand click."""
+def _ensure_scanned(parent: (Workspace | Folder)) -> None {
+    if parent.scanned {
+        return;
+    }
+    dir_path = parent.root_path if isinstance(parent, Workspace) else parent.path;
+    entries = sorted(os.listdir(dir_path)) if os.path.isdir(dir_path) else [];
+    for name in entries {
+        if name in DEFAULT_EXCLUDED_DIRS {
+            continue;
+        }
+        child_path = os.path.join(dir_path, name);
+        child = (
+            Folder(name=name, path=child_path)
+                if os.path.isdir(child_path)
+                else File(name=name, path=child_path)
+        );
+        parent +>:Contains():+> child;
+    }
+    parent.scanned = True;
+}
+
+def:pub open_workspace(root_path: str) -> dict[str, str] {
+    ws = get_or_create_workspace(root_path);
+    return {"root_path": ws.root_path, "name": os.path.basename(ws.root_path.rstrip("/")) or ws.root_path};
+}
+
+"""The one function the file-tree UI calls on every expand click. Resolves `parent_path` against
+the current user's workspace via `_path_index` (never a graph query -- see `jac-studio-architecture`
+skill's service-registry caching rules), lazily scans it if needed, and returns its children as
+plain dicts sorted folders-first then alphabetically, ready for the client to render."""
+def:pub list_children_by_path(parent_path: str) -> list[dict] {
+    key = jid(root);
+    if key not in _path_index or parent_path not in _path_index[key] {
+        return [];
+    }
+    parent = _path_index[key][parent_path];
+    _ensure_scanned(parent);
+
+    children = [parent->:Contains:->];
+    for child in children {
+        _path_index[key][child.path] = child;
+    }
+
+    folders = sorted([c for c in children if isinstance(c, Folder)], key=lambda (c: (Folder | File)) { c.name; });
+    files = sorted([c for c in children if isinstance(c, File)], key=lambda (c: (Folder | File)) { c.name; });
+    ordered = folders + files;
+    return [
+        {"name": c.name, "path": c.path, "is_dir": isinstance(c, Folder)}
+        for c in ordered
+    ];
+}

@@ -18,13 +18,17 @@ each tab per real-editor convention, but Radix's `TabsTrigger` renders as a `<bu
 handling). Same call `file_tree.jac` already made for its rows against `SidebarMenuSub` -- use the
 primitive where it fits, hand-roll where it doesn't.
 
-**Every open tab's `TextEditorApp` stays mounted**, hidden via `display: none` rather than
-conditionally rendered, so switching tabs never re-fetches content or resets a tab's cursor
-position -- the whole reason this doesn't use Radix `TabsContent`, which unmounts inactive panels
-by default.
+**Every open tab's `MonacoEditorApp` stays mounted**, hidden via `display: none` rather than
+conditionally rendered, so switching tabs never re-fetches content or loses Monaco's own undo
+history for that file -- the whole reason this doesn't use Radix `TabsContent`, which unmounts
+inactive panels by default.
+
+**`MonacoEditorApp` (2026-08-25)**, not the archived native `TextEditorApp` -- see
+`docs/architecture.md`'s Editor Core section. The mounted-per-tab shape here is unaffected by that
+switch either way.
 """
 
-import from src.editor.client.text_editor { app as TextEditorApp }
+import from src.editor.client.monaco_editor { app as MonacoEditorApp }
 
 glob TAB_STYLE: dict[str, str] = {
     "display": "flex",
@@ -72,7 +76,7 @@ def:pub app(props: any) -> JsxElement {
             {(
                 [
                     <div key={t["path"]} style={{"display": "block" if t["path"] == active_path else "none", "height": "100%"}}>
-                        <TextEditorApp path={t["path"]} />
+                        <MonacoEditorApp path={t["path"]} />
                     </div>
                     for t in open_tabs
                 ]

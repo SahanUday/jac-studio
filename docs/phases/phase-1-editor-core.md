@@ -7,6 +7,14 @@ record of how Phase 1 actually went; Phase 2 (workbench shell MVP) is next -- se
 Phase 2 section. Read this before touching editor-core code -- it's the fastest way to get
 oriented without re-reading every doc and PR from scratch.
 
+> **Update (2026-08-25, mid-Phase-2): the "continue native" decision below was reversed.** The
+> project now embeds the real `monaco-editor` npm package as the actual editor engine for v1 --
+> a reuse-over-reinvention call, not a verdict that this phase's work failed. Everything below is
+> preserved as an accurate record of what Phase 1 actually did and found; it is no longer the
+> live editor path. The code this phase produced is archived at `internal/native-editor-archive/`,
+> not deleted. See `docs/architecture.md`'s Editor Core section and tracker entry
+> `2026-08-25-editor-core-decision-reversed-to-monaco` for the current state and full reasoning.
+
 ## Goal (from roadmap.md)
 
 A single text buffer that can be created, edited, and displayed -- no workbench chrome yet --

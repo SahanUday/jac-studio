@@ -43,6 +43,14 @@ Goal: a single text buffer that can be created, edited, and displayed — no wor
 Exit criteria: can open a file's content into a buffer, type, delete, save — as a standalone demo,
 no surrounding app.
 
+**Update, mid-Phase-2 (2026-08-25)**: the decision below was reversed. Phase 1's native prototype
+did meet this exit criteria and the "continue native" call was made in good faith — but the
+project has since switched to embedding the real `monaco-editor` npm package as the actual editor
+engine for v1, a reuse-over-reinvention call, not a verdict that native failed. The ported
+piece-tree/interval-tree engine and its client component are archived, not deleted, at
+`internal/native-editor-archive/` for a possible future revival. See `architecture.md`'s Editor
+Core section and tracker entry `2026-08-25-editor-core-decision-reversed-to-monaco`.
+
 ## Phase 2 — Workbench shell MVP
 
 Goal: the app *looks* like an editor, using the shadcn-in-Jac primitives already available.
@@ -78,11 +86,14 @@ serialization.
 - Settings and keybindings as graph-attached `obj`s (per `architecture.md`'s data model).
 - Workspace state (open tabs, cursor positions, panel layout) persisted the same way — restoring
   a session on reopen "for free" via the graph, no explicit save/load code.
-- Basic syntax highlighting via a TextMate-grammar-compatible tokenizer reached through Python/npm
-  interop (evaluate before committing to a from-scratch tokenizer, per `architecture.md`).
-- **A diff-editor rendering mode** on the same text-buffer model — a core editing capability
-  (compare two versions of a file), not SCM-specific, and cheap to add here since it's a rendering
-  mode over infrastructure this phase already has, not new infrastructure of its own.
+- Basic syntax highlighting — now largely free via `monaco-editor`'s own bundled tokenizer/language
+  services (see `architecture.md`'s Editor Core section on the 2026-08-25 Monaco-embed decision);
+  the earlier "reach a TextMate tokenizer through Python/npm interop" question this bullet used to
+  pose no longer applies for the languages Monaco already ships.
+- **A diff-editor rendering mode** — also largely free via Monaco's own `createDiffEditor`; confirm
+  it composes cleanly with this project's document-service/workspace-graph model before treating it
+  as done, since Monaco's diff editor expects two of its own text models, not our `File` nodes
+  directly.
 - **A `Diagnostic` node type** attached to `File` in the workspace graph, with no producer yet —
   just the data model, so Phase 4's task/problem-matcher work and later language-intelligence work
   have somewhere to write to from day one.

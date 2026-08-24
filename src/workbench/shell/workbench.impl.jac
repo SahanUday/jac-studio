@@ -78,3 +78,17 @@ impl app.split_group(group_id: str) -> None {
     next_group_id = next_group_id + 1;
     active_group_id = new_group_id;
 }
+
+impl app.handle_command(command_id: str) -> None {
+    if command_id == "workbench.action.splitEditorRight" {
+        split_group(active_group_id);
+        return;
+    }
+    if command_id == "workbench.action.closeActiveEditor" {
+        active_group = [g for g in groups if g["id"] == active_group_id];
+        if len(active_group) == 0 or active_group[0]["activePath"] == "" {
+            return;
+        }
+        close_tab(active_group_id, active_group[0]["activePath"]);
+    }
+}

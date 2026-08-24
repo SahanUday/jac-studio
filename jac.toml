@@ -16,6 +16,7 @@ menuAccent = "subtle"
 menuColor = "default"
 [dependencies]
 [dependencies.npm]
+cmdk = "^1.1.1"
 react-resizable-panels = "^2.1.9"
 "@fontsource-variable/figtree" = "*"
 radix-ui = "^1.6.7"

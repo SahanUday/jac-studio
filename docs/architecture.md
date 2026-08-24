@@ -207,6 +207,15 @@ This directly follows the pattern proven in littleX/day_planner (root-anchored p
 free later, since Jac's access-control primitives (`grant`/`revoke`/`root.shared`) already exist
 for exactly this shape of problem — years before we'd need to build it by hand.
 
+**Validated at scale before Phase 2** (`internal/workspace-graph-spike/`) — the `Workspace`/
+`Folder`/`File` shape holds up structurally at real scale (2,974 real nodes scanned from the
+`jaclang` compiler repo, every node reached exactly once, no duplicates), but eager
+scan-and-traverse of the whole tree measured ~3 seconds combined at that scale — too slow to feel
+instant on open. The file-tree feature this data model supports must load lazily, populating a
+`Folder`'s children only when the UI expands it, not by eagerly walking the whole workspace up
+front. See the spike's own README and tracker entry
+`2026-08-24-workspace-graph-eager-traversal-too-slow-at-scale` for the full numbers.
+
 ## Workbench shell: shadcn-in-Jac primitives, not hand-rolled chrome
 
 VS Code's workbench parts map almost directly onto existing Jac shadcn primitives:

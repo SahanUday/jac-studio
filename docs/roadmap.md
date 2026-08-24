@@ -47,8 +47,12 @@ no surrounding app.
 
 Goal: the app *looks* like an editor, using the shadcn-in-Jac primitives already available.
 
-- File tree sidebar (backed by the workspace-as-graph model from `architecture.md`) using
-  `Sidebar` + `ScrollArea` (+ a hand-built tree component, since shadcn doesn't ship one).
+- File tree sidebar (backed by the workspace-as-graph model from `architecture.md`, validated at
+  scale by `internal/workspace-graph-spike/` before this phase started) using `Sidebar` +
+  `ScrollArea` (+ a hand-built tree component, since shadcn doesn't ship one). **Must load lazily,
+  expand-on-demand** — the spike measured ~3 seconds combined to eagerly scan-and-traverse a
+  real-sized project (2,974 nodes), too slow to feel instant on open; populate a folder's children
+  only when the UI actually expands it.
 - Tabs (`Tabs`) for open files, editor-group splitting (`Resizable`/`ResizablePanel`).
 - Command palette (`Command`) wired to a minimal command registry (the first real consumer of the
   contribution-registry pattern from `architecture.md`).

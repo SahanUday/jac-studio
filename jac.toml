@@ -6,14 +6,33 @@ entry-point = "main.jac"
 kind = "web-app"
 jac-version = "==0.36.1"
 
+[jac-shadcn]
+style = "nova"
+baseColor = "neutral"
+theme = "neutral"
+font = "figtree"
+radius = "default"
+menuAccent = "subtle"
+menuColor = "default"
 [dependencies]
 [dependencies.npm]
+"@fontsource-variable/figtree" = "*"
+radix-ui = "^1.6.7"
+"@hugeicons/core-free-icons" = "^4.2.3"
+"@hugeicons/react" = "^1.1.9"
+"@radix-ui/react-slot" = "^1.3.3"
+class-variance-authority = "^0.7.1"
 react = "^18.2.0"
 react-dom = "^18.2.0"
 react-router-dom = "^6.22.0"
 react-error-boundary = "^5.0.0"
 "@tanstack/react-form" = "^1.33.0"
 zod = "^4.3.6"
+clsx = "^2.1.1"
+tailwind-merge = "^3.5.0"
+tw-animate-css = "^1.4.0"
+"@tailwindcss/vite" = "^4.1.17"
+tailwindcss = "^4.1.17"
 
 [dependencies.npm.dev]
 vite = "^6.4.1"
@@ -26,6 +45,9 @@ typescript = "^5.3.3"
 base_route_app = "app"
 
 [client]
+[client.vite]
+plugins = ["tailwindcss()"]
+lib_imports = ["import tailwindcss from '@tailwindcss/vite'"]
 
 [test]
 directory = "src"

@@ -119,7 +119,12 @@ Python syntax-highlighting/LSP libraries like Pygments). npm interop via quoted-
 2. **MobUI's HTML ban is inconsistently enforced** — silent-failure trap, not a hard guarantee.
 3. **`jac2js` is young and leaky** — documented miscompilation classes: `let`-scoping/TDZ bugs,
    string-literal newline escaping, `sorted(key=lambda)` rejected client-side, `asChild`/ref-
-   forwarding silent no-ops, `jac check` false positives that are "correct at runtime."
+   forwarding silent no-ops, `jac check` false positives that are "correct at runtime," a dict
+   literal keyed by a variable (`{x: y}`) compiling to invalid JS instead of a bracketed computed
+   key, and a client-side aliased import (`{real_name as alias}`) baking the *alias* into an RPC
+   call's route name instead of the server's real registered name — see tracker entries
+   `2026-08-24-client-dict-literal-variable-key-miscompiles` and
+   `2026-08-24-client-import-alias-breaks-rpc-route-name`.
 4. **Known upstream bug** (jac#7695): adding `def:pub` to an already-imported module still 404s
    until its name is re-added to the entry import.
 5. **No production-grade extension/plugin sandbox.** The native+WASM pathway could theoretically

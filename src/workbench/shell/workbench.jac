@@ -8,7 +8,6 @@ docstring for why this is plain lifted React-style state, not a Phase 3 graph no
 before Tabs existed.
 """
 
-import from src.editor.document_service { close_document }
 import from src.workbench.file_tree.file_tree { app as FileTreeApp }
 import from src.workbench.editor_tabs.editor_tabs { app as EditorTabsApp }
 
@@ -18,7 +17,7 @@ def:pub app -> JsxElement {
 
     def open_tab(path: str, name: str) -> None;
     def select_tab(path: str) -> None;
-    async def close_tab(path: str) -> None;
+    def close_tab(path: str) -> None;
 
     <div style={{"display": "flex", "height": "100vh"}}>
         <div style={{"width": "260px", "flexShrink": "0", "borderRight": "1px solid #3c3c3c", "overflow": "hidden"}}>

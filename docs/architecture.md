@@ -107,7 +107,7 @@ underlying need; **translate** when it's pure, solved, testable math worth reusi
 |---|---|---|
 | `src/vs/base` | 154k lines | Ordinary Jac stdlib/utility modules — no special treatment needed; Jac's own base language (collections, async, `obj` helpers) already covers most of what `base` exists to provide in a language that has no such primitives. |
 | `src/vs/platform` (DI + services) | 580k lines | **The root-graph-as-registry pattern** (below) instead of a hand-built DI container. |
-| `src/vs/editor` (Monaco) | 279k lines | A from-scratch Jac text-editing core, bootstrapped by porting Monaco's *algorithms* (piece tree, interval tree, prefix-sum) via the [translator](translator-strategy.md); rendering/interaction rebuilt as Jac client components. Single biggest engineering effort in the project — see Editor Core below. |
+| `src/vs/editor` (Monaco) | 279k lines | **The real `monaco-editor` npm package**, embedded via a thin Jac client wrapper (decided 2026-08-25, see Editor Core below) — not reimplemented. An earlier from-scratch port of Monaco's algorithms (piece tree, interval tree, prefix-sum) via the [translator](translator-strategy.md), plus a hand-built native rendering component, met its own Phase 1 exit criteria and is preserved at `internal/native-editor-archive/` for a possible future revival, not deleted. |
 | `src/vs/workbench` (shell + contrib) | 1.42M lines | jac-cl components, overwhelmingly built on the **shadcn-in-Jac** primitive set (Sidebar, Resizable, Tabs, Command, ContextMenu, Tooltip, ScrollArea already exist) — see Workbench Shell below. This is the layer where Jac's built-in component library does the most work for us relative to upstream's line count. |
 | Extension host (`workbench/api`, `workbench/services/extensions`) | — | No Jac equivalent exists today. Biggest open risk in the project — see Extension System below. |
 | `src/vs/code` (Electron main) | 6k lines | `jac nacompile` native desktop host + OS webview — deferred to a late roadmap phase. |
@@ -241,32 +241,50 @@ should be its own set of Jac modules that attach `Command`/`View`/`Menu` nodes t
 graph on load — the direct Jac analog of VS Code's `workbench/contrib/*` self-registration, and
 the mechanism that lets `workbench` scale to 4,000 files without a central switchboard.
 
-## Editor core: the hardest, most novel piece — build vs. bootstrap
+## Editor core: embed the real thing, don't reimplement it
 
-This is the component with no existing Jac precedent to lean on (no example app implements a real
-text-editing widget) and the one place where "everything in Jac" is genuinely expensive rather than
-mostly-free. Proposed approach, in order:
+**Status (2026-08-25): the editor engine is the real `monaco-editor` npm package**, embedded via a
+thin Jac client wrapper (`src/editor/client/monaco_editor.jac`), not a from-scratch Jac
+text-editing core. This reverses Phase 1's "continue native" call — see
+`2026-08-25-editor-core-decision-reversed-to-monaco` for the full record, and read it before
+assuming the section below was always the plan.
 
-1. **Port the algorithms first, headless, via the translator.** Piece-tree text buffer,
-   interval tree (decoration lookup), prefix-sum computer (line/offset math) are small, pure,
-   well-unit-tested TS modules with minimal DOM/Electron coupling — the best possible first targets
-   for the [TS→Jac translator](translator-strategy.md), and validated behavior-for-behavior against
-   VS Code's own unit tests before anything renders on screen.
-2. **Build the rendering/interaction surface as ordinary Jac client components** on top of the
-   ported model (cursor rendering, selection, line-by-line virtualized rendering, keyboard/IME
-   input handling) — this part has no good literal translation target (VS Code's DOM-manipulation
-   approach doesn't map onto JSX-style rendering) and should be designed idiomatically in Jac from
-   the start, informed by but not copied from Monaco's `view/` layer.
-3. **Tokenization/syntax highlighting** is a later increment (Phase 3+) — start with a
-   TextMate-grammar-compatible tokenizer if one is reachable via Python/npm interop before
-   committing to reimplementing tokenization from scratch.
+**Why the reversal, and why it isn't a verdict against Phase 1's work**: Phase 1's from-scratch
+attempt (porting Monaco's piece-tree text buffer, interval tree, and prefix-sum computer via the
+[translator](translator-strategy.md), plus a hand-built native rendering component) genuinely
+worked — it met its own exit criteria, round-tripped real keyboard input correctly, and is a solid
+answer to "can Jac build a real text-editing widget." The reversal is a *reuse-over-reinvention*
+call, not a "native failed" call: once `monaco-editor` is available as an ordinary npm dependency
+(jac-cl's npm interop already supports this), maintaining a second, competing text-editing engine
+in parallel has no real payoff for v1 — Monaco already owns a battle-tested text model,
+cursor/selection/IME handling, line-by-line virtualized rendering, undo/redo, and (unlike the
+from-scratch path) a bundled tokenizer/language-service layer that makes Phase 3's syntax
+highlighting and diff-editor bullets largely free instead of new work (see `roadmap.md`'s Phase 3
+section).
 
-**Explicit fallback, to be decided with real data, not assumed away**: if the from-scratch text
-widget proves too costly for an early usable MVP, a temporary bridge embedding the real
-`monaco-editor` npm package via jac-cl's npm interop is architecturally possible and would unblock
-every layer above it (workbench, extensions) while the native Jac editor core matures in parallel.
-This would be tracked as a deliberate, visible, time-boxed decision in the tracker — not a quiet
-substitution — consistent with principle 2 above.
+**The from-scratch engine is archived, not deleted**, at `internal/native-editor-archive/`
+(`git mv`'d with history intact, README explains what's there and what a revival would need to
+touch) — per the explicit call that a future need (a licensing constraint, wanting full control
+over the text engine, a desktop/native-JS story that doesn't fit Monaco well) could bring native
+back. Nothing about the reversal invalidates that work; it just isn't v1's path.
+
+**What jac-studio's own code owns now, with Monaco doing the rest**:
+
+1. **A thin mounting/lifecycle wrapper** (`src/editor/client/monaco_editor.jac`) — Monaco's API is
+   imperative (`monaco.editor.create(domNode, options)`), not JSX-declarative, so this component
+   holds a DOM ref, creates/disposes a Monaco instance on mount/unmount, and re-syncs Monaco's
+   model when its `path` prop changes. This is the first Jac `app` component to do raw DOM-ref +
+   imperative third-party-library mounting — the vendored shadcn primitives use `useEffect` too
+   (`components/ui/sidebar.jac`'s `useIsMobile`), but always as a plain function, never inside the
+   `has`/`impl` component idiom; validate this pattern carefully rather than assuming it composes
+   the same way.
+2. **Load/save at the document boundary only.** `document_service.jac` reads a file's content into
+   Monaco once on open and writes it back to disk on save — Monaco owns the live edit/undo/cursor
+   state entirely client-side in between. No per-keystroke RPC round-trip: unlike the archived
+   native path, there's no ported buffer for the server to keep in sync with on every keystroke.
+3. **Workbench-level wiring stays jac-studio's job**, unchanged in shape: which files are open, in
+   what tabs, in which editor group (`editor_tabs.jac`/`workbench.jac`) is still ordinary Jac
+   client state — Monaco owns *one open document's* editing surface, not the surrounding shell.
 
 **Decided in Phase 1: not taken.** The from-scratch widget (step 2 above) is fast/far enough
 along with real data in hand — see the resolved open question below and
@@ -412,15 +430,16 @@ into every section of this document.
   Phase 0**: validated, with a mandatory caching + test-reset discipline — see the Service
   registry section above.
 - ~~Monaco-embed bridge for the editor core: needed as a stopgap, or is the native port fast
-  enough to skip it?~~ **Resolved in Phase 1**: continue native. A working prototype
-  (`src/editor/client/text_editor.jac`, PRs #10/#11) round-trips real keyboard input through the
-  ported `PieceTreeTextBuffer` correctly, with two found gaps (request ordering, fixed; rendering
-  virtualization, deferred to a later phase) both ordinary bounded engineering, not genuine
-  blocks. The deciding factor: Monaco brings its own complete text model, so adopting it would
-  largely *replace* the ported piece-tree buffer's role in live editing rather than compose with
-  it -- and that buffer is the single largest translation this project has done. See
-  `2026-08-23-editor-core-native-vs-monaco-decided-native` and
-  `docs/phases/phase-1-editor-core.md`.
+  enough to skip it?~~ **Resolved in Phase 1 (native), reversed in Phase 2 (Monaco).** Phase 1: a
+  working prototype (`src/editor/client/text_editor.jac`, PRs #10/#11) round-tripped real keyboard
+  input through the ported `PieceTreeTextBuffer` correctly, with two found gaps (request ordering,
+  fixed; rendering virtualization, deferred) both ordinary bounded engineering, not genuine blocks
+  — see `2026-08-23-editor-core-native-vs-monaco-decided-native` and
+  `docs/phases/phase-1-editor-core.md` for that record as it stood. Phase 2 (2026-08-25): reversed
+  to embedding the real `monaco-editor` npm package for v1 regardless — a reuse-over-reinvention
+  call, not a verdict that native failed (see the Editor Core section above for the full
+  reasoning). The archived native engine lives at `internal/native-editor-archive/` for a possible
+  future revival. See `2026-08-25-editor-core-decision-reversed-to-monaco`.
 - Extension API surface shape: how much of VS Code's actual `vscode` API do we aim for
   compatibility with (enabling existing extensions to port over) vs. a from-scratch API idiomatic
   to Jac's walker/node model? Not decided — affects Phase B scope significantly and deserves its

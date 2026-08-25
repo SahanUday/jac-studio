@@ -29,6 +29,22 @@ same "leaf reports, parent owns state" shape as `editor_tabs.jac`'s callbacks. R
 `editor.onDidChangeCursorPosition` in `handle_mount` alongside the Ctrl+S command, and fired once
 more right after mount so the status bar has a value for a freshly-opened tab before the user
 moves the cursor at all, rather than depending on Monaco's own mount-time firing behavior.
+
+**`keepCurrentModel` (2026-08-25, caught live: splitting the editor then closing one copy of the
+file left the *other* copy blank)** -- `@monaco-editor/react`'s `path` prop shares one underlying
+Monaco text model across every `<Editor>` instance mounted with the same path
+(`monaco.editor.getModel(uri) || createModel(...)`, read from the package's own source) -- exactly
+what makes editor-group splitting work at all, since both groups' `MonacoEditorApp` instances for
+the same file need to show the same live buffer. But its default unmount behavior
+(`keepCurrentModel` defaults to `false`) *disposes* that shared model, on the assumption that one
+editor owns one model 1:1 -- so closing the tab in *either* group destroyed the model the *other*
+group's still-mounted editor was rendering, leaving it blank with no error. `keepCurrentModel=True`
+switches that cleanup to just saving view state instead of disposing anything, the correct behavior
+here since a model can legitimately outlive any single `MonacoEditorApp` instance that was showing
+it. Trade-off: a closed tab's model is never explicitly disposed at all now, a deliberate accepted
+leak (same trade-off already made for orphaned graph nodes in `workspace_service.jac`) rather than
+tracking "is any other group still showing this path" just to free memory in a local, single-user
+dev tool.
 """
 
 import from "@monaco-editor/react" { Editor }
@@ -56,6 +72,7 @@ def:pub app(path: str, onCursorChange: any) -> JsxElement {
                 defaultValue={content}
                 theme="vs-dark"
                 onMount={handle_mount}
+                keepCurrentModel={True}
                 options={{"automaticLayout": True, "minimap": {"enabled": False}}}
             />
         ) if loaded else (

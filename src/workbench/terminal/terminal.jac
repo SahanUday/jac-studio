@@ -47,6 +47,17 @@ they're non-degenerate, not just on *subsequent* changes), `fit.fit()`s every ti
 banner exactly once, guarded by `banner_written_ref`. This is a genuine acquire/release pair
 (`observe`/`disconnect` must share the same observer instance), so it's a manually-imported
 `useEffect` alongside `can with entry`, not folded into it.
+
+**`requestAnimationFrame`-deferred callback (2026-08-25, caught live via a real error report in the
+server log, not a screenshot this time)** -- `ResizeObserver loop completed with undelivered
+notifications` showed up intermittently whenever opening a new file mounted a fresh Monaco instance
+elsewhere on the page, since `MonacoEditorApp`'s own `automaticLayout: true` and this component's
+`ResizeObserver` both react to the same kind of ancestor layout change, and calling `fit.fit()`
+synchronously inside the observer callback risks triggering another layout pass within the same
+frame -- exactly the pattern the browser's loop guard exists to catch. Deferring the actual work
+into `requestAnimationFrame` is the standard fix: the resize is still handled, just on the next
+frame instead of synchronously inside the observer's own callback, which breaks the same-frame
+resize-triggers-resize cycle without changing what gets measured or written.
 """
 
 import "@xterm/xterm/css/xterm.css";
@@ -77,7 +88,9 @@ def:pub app(onFocusChange: any) -> JsxElement {
     }
 
     useEffect(lambda {
-        observer = new(ResizeObserver, lambda (entries: any) { handle_resize(); });
+        observer = new(ResizeObserver, lambda (entries: any) {
+            requestAnimationFrame(lambda (t: any) { handle_resize(); });
+        });
         observer.observe(container_ref.current);
         return lambda { observer.disconnect(); };
     }, []);

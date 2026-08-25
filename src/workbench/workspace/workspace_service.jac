@@ -40,17 +40,23 @@ glob DEFAULT_EXCLUDED_DIRS: list[str] = [
 glob _cached_workspaces: dict[str, Workspace] = {};
 glob _path_index: dict[str, dict[str, (Workspace | Folder)]] = {};
 
-"""Guards `_ensure_scanned`'s check-then-scan-then-flag sequence -- caught live, not by inspection:
-real browser testing fired several near-simultaneous `list_children_by_path` calls for the same
-unscanned folder, and since a sync `def:pub` is dispatched onto a thread-pool worker
-(`asyncio.to_thread`, per `jaclang/runtimelib/serving/app.jac`), those calls ran as genuinely
-concurrent OS threads, not cooperatively-scheduled coroutines. Each thread read `parent.scanned ==
-False` before any of them had written `True`, so each independently re-scanned the same directory
-and appended its own duplicate `Folder`/`File` children -- reproduced as five duplicate entries
-for a two-child directory. One process-wide lock, not per-parent: scanning is infrequent and cheap
-(one `os.listdir` plus a handful of node creations), so serializing all scans globally is simpler
-than per-key lock bookkeeping and costs nothing observable."""
-glob _scan_lock: threading.Lock = threading.Lock();
+"""Narrows, but does not close, the check-existing-else-create race in this module
+(`get_or_create_workspace`'s creation branch, `_ensure_scanned`'s check-then-scan-then-flag).
+**Confirmed insufficient by itself, live** (see `command_registry.jac`'s `_registry_lock` docstring
+for the full root-cause writeup): `asyncio.to_thread` genuinely serializes the Python function body
+across concurrent calls, but the actual Postgres commit for a `def:pub` happens *after* the
+function returns, in server-side `_finalize_call_response` -- this lock releases before that
+commit, so a second call can start executing after the first one's Python code finished and still
+read a pre-commit view of the graph. jaseci's documented `SERIALIZABLE`-transaction-plus-replay
+protection for exactly this case doesn't currently fire either (`WriteConflict` is never raised in
+the runtime, and `Session.commit`'s conflict recovery re-flushes the same writes rather than
+re-running the check). Kept because it still narrows the race window for free, but the actual
+guarantee against a user-visible duplicate is `list_children_by_path` de-duping its *return value*
+by path (see there) -- the layer this module can control without reaching into unsupported jaseci
+transaction internals. One process-wide lock, not per-parent: none of this is a hot path (one
+`os.listdir` plus a handful of node creations, at most once per folder), so serializing globally is
+simpler than per-key lock bookkeeping and costs nothing observable."""
+glob _workspace_lock: threading.Lock = threading.Lock();
 
 def:pub _reset_workspace_cache_for_tests {
     _cached_workspaces.clear();
@@ -67,33 +73,35 @@ too, and leaving them as unreachable graph garbage is a fine trade-off for a loc
 tool) and re-points `ws` at the newly requested path with a fresh `scanned=False`, so opening a
 different folder actually re-scans it instead of silently continuing to show the old one."""
 def get_or_create_workspace(root_path: str) -> Workspace {
-    key = jid(root);
-    if key in _cached_workspaces {
-        ws = _cached_workspaces[key];
-    } else {
-        existing = [root-->[?:Workspace]];
-        ws = existing[0] if existing else root ++> Workspace(root_path=root_path);
-        _cached_workspaces[key] = ws;
-    }
-    if ws.root_path != root_path {
-        for e in [edge ws ->:Contains:->] {
-            del e;
+    with _workspace_lock {
+        key = jid(root);
+        if key in _cached_workspaces {
+            ws = _cached_workspaces[key];
+        } else {
+            existing = [root-->[?:Workspace]];
+            ws = existing[0] if existing else root ++> Workspace(root_path=root_path);
+            _cached_workspaces[key] = ws;
         }
-        ws.root_path = root_path;
-        ws.scanned = False;
+        if ws.root_path != root_path {
+            for e in [edge ws ->:Contains:->] {
+                del e;
+            }
+            ws.root_path = root_path;
+            ws.scanned = False;
+        }
+        _path_index[key] = {ws.root_path: ws};
+        return ws;
     }
-    _path_index[key] = {ws.root_path: ws};
-    return ws;
 }
 
 """Materialize one directory level's worth of Folder/File children under `parent`, if it hasn't
-been scanned yet. Idempotent per `parent` via the `scanned` flag, guarded by `_scan_lock` so the
-check-then-scan-then-flag sequence is atomic across concurrent calls (see `_scan_lock`'s own
-docstring) -- never re-reads the directory or duplicates children on repeat calls, which is what
-makes lazy expand-on-demand safe to call on every UI expand click, including several
+been scanned yet. Idempotent per `parent` via the `scanned` flag, guarded by `_workspace_lock` so
+the check-then-scan-then-flag sequence is atomic across concurrent calls (see `_workspace_lock`'s
+own docstring) -- never re-reads the directory or duplicates children on repeat calls, which is
+what makes lazy expand-on-demand safe to call on every UI expand click, including several
 near-simultaneous ones."""
 def _ensure_scanned(parent: (Workspace | Folder)) -> None {
-    with _scan_lock {
+    with _workspace_lock {
         if parent.scanned {
             return;
         }
@@ -123,7 +131,13 @@ def:pub open_workspace(root_path: str) -> dict[str, str] {
 """The one function the file-tree UI calls on every expand click. Resolves `parent_path` against
 the current user's workspace via `_path_index` (never a graph query -- see `jac-studio-architecture`
 skill's service-registry caching rules), lazily scans it if needed, and returns its children as
-plain dicts sorted folders-first then alphabetically, ready for the client to render."""
+plain dicts sorted folders-first then alphabetically, ready for the client to render.
+
+De-dupes by `path` before returning -- `_workspace_lock` narrows but doesn't close the race that
+can leave two `Folder`/`File` nodes for the same path (see its own docstring), so this is the
+actual guarantee the file tree never shows a duplicate, regardless of what the graph underneath
+ends up holding. Safe to keep just the first match: a duplicate here was always scanned from the
+same real directory entry, so their fields are identical."""
 def:pub list_children_by_path(parent_path: str) -> list[dict] {
     key = jid(root);
     if key not in _path_index or parent_path not in _path_index[key] {
@@ -133,12 +147,19 @@ def:pub list_children_by_path(parent_path: str) -> list[dict] {
     _ensure_scanned(parent);
 
     children = [parent->:Contains:->];
+    seen_paths: set[str] = set();
+    deduped_children = [];
     for child in children {
+        if child.path in seen_paths {
+            continue;
+        }
+        seen_paths.add(child.path);
+        deduped_children.append(child);
         _path_index[key][child.path] = child;
     }
 
-    folders = sorted([c for c in children if isinstance(c, Folder)], key=lambda (c: (Folder | File)) { c.name; });
-    files = sorted([c for c in children if isinstance(c, File)], key=lambda (c: (Folder | File)) { c.name; });
+    folders = sorted([c for c in deduped_children if isinstance(c, Folder)], key=lambda (c: (Folder | File)) { c.name; });
+    files = sorted([c for c in deduped_children if isinstance(c, File)], key=lambda (c: (Folder | File)) { c.name; });
     ordered = folders + files;
     return [
         {"name": c.name, "path": c.path, "is_dir": isinstance(c, Folder)}

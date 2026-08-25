@@ -32,6 +32,8 @@ needs a compound condition yet, and a single-flag check is a two-line addition t
 later if something ever does.
 """
 
+import threading;
+
 node CommandRegistry {}
 
 node Command {
@@ -56,6 +58,25 @@ glob BUILTIN_COMMANDS: list[dict[str, any]] = [
 ];
 
 glob _cached_command_registries: dict[str, CommandRegistry] = {};
+
+"""Narrows, but does not close, the window for `list_commands`'s check-existing-else-create race
+(two genuinely concurrent callers -- `workbench.jac` and `command_palette.jac` both fetch
+`list_commands()` from their own `can with entry` on the same page load -- can each pass
+`register_command`'s existence check before either finishes creating). **Confirmed insufficient by
+itself, live**: `asyncio.to_thread` (`jaclang/runtimelib/serving/app.jac`) does serialize the
+Python-level function body correctly, but the actual Postgres commit for a `def:pub` happens in
+`_finalize_call_response` *after* the function returns (`jaclang/runtimelib/impl/server.impl.jac`)
+-- this lock is released before that commit, so a second call can legitimately start executing
+after the first one's Python code finished and still read a pre-commit view of the graph. jaseci's
+own docs promise a `SERIALIZABLE`-transaction-plus-replay-from-start mechanism for exactly this
+case, but `WriteConflict` is never actually raised anywhere in the current runtime, and
+`Session.commit`'s own conflict recovery blindly re-flushes the same (already-decided) writes
+rather than re-running the check -- so that promised protection doesn't currently fire either. Kept
+because it still narrows the race window for free, but `list_commands` also de-dupes its *return
+value* by `command_id` (see there) as the actual guarantee against a user-visible duplicate, since
+that's the layer this module can control without reaching into unsupported jaseci transaction
+internals."""
+glob _registry_lock: threading.Lock = threading.Lock();
 
 def:pub _reset_command_registry_cache_for_tests {
     _cached_command_registries.clear();
@@ -94,11 +115,29 @@ def register_command(command_id: str, title: str, keybindings: list[dict[str, st
     return fresh;
 }
 
+"""The lock above narrows but doesn't close the race that can leave two `Command` nodes sharing one
+`command_id` (see its docstring for why -- a real, currently-unfixable-upstream gap between when a
+`def:pub`'s Python code finishes and when its write actually commits). De-duping here, on the
+*read* path, is the actual guarantee: even if the graph ends up holding a duplicate node, the
+palette never sees it. Keeps the first match per id and drops the rest, which is safe because any
+duplicate was created from the exact same `BUILTIN_COMMANDS` entry, so their fields are identical
+-- there's no "which one is more correct" question to resolve."""
 def:pub list_commands -> list[dict[str, any]] {
-    for spec in BUILTIN_COMMANDS {
-        register_command(spec["id"], spec["title"], spec["keybindings"]);
+    with _registry_lock {
+        for spec in BUILTIN_COMMANDS {
+            register_command(spec["id"], spec["title"], spec["keybindings"]);
+        }
+        reg = get_command_registry();
+        commands = [reg->:Contributes:->[?:Command]];
+        seen_ids: set[str] = set();
+        deduped = [];
+        for c in commands {
+            if c.command_id in seen_ids {
+                continue;
+            }
+            seen_ids.add(c.command_id);
+            deduped.append({"id": c.command_id, "title": c.title, "keybindings": c.keybindings});
+        }
+        return deduped;
     }
-    reg = get_command_registry();
-    commands = [reg->:Contributes:->[?:Command]];
-    return [{"id": c.command_id, "title": c.title, "keybindings": c.keybindings} for c in commands];
 }

@@ -24,6 +24,19 @@ import from src.workbench.shell.workbench { app as WorkbenchApp }
 # all (see the jac-sv-streaming guide's "Registration: streams need an entry-module import" section).
 import from src.workbench.terminal.terminal_service { run_in_terminal }
 
+"""**Dark mode was never activated (2026-08-25, caught via real browser screenshots, again not
+compiled-bundle inspection)** -- `styles/global.css` defines dark-theme values behind
+`@custom-variant dark (&:is(.dark *));`, a *class-based* switch: every shadcn component (`Sidebar`,
+`Dialog`, `Command`, `Button`) only picks up its dark palette for descendants of a `.dark`-classed
+ancestor, and nothing in this codebase ever added that class anywhere. `workbench.jac`'s own
+hand-styled pieces (tab bar, terminal, status bar) use hardcoded dark hex colors via inline
+`style={{}}`, so they always looked dark regardless -- but every shadcn-driven surface (the file
+tree's `Sidebar`, the command palette's `Dialog`, buttons) was rendering in shadcn's *light* theme
+this whole time, which is why the app looked like a light-and-dark patchwork instead of a
+consistent VS-Code-style dark UI. `dark` is applied here, once, at the true root -- everything
+`WorkbenchApp` renders is a descendant, so this is the one place that needs it."""
 def:pub app -> JsxElement {
-    <WorkbenchApp />
+    <div className="dark">
+        <WorkbenchApp />
+    </div>
 }

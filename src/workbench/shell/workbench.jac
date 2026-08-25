@@ -40,13 +40,36 @@ itself, matching `editor_tabs.jac`'s own tab-bar-owns-the-chrome shape -- `termi
 xterm.js mount surface, same role `MonacoEditorApp` plays for a single editor pane. The close button
 dispatches through `handle_command` with the same id the command palette uses to open it, so there's
 exactly one toggle implementation, not two.
+
+**Keybinding "when clause" context system (2026-08-25, `docs/roadmap.md` Phase 2)** -- `commands`
+(fetched the same way `command_palette.jac` fetches its own copy, via `list_commands()`) carries
+each command's `keybindings`; `context` is a flat `dict[str, bool]` of named UI-state flags
+(currently just `terminalFocus`, set by `terminal.jac`'s `onFocusChange`) that a `when` clause
+checks against. `handle_keydown` is registered on `document` in the **capture** phase, not bubble
+-- a capture-phase listener on `document` always runs before the event reaches its target (here,
+xterm's own hidden textarea) and before anything downstream can call `stopPropagation`, so this
+keeps working regardless of what any embedded library's own keydown handling does. This is a
+manually-written `useEffect` rather than `can with entry`/`can with exit`, same reason as
+`command_palette.jac`'s own keydown listener: `entry`/`exit` lower to separate closures, so a
+handle acquired in one is invisible to the other's cleanup.
+
+The motivating case this solves, concretely: `workbench.action.terminal.toggle`'s `escape`
+keybinding is scoped to `when: "terminalFocus"` specifically because, without that guard, pressing
+Escape *anywhere* in the app (typing in the editor, browsing the file tree) would unexpectedly
+toggle the terminal open or closed -- a real bug this context-evaluation layer exists to prevent,
+not a contrived example. (It can only ever *close* the terminal, never reopen it, despite
+dispatching through the same toggle command as the always-on `ctrl+\`` binding: a `display: none`
+element and its descendants can never hold DOM focus, so `terminalFocus` can only be true while the
+panel is already open.)
 """
 
+import from "react" { useEffect }
 import from src.workbench.file_tree.file_tree { app as FileTreeApp }
 import from src.workbench.editor_tabs.editor_tabs { app as EditorTabsApp }
 import from src.workbench.command_palette.command_palette { app as CommandPaletteApp }
 import from src.workbench.status_bar.status_bar { app as StatusBarApp }
 import from src.workbench.terminal.terminal { app as TerminalApp }
+import from src.workbench.commands.command_registry { list_commands }
 import from components.ui.resizable { ResizablePanelGroup, ResizablePanel, ResizableHandle }
 
 def:pub app -> JsxElement {
@@ -55,6 +78,8 @@ def:pub app -> JsxElement {
     has next_group_id: int = 2;
     has cursor_positions: dict[str, dict[str, int]] = {};
     has terminal_open: bool = False;
+    has commands: list[dict[str, any]] = [];
+    has context: dict[str, bool] = {};
 
     def open_tab(path: str, name: str) -> None;
     def select_tab(group_id: str, path: str) -> None;
@@ -62,6 +87,19 @@ def:pub app -> JsxElement {
     def split_group(group_id: str) -> None;
     def handle_command(command_id: str) -> None;
     def handle_cursor_change(path: str, line: int, column: int) -> None;
+    def set_context(key: str, value: bool) -> None;
+    def context_matches(when: str) -> bool;
+    def handle_keydown(e: any) -> None;
+
+    async can with entry {
+        commands = await list_commands();
+    }
+
+    useEffect(lambda {
+        listener = lambda (e: any) { handle_keydown(e); };
+        document.addEventListener("keydown", listener, True);
+        return lambda { document.removeEventListener("keydown", listener, True); };
+    }, []);
 
     active_group_list = [g for g in groups if g["id"] == active_group_id];
     active_tab_path = active_group_list[0]["activePath"] if len(active_group_list) > 0 else "";
@@ -119,7 +157,7 @@ def:pub app -> JsxElement {
                 </span>
             </div>
             <div style={{"flex": "1", "overflow": "hidden"}}>
-                <TerminalApp />
+                <TerminalApp onFocusChange={lambda (focused: bool) { set_context("terminalFocus", focused); }} />
             </div>
         </div>
         <StatusBarApp line={active_cursor["line"]} column={active_cursor["column"]} path={active_tab_path} />

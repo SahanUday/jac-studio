@@ -102,3 +102,40 @@ impl app.handle_command(command_id: str) -> None {
         terminal_open = not terminal_open;
     }
 }
+
+impl app.set_context(key: str, value: bool) -> None {
+    updated_context = {**context};
+    updated_context[key] = value;
+    context = updated_context;
+}
+
+impl app.context_matches(when: str) -> bool {
+    if when == "" {
+        return True;
+    }
+    if when.startswith("!") {
+        return not context.get(when[1:], False);
+    }
+    return context.get(when, False);
+}
+
+impl app.handle_keydown(e: any) -> None {
+    parts = [];
+    if e.ctrlKey or e.metaKey {
+        parts.append("ctrl");
+    }
+    if e.shiftKey {
+        parts.append("shift");
+    }
+    parts.append(e.key.lower());
+    combo = "+".join(parts);
+    for cmd in commands {
+        for kb in cmd["keybindings"] {
+            if kb["key"] == combo and context_matches(kb["when"]) {
+                e.preventDefault();
+                handle_command(cmd["id"]);
+                return;
+            }
+        }
+    }
+}

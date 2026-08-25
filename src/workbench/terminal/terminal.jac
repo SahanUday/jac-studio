@@ -20,12 +20,21 @@ would remount on every reopen, wiping scrollback each time.
 (see `terminal_service.jac`'s docstring for why this isn't a persistent shell session yet) --
 `running` blocks a second submission from overlapping the first's stream rather than letting two
 independent process outputs interleave on one screen.
+
+**Focus reporting (2026-08-25, `docs/roadmap.md`'s "when clause" bullet)** -- `onFocusChange`
+fires on the wrapping `<div>`'s `onFocus`/`onBlur`, not any xterm.js-specific API: xterm inserts
+its own DOM (a canvas plus a hidden textarea that actually receives keystrokes) as children of
+that div, and React's `onFocus`/`onBlur` are delegated via `focusin`/`focusout`, which -- unlike
+native `focus`/`blur` -- bubble, so a focus/blur transition on any xterm-owned descendant is seen
+here regardless of how that descendant was inserted into the DOM. `workbench.jac` uses this to
+populate a `terminalFocus` context key its keybinding dispatcher checks -- see its docstring for
+why a keybinding like Escape-closes-the-terminal needs to know this and not fire everywhere.
 """
 
 import from "@xterm/xterm" { Terminal }
 import from "@xterm/addon-fit" { FitAddon }
 
-def:pub app -> JsxElement {
+def:pub app(onFocusChange: any) -> JsxElement {
     has container_ref: Ref[any] = Ref();
     has term_ref: Ref[any] = Ref();
     has fit_ref: Ref[any] = Ref();
@@ -47,5 +56,10 @@ def:pub app -> JsxElement {
         term.onData(handle_data);
     }
 
-    <div ref={container_ref} style={{"height": "100%", "width": "100%", "padding": "0.25rem"}} />
+    <div
+        ref={container_ref}
+        onFocus={lambda (e: any) { onFocusChange(True); }}
+        onBlur={lambda (e: any) { onFocusChange(False); }}
+        style={{"height": "100%", "width": "100%", "padding": "0.25rem"}}
+    />
 }

@@ -26,12 +26,32 @@ real reason to import `useEffect` directly instead of `can with entry`/`can with
 import from "react" { useEffect }
 import from src.workbench.commands.command_registry { list_commands }
 import from components.ui.command {
-    CommandDialog, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem
+    CommandDialog, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem, CommandShortcut
+}
+
+"""Picks the keybinding to show next to a palette entry: the always-on one (`when == ""`) if the
+command has one, else the first scoped one -- showing a context-scoped shortcut (e.g. `escape`,
+only live while the terminal has focus) as if it were the command's general shortcut would be
+misleading. Formats a raw combo string (`"ctrl+`"`) for display (`"Ctrl+`"`) without a
+platform-specific glyph layer (`⌘`/`⌃`/`⇧`) -- nothing here needs that polish yet."""
+def format_keybinding(keybindings: list[dict[str, str]]) -> str {
+    if len(keybindings) == 0 {
+        return "";
+    }
+    primary = keybindings[0];
+    for kb in keybindings {
+        if kb["when"] == "" {
+            primary = kb;
+            break;
+        }
+    }
+    parts = primary["key"].split("+");
+    return "+".join([p.capitalize() for p in parts]);
 }
 
 def:pub app(onRunCommand: any) -> JsxElement {
     has open: bool = False;
-    has commands: list[dict[str, str]] = [];
+    has commands: list[dict[str, any]] = [];
 
     async can with entry {
         commands = await list_commands();
@@ -60,6 +80,7 @@ def:pub app(onRunCommand: any) -> JsxElement {
                 {[
                     <CommandItem key={c["id"]} value={c["id"]} onSelect={handle_select}>
                         {c["title"]}
+                        {(<CommandShortcut>{format_keybinding(c["keybindings"])}</CommandShortcut>) if len(c["keybindings"]) > 0 else None}
                     </CommandItem>
                     for c in commands
                 ]}

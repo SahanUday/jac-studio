@@ -1,3 +1,14 @@
+# All six modules below are ported and passing, but as of 2026-08-25 none of them are wired into
+# the running app: the editor engine now embeds the real `monaco-editor` npm package instead of
+# this native port (docs/architecture.md's Editor Core section, docs/roadmap.md's Phase 1 update,
+# tracker entry 2026-08-25-editor-core-decision-reversed-to-monaco). `jac_path`/`test_jac_path`
+# below are stale -- the files were `git mv`'d to `internal/native-editor-archive/src/editor/model/`
+# and no longer exist at the paths recorded here. Left as `status = "landed"` rather than rewritten
+# to a new status, since they *did* land and pass verification -- the manifest's job is recording
+# what was true when a module was ported, not tracking the live app's current composition. Kept
+# for the archive's own possible future revival; do not treat these as evidence the editor core is
+# translator-built today.
+
 [[modules]]
 id = "prefix-sum-computer"
 upstream_path = "src/vs/editor/common/model/prefixSumComputer.ts"

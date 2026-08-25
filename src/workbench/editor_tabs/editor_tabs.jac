@@ -50,6 +50,16 @@ import from components.ui.button { Button }
 import from "@hugeicons/react" { HugeiconsIcon }
 import from "@hugeicons/core-free-icons" { SquareSplitHorizontalIcon }
 
+"""Jac's comprehension grammar doesn't support tuple-unpacking loop targets (`for i, t in
+enumerate(...)` fails to parse), so tab/panel DOM ids are derived from the path itself rather than
+a loop index -- safe since `open_tabs` never holds two entries for the same path. Used raw, not
+character-sanitized: HTML5's `id` grammar only forbids whitespace, which file paths never contain,
+and per-character comprehensions here compile to `path.map(...)` client-side -- a crash, since JS
+strings (unlike Python's) have no `.map`."""
+def _tab_dom_id(group_id: str, path: str) -> str {
+    return "tab-" + group_id + "-" + path;
+}
+
 glob TAB_STYLE: dict[str, str] = {
     "display": "flex",
     "alignItems": "center",
@@ -73,11 +83,16 @@ def:pub app(props: any) -> JsxElement {
     on_cursor_change = props["onCursorChange"];
 
     <div style={{"display": "flex", "flexDirection": "column", "height": "100%", "overflow": "hidden"}}>
-        <div style={{"display": "flex", "alignItems": "center", "borderBottom": "1px solid #3c3c3c", "background": "#252526", "flexShrink": "0"}}>
+        <div role="tablist" aria-label="Open editors" style={{"display": "flex", "alignItems": "center", "borderBottom": "1px solid #3c3c3c", "background": "#252526", "flexShrink": "0"}}>
             <div style={{"display": "flex", "flex": "1", "overflow": "auto"}}>
                 {[
                     <div
                         key={t["path"]}
+                        id={_tab_dom_id(group_id, t["path"])}
+                        role="tab"
+                        aria-selected={t["path"] == active_path}
+                        aria-controls={"panel-" + _tab_dom_id(group_id, t["path"])}
+                        tabIndex={0 if t["path"] == active_path else -1}
                         onClick={lambda (e: any) { on_select_tab(group_id, t["path"]); }}
                         style={{
                             **TAB_STYLE,
@@ -87,6 +102,8 @@ def:pub app(props: any) -> JsxElement {
                     >
                         <span>{t["name"]}</span>
                         <span
+                            role="button"
+                            aria-label={"Close " + t["name"]}
                             onClick={lambda (e: any) { e.stopPropagation(); on_close_tab(group_id, t["path"]); }}
                             style={{"opacity": "0.6", "fontSize": "13px", "lineHeight": "1"}}
                         >
@@ -109,7 +126,13 @@ def:pub app(props: any) -> JsxElement {
         <div style={{"flex": "1", "overflow": "auto", "padding": "0.75rem"}}>
             {(
                 [
-                    <div key={t["path"]} style={{"display": "block" if t["path"] == active_path else "none", "height": "100%"}}>
+                    <div
+                        key={t["path"]}
+                        id={"panel-" + _tab_dom_id(group_id, t["path"])}
+                        role="tabpanel"
+                        aria-labelledby={_tab_dom_id(group_id, t["path"])}
+                        style={{"display": "block" if t["path"] == active_path else "none", "height": "100%"}}
+                    >
                         <MonacoEditorApp path={t["path"]} onCursorChange={on_cursor_change} />
                     </div>
                     for t in open_tabs

@@ -9,8 +9,8 @@ test "list_commands seeds and returns the built-in Phase 2 command set" {
 
     assert len(commands) == len(BUILTIN_COMMANDS);
     ids = [c["id"] for c in commands];
-    for (command_id, _) in BUILTIN_COMMANDS {
-        assert command_id in ids;
+    for spec in BUILTIN_COMMANDS {
+        assert spec["id"] in ids;
     }
 }
 
@@ -20,8 +20,19 @@ test "each returned command carries its registered title" {
     commands = list_commands();
 
     by_id = {c["id"]: c["title"] for c in commands};
-    for (command_id, title) in BUILTIN_COMMANDS {
-        assert by_id[command_id] == title;
+    for spec in BUILTIN_COMMANDS {
+        assert by_id[spec["id"]] == spec["title"];
+    }
+}
+
+test "each returned command carries its registered keybindings" {
+    _reset_command_registry_cache_for_tests();
+
+    commands = list_commands();
+
+    by_id = {c["id"]: c["keybindings"] for c in commands};
+    for spec in BUILTIN_COMMANDS {
+        assert by_id[spec["id"]] == spec["keybindings"];
     }
 }
 

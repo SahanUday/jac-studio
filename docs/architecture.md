@@ -286,6 +286,23 @@ back. Nothing about the reversal invalidates that work; it just isn't v1's path.
    what tabs, in which editor group (`editor_tabs.jac`/`workbench.jac`) is still ordinary Jac
    client state — Monaco owns *one open document's* editing surface, not the surrounding shell.
 
+**A load-bearing detail found in Phase 2, not obvious from Monaco's own docs alone**:
+`@monaco-editor/react`'s `path` prop shares one underlying Monaco text model across every `<Editor>`
+instance mounted with the same path (`monaco.editor.getModel(uri) || createModel(...)`, confirmed
+by reading the package's own source, not just its docs) — which is exactly what makes Phase 2's
+editor-group splitting work at all, since two groups showing the same file need to render the same
+live buffer, not two independent copies. But the package's *default* unmount behavior disposes that
+shared model (`keepCurrentModel` defaults to `false`, assuming one editor owns one model 1:1), so
+without `keepCurrentModel={True}` set explicitly, closing the tab in either group destroys the model
+the other group's still-mounted editor is rendering — reproduced live, not a hypothetical, see
+`docs/phases/phase-2-workbench-shell.md`. `monaco_editor.jac` sets `keepCurrentModel={True}` for
+exactly this reason, with the trade-off that a closed tab's model is never explicitly disposed (an
+accepted leak, same trade-off already made for orphaned graph nodes in `workspace_service.jac` — a
+local, single-user dev tool doesn't need active memory reclamation the way a long-running service
+would). **Relevant to Phase 3's diff-editor bullet**: `createDiffEditor` takes two of Monaco's own
+models directly, not paths — confirm whether/how the same shared-model semantics apply before
+assuming the diff editor composes with the existing per-path model-sharing behavior for free.
+
 **Decided in Phase 1: not taken.** The from-scratch widget (step 2 above) is fast/far enough
 along with real data in hand — see the resolved open question below and
 `docs/phases/phase-1-editor-core.md`. This fallback stays documented here as the path considered

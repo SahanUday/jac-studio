@@ -1,3 +1,19 @@
+impl app.handle_resize -> None {
+    fit = fit_ref.current;
+    if not fit {
+        return;
+    }
+    term = term_ref.current;
+    if not term {
+        return;
+    }
+    fit.fit();
+    if not banner_written_ref.current {
+        term.write("jac-studio terminal\r\n$ ");
+        banner_written_ref.current = True;
+    }
+}
+
 impl app.handle_data(data: str) -> None {
     if running {
         return;

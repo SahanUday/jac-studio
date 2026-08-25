@@ -8,6 +8,12 @@ activates) a real tab backed by `src/editor/document_service.jac`'s per-path buf
 
 import from src.workbench.shell.workbench { app as WorkbenchApp }
 
+# `run_in_terminal` (src/workbench/terminal/terminal_service.jac) is consumed by a raw SSE `fetch`
+# in terminal.jac, not a generated RPC stub -- with no client-side reference to trigger manifest
+# self-registration, this top-level import is what registers the /function/run_in_terminal route at
+# all (see the jac-sv-streaming guide's "Registration: streams need an entry-module import" section).
+import from src.workbench.terminal.terminal_service { run_in_terminal }
+
 def:pub app -> JsxElement {
     <WorkbenchApp />
 }

@@ -30,12 +30,23 @@ not a single global `(line, column)`, so switching to an already-open tab (no re
 stale reading left over from whichever tab was active before. The status bar itself always reflects
 `active_group_id`'s active tab -- `docs/roadmap.md` scopes this bullet to cursor position only, so
 there's no per-group status bar yet.
+
+**Integrated terminal (2026-08-25, `docs/roadmap.md` Phase 2)** -- `TerminalApp` mounts here,
+always, hidden via CSS rather than conditionally rendered when `terminal_open` is false, same
+"mount once, hide via CSS" convention `editor_tabs.jac` uses for `MonacoEditorApp` and for the same
+reason: a conditionally-*rendered* terminal would remount (and lose its scrollback) every time it's
+reopened. Its header chrome (title, close button) lives here rather than inside `terminal.jac`
+itself, matching `editor_tabs.jac`'s own tab-bar-owns-the-chrome shape -- `terminal.jac` is just the
+xterm.js mount surface, same role `MonacoEditorApp` plays for a single editor pane. The close button
+dispatches through `handle_command` with the same id the command palette uses to open it, so there's
+exactly one toggle implementation, not two.
 """
 
 import from src.workbench.file_tree.file_tree { app as FileTreeApp }
 import from src.workbench.editor_tabs.editor_tabs { app as EditorTabsApp }
 import from src.workbench.command_palette.command_palette { app as CommandPaletteApp }
 import from src.workbench.status_bar.status_bar { app as StatusBarApp }
+import from src.workbench.terminal.terminal { app as TerminalApp }
 import from components.ui.resizable { ResizablePanelGroup, ResizablePanel, ResizableHandle }
 
 def:pub app -> JsxElement {
@@ -43,6 +54,7 @@ def:pub app -> JsxElement {
     has active_group_id: str = "group-1";
     has next_group_id: int = 2;
     has cursor_positions: dict[str, dict[str, int]] = {};
+    has terminal_open: bool = False;
 
     def open_tab(path: str, name: str) -> None;
     def select_tab(group_id: str, path: str) -> None;
@@ -87,6 +99,27 @@ def:pub app -> JsxElement {
                 <ResizablePanelGroup direction="horizontal">
                     {panel_children}
                 </ResizablePanelGroup>
+            </div>
+        </div>
+        <div style={{
+            "display": "flex" if terminal_open else "none",
+            "flexDirection": "column",
+            "height": "220px",
+            "flexShrink": "0",
+            "borderTop": "1px solid #3c3c3c",
+            "background": "#1e1e1e"
+        }}>
+            <div style={{"display": "flex", "alignItems": "center", "justifyContent": "space-between", "padding": "0.25rem 0.5rem", "borderBottom": "1px solid #3c3c3c", "fontSize": "12px", "color": "#969696", "fontFamily": "system-ui, sans-serif", "flexShrink": "0"}}>
+                <span>Terminal</span>
+                <span
+                    onClick={lambda (e: any) { handle_command("workbench.action.terminal.toggle"); }}
+                    style={{"cursor": "pointer", "opacity": "0.7", "fontSize": "14px", "lineHeight": "1"}}
+                >
+                    &times;
+                </span>
+            </div>
+            <div style={{"flex": "1", "overflow": "hidden"}}>
+                <TerminalApp />
             </div>
         </div>
         <StatusBarApp line={active_cursor["line"]} column={active_cursor["column"]} path={active_tab_path} />

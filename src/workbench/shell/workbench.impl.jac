@@ -96,5 +96,9 @@ impl app.handle_command(command_id: str) -> None {
             return;
         }
         close_tab(active_group_id, active_group[0]["activePath"]);
+        return;
+    }
+    if command_id == "workbench.action.terminal.toggle" {
+        terminal_open = not terminal_open;
     }
 }

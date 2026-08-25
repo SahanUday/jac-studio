@@ -31,7 +31,8 @@ edge Contributes {}
 
 glob BUILTIN_COMMANDS: list[tuple[str, str]] = [
     ("workbench.action.splitEditorRight", "View: Split Editor Right"),
-    ("workbench.action.closeActiveEditor", "View: Close Editor")
+    ("workbench.action.closeActiveEditor", "View: Close Editor"),
+    ("workbench.action.terminal.toggle", "View: Toggle Terminal")
 ];
 
 glob _cached_command_registries: dict[str, CommandRegistry] = {};

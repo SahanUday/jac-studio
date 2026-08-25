@@ -1,0 +1,51 @@
+"""Terminal: Phase 2's integrated terminal (`docs/roadmap.md`), per `docs/architecture.md`'s
+Process Execution section -- xterm.js renders the output pane (Jac has no native terminal-emulator
+primitive, so this is npm interop rather than shadcn, same call architecture.md already made), and
+every submitted line is sent to `terminal_service.jac`'s `run_in_terminal` over a raw SSE `fetch` --
+RPC stubs can't consume a stream (`jac-sv-streaming` guide's "Consuming a stream in the browser"
+section), so this bypasses the generated client stub entirely and talks to `/function/run_in_terminal`
+directly.
+
+**xterm.js is a raw terminal emulator, not a line editor** -- it hands back individual keystrokes via
+`onData`, with no built-in echo or backspace handling. Line editing (`input_buffer`, Backspace,
+Enter-to-submit, local echo) is hand-rolled here, the same category of hand-building as the tab row
+in `editor_tabs.jac`.
+
+**Mounted once, hidden via CSS, never conditionally rendered** -- same convention
+`editor_tabs.jac` uses for `MonacoEditorApp`, and for the same reason: `workbench.jac` toggles the
+terminal panel open/closed via a command, and a conditionally-*rendered* (not just hidden) terminal
+would remount on every reopen, wiping scrollback each time.
+
+**One command in flight at a time.** Each Enter press spawns an independent server-side process
+(see `terminal_service.jac`'s docstring for why this isn't a persistent shell session yet) --
+`running` blocks a second submission from overlapping the first's stream rather than letting two
+independent process outputs interleave on one screen.
+"""
+
+import from "@xterm/xterm" { Terminal }
+import from "@xterm/addon-fit" { FitAddon }
+
+def:pub app -> JsxElement {
+    has container_ref: Ref[any] = Ref();
+    has term_ref: Ref[any] = Ref();
+    has fit_ref: Ref[any] = Ref();
+    has input_buffer: str = "";
+    has running: bool = False;
+
+    def handle_data(data: str) -> None;
+    async def submit_command -> None;
+
+    can with entry {
+        term = new(Terminal, {"convertEol": False, "fontSize": 13, "cursorBlink": True});
+        fit = new(FitAddon);
+        term.loadAddon(fit);
+        term.open(container_ref.current);
+        fit.fit();
+        term_ref.current = term;
+        fit_ref.current = fit;
+        term.write("jac-studio terminal\r\n$ ");
+        term.onData(handle_data);
+    }
+
+    <div ref={container_ref} style={{"height": "100%", "width": "100%", "padding": "0.25rem"}} />
+}

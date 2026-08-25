@@ -29,8 +29,28 @@ native `focus`/`blur` -- bubble, so a focus/blur transition on any xterm-owned d
 here regardless of how that descendant was inserted into the DOM. `workbench.jac` uses this to
 populate a `terminalFocus` context key its keybinding dispatcher checks -- see its docstring for
 why a keybinding like Escape-closes-the-terminal needs to know this and not fire everywhere.
+
+**Re-fitting on resize, and deferring the welcome banner (2026-08-25, caught via real browser
+verification, not compiled-bundle inspection -- neither gap showed up in any compiled-JS reading,
+only in an actual rendered screenshot)** -- `fit.fit()` at mount time alone sized the terminal to a
+near-0x0 box, because `can with entry` runs once, on this component's *first* render, which happens
+while its panel is still `display: none` (`terminal_open` defaults to `False` in `workbench.jac`)
+-- a hidden element's content box is 0x0 regardless of its CSS `height`/`width`, so `FitAddon` had
+nothing real to measure yet and never got asked again once the panel actually became visible. Worse,
+the original mount-time `term.write(...)` call for the welcome banner ran against that same
+near-0-row buffer, so the banner was silently written into a terminal with nowhere to put it and
+never appeared even after a later resize (`fit.fit()` reflows future writes, it doesn't retroactively
+recover content already written at the wrong size). Fixed by moving both into a `ResizeObserver` on
+the container: it fires with the real size on the panel's first genuine become-visible transition
+(a documented `ResizeObserver` behavior -- the callback runs once with current dimensions as soon as
+they're non-degenerate, not just on *subsequent* changes), `fit.fit()`s every time, and writes the
+banner exactly once, guarded by `banner_written_ref`. This is a genuine acquire/release pair
+(`observe`/`disconnect` must share the same observer instance), so it's a manually-imported
+`useEffect` alongside `can with entry`, not folded into it.
 """
 
+import "@xterm/xterm/css/xterm.css";
+import from "react" { useEffect }
 import from "@xterm/xterm" { Terminal }
 import from "@xterm/addon-fit" { FitAddon }
 
@@ -38,23 +58,29 @@ def:pub app(onFocusChange: any) -> JsxElement {
     has container_ref: Ref[any] = Ref();
     has term_ref: Ref[any] = Ref();
     has fit_ref: Ref[any] = Ref();
+    has banner_written_ref: Ref[bool] = Ref(False);
     has input_buffer: str = "";
     has running: bool = False;
 
     def handle_data(data: str) -> None;
     async def submit_command -> None;
+    def handle_resize -> None;
 
     can with entry {
         term = new(Terminal, {"convertEol": False, "fontSize": 13, "cursorBlink": True});
         fit = new(FitAddon);
         term.loadAddon(fit);
         term.open(container_ref.current);
-        fit.fit();
         term_ref.current = term;
         fit_ref.current = fit;
-        term.write("jac-studio terminal\r\n$ ");
         term.onData(handle_data);
     }
+
+    useEffect(lambda {
+        observer = new(ResizeObserver, lambda (entries: any) { handle_resize(); });
+        observer.observe(container_ref.current);
+        return lambda { observer.disconnect(); };
+    }, []);
 
     <div
         ref={container_ref}

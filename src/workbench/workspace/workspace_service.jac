@@ -15,6 +15,7 @@ node objects, matching `document_service.jac`'s precedent -- nodes stay server-s
 """
 
 import os;
+import threading;
 
 node Workspace {
     has root_path: str;
@@ -39,46 +40,79 @@ glob DEFAULT_EXCLUDED_DIRS: list[str] = [
 glob _cached_workspaces: dict[str, Workspace] = {};
 glob _path_index: dict[str, dict[str, (Workspace | Folder)]] = {};
 
+"""Guards `_ensure_scanned`'s check-then-scan-then-flag sequence -- caught live, not by inspection:
+real browser testing fired several near-simultaneous `list_children_by_path` calls for the same
+unscanned folder, and since a sync `def:pub` is dispatched onto a thread-pool worker
+(`asyncio.to_thread`, per `jaclang/runtimelib/serving/app.jac`), those calls ran as genuinely
+concurrent OS threads, not cooperatively-scheduled coroutines. Each thread read `parent.scanned ==
+False` before any of them had written `True`, so each independently re-scanned the same directory
+and appended its own duplicate `Folder`/`File` children -- reproduced as five duplicate entries
+for a two-child directory. One process-wide lock, not per-parent: scanning is infrequent and cheap
+(one `os.listdir` plus a handful of node creations), so serializing all scans globally is simpler
+than per-key lock bookkeeping and costs nothing observable."""
+glob _scan_lock: threading.Lock = threading.Lock();
+
 def:pub _reset_workspace_cache_for_tests {
     _cached_workspaces.clear();
     _path_index.clear();
 }
 
+"""Caught live via real browser testing, not by inspection: this used to return an already-cached
+workspace unconditionally, silently ignoring a *different* `root_path` on every call after the
+first -- confirmed by requesting `.../src/workbench` and getting back `.../src` (whatever the
+first-ever call in this root's lifetime had opened). Now detaches the stale `Contains` subtree
+(old Folder/File nodes for the previous root, unreachable from `ws` once their edges are gone --
+not `del`-ed outright, since a Folder's own nested children would need a recursive walk to clean up
+too, and leaving them as unreachable graph garbage is a fine trade-off for a local, single-user dev
+tool) and re-points `ws` at the newly requested path with a fresh `scanned=False`, so opening a
+different folder actually re-scans it instead of silently continuing to show the old one."""
 def get_or_create_workspace(root_path: str) -> Workspace {
     key = jid(root);
     if key in _cached_workspaces {
-        return _cached_workspaces[key];
+        ws = _cached_workspaces[key];
+    } else {
+        existing = [root-->[?:Workspace]];
+        ws = existing[0] if existing else root ++> Workspace(root_path=root_path);
+        _cached_workspaces[key] = ws;
     }
-    existing = [root-->[?:Workspace]];
-    ws = existing[0] if existing else root ++> Workspace(root_path=root_path);
-    _cached_workspaces[key] = ws;
+    if ws.root_path != root_path {
+        for e in [edge ws ->:Contains:->] {
+            del e;
+        }
+        ws.root_path = root_path;
+        ws.scanned = False;
+    }
     _path_index[key] = {ws.root_path: ws};
     return ws;
 }
 
 """Materialize one directory level's worth of Folder/File children under `parent`, if it hasn't
-been scanned yet. Idempotent per `parent` via the `scanned` flag -- never re-reads the directory
-or duplicates children on repeat calls, which is what makes lazy expand-on-demand safe to call on
-every UI expand click."""
+been scanned yet. Idempotent per `parent` via the `scanned` flag, guarded by `_scan_lock` so the
+check-then-scan-then-flag sequence is atomic across concurrent calls (see `_scan_lock`'s own
+docstring) -- never re-reads the directory or duplicates children on repeat calls, which is what
+makes lazy expand-on-demand safe to call on every UI expand click, including several
+near-simultaneous ones."""
 def _ensure_scanned(parent: (Workspace | Folder)) -> None {
-    if parent.scanned {
-        return;
-    }
-    dir_path = parent.root_path if isinstance(parent, Workspace) else parent.path;
-    entries = sorted(os.listdir(dir_path)) if os.path.isdir(dir_path) else [];
-    for name in entries {
-        if name in DEFAULT_EXCLUDED_DIRS {
-            continue;
+    with _scan_lock {
+        if parent.scanned {
+            return;
         }
-        child_path = os.path.join(dir_path, name);
-        child = (
-            Folder(name=name, path=child_path)
-                if os.path.isdir(child_path)
-                else File(name=name, path=child_path)
-        );
-        parent +>:Contains():+> child;
+        dir_path = parent.root_path if isinstance(parent, Workspace) else parent.path;
+        entries = sorted(os.listdir(dir_path)) if os.path.isdir(dir_path) else [];
+        for name in entries {
+            if name in DEFAULT_EXCLUDED_DIRS {
+                continue;
+            }
+            child_path = os.path.join(dir_path, name);
+            child = (
+                Folder(name=name, path=child_path)
+                    if os.path.isdir(child_path)
+                    else File(name=name, path=child_path)
+            );
+            parent +>:Contains():+> child;
+        }
+        parent.scanned = True;
     }
-    parent.scanned = True;
 }
 
 def:pub open_workspace(root_path: str) -> dict[str, str] {

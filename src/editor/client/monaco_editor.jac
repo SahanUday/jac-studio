@@ -22,12 +22,19 @@ never remounts or loses Monaco's own undo history for that file.
 
 Handler bodies live in the paired `monaco_editor.impl.jac` annex, per the client-component
 "handler annex" pattern -- see `jac-studio-code-organization`.
+
+**Cursor position (2026-08-25, `docs/roadmap.md` Phase 2)** -- `onCursorChange` reports
+`(path, line, column)` up to whichever parent wants it (`workbench.jac`, for the status bar),
+same "leaf reports, parent owns state" shape as `editor_tabs.jac`'s callbacks. Registered via
+`editor.onDidChangeCursorPosition` in `handle_mount` alongside the Ctrl+S command, and fired once
+more right after mount so the status bar has a value for a freshly-opened tab before the user
+moves the cursor at all, rather than depending on Monaco's own mount-time firing behavior.
 """
 
 import from "@monaco-editor/react" { Editor }
 import from src.editor.document_service { open_document, save_document }
 
-def:pub app(path: str) -> JsxElement {
+def:pub app(path: str, onCursorChange: any) -> JsxElement {
     has content: str = "";
     has loaded: bool = False;
     has editor_ref: Ref[any] = Ref();
@@ -40,6 +47,7 @@ def:pub app(path: str) -> JsxElement {
 
     def handle_mount(editor: any, monaco: any) -> None;
     async def handle_save -> None;
+    def handle_cursor_change(e: any) -> None;
 
     <div style={{"height": "100%", "width": "100%"}}>
         {(

@@ -79,6 +79,12 @@ impl app.split_group(group_id: str) -> None {
     active_group_id = new_group_id;
 }
 
+impl app.handle_cursor_change(path: str, line: int, column: int) -> None {
+    updated_cursor_positions = {**cursor_positions};
+    updated_cursor_positions[path] = {"line": line, "column": column};
+    cursor_positions = updated_cursor_positions;
+}
+
 impl app.handle_command(command_id: str) -> None {
     if command_id == "workbench.action.splitEditorRight" {
         split_group(active_group_id);

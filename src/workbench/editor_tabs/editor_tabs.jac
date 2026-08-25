@@ -27,6 +27,11 @@ inactive panels by default.
 `docs/architecture.md`'s Editor Core section. The mounted-per-tab shape here is unaffected by that
 switch either way.
 
+**Cursor position (2026-08-25, `docs/roadmap.md` Phase 2)**: `onCursorChange` is forwarded to
+every mounted `MonacoEditorApp` unmodified -- unlike `onSelectTab`/`onCloseTab`/`onSplitGroup`, it
+doesn't need `groupId` threaded in, since `MonacoEditorApp` already reports its own `path`, which
+uniquely identifies the tab regardless of which group it's in.
+
 **Editor-group splitting (2026-08-25, `docs/roadmap.md` Phase 2)**: this component still renders
 exactly one group's tab row + content, unaware it's one of possibly several -- `workbench.jac` owns
 the list of groups and mounts one `EditorTabs` per group inside a `ResizablePanelGroup`. Rather than
@@ -65,6 +70,7 @@ def:pub app(props: any) -> JsxElement {
     on_select_tab = props["onSelectTab"];
     on_close_tab = props["onCloseTab"];
     on_split_group = props["onSplitGroup"];
+    on_cursor_change = props["onCursorChange"];
 
     <div style={{"display": "flex", "flexDirection": "column", "height": "100%", "overflow": "hidden"}}>
         <div style={{"display": "flex", "alignItems": "center", "borderBottom": "1px solid #3c3c3c", "background": "#252526", "flexShrink": "0"}}>
@@ -104,7 +110,7 @@ def:pub app(props: any) -> JsxElement {
             {(
                 [
                     <div key={t["path"]} style={{"display": "block" if t["path"] == active_path else "none", "height": "100%"}}>
-                        <MonacoEditorApp path={t["path"]} />
+                        <MonacoEditorApp path={t["path"]} onCursorChange={on_cursor_change} />
                     </div>
                     for t in open_tabs
                 ]

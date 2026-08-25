@@ -32,6 +32,8 @@ needs a compound condition yet, and a single-flag check is a two-line addition t
 later if something ever does.
 """
 
+import threading;
+
 node CommandRegistry {}
 
 node Command {
@@ -56,6 +58,17 @@ glob BUILTIN_COMMANDS: list[dict[str, any]] = [
 ];
 
 glob _cached_command_registries: dict[str, CommandRegistry] = {};
+
+"""Guards the whole seed-then-read sequence in `list_commands` -- `get_command_registry` and
+`register_command` each have their own check-existing-else-create step, and since a sync `def:pub`
+is dispatched onto a thread-pool worker (`asyncio.to_thread`), two genuinely concurrent callers
+(e.g. `workbench.jac` and `command_palette.jac` both fetching `list_commands()` from their own
+`can with entry` on the same page load) can each pass the check before either finishes creating,
+producing duplicate `CommandRegistry`/`Command` nodes -- the exact same race class caught and fixed
+in `workspace_service.jac`'s `_scan_lock`, reproduced live here too (a duplicate "View: Split
+Editor Right" entry in the palette) and not caught the first time because this module wasn't
+re-examined for the same pattern."""
+glob _registry_lock: threading.Lock = threading.Lock();
 
 def:pub _reset_command_registry_cache_for_tests {
     _cached_command_registries.clear();
@@ -95,10 +108,12 @@ def register_command(command_id: str, title: str, keybindings: list[dict[str, st
 }
 
 def:pub list_commands -> list[dict[str, any]] {
-    for spec in BUILTIN_COMMANDS {
-        register_command(spec["id"], spec["title"], spec["keybindings"]);
+    with _registry_lock {
+        for spec in BUILTIN_COMMANDS {
+            register_command(spec["id"], spec["title"], spec["keybindings"]);
+        }
+        reg = get_command_registry();
+        commands = [reg->:Contributes:->[?:Command]];
+        return [{"id": c.command_id, "title": c.title, "keybindings": c.keybindings} for c in commands];
     }
-    reg = get_command_registry();
-    commands = [reg->:Contributes:->[?:Command]];
-    return [{"id": c.command_id, "title": c.title, "keybindings": c.keybindings} for c in commands];
 }

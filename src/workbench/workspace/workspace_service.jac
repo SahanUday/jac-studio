@@ -40,17 +40,23 @@ glob DEFAULT_EXCLUDED_DIRS: list[str] = [
 glob _cached_workspaces: dict[str, Workspace] = {};
 glob _path_index: dict[str, dict[str, (Workspace | Folder)]] = {};
 
-"""Guards `_ensure_scanned`'s check-then-scan-then-flag sequence -- caught live, not by inspection:
-real browser testing fired several near-simultaneous `list_children_by_path` calls for the same
-unscanned folder, and since a sync `def:pub` is dispatched onto a thread-pool worker
+"""Guards every check-existing-else-create sequence in this module (`get_or_create_workspace`'s
+own creation branch, `_ensure_scanned`'s check-then-scan-then-flag) -- caught live, not by
+inspection: real browser testing fired several near-simultaneous calls hitting the same
+unscanned-folder path, and since a sync `def:pub` is dispatched onto a thread-pool worker
 (`asyncio.to_thread`, per `jaclang/runtimelib/serving/app.jac`), those calls ran as genuinely
 concurrent OS threads, not cooperatively-scheduled coroutines. Each thread read `parent.scanned ==
 False` before any of them had written `True`, so each independently re-scanned the same directory
-and appended its own duplicate `Folder`/`File` children -- reproduced as five duplicate entries
-for a two-child directory. One process-wide lock, not per-parent: scanning is infrequent and cheap
-(one `os.listdir` plus a handful of node creations), so serializing all scans globally is simpler
-than per-key lock bookkeeping and costs nothing observable."""
-glob _scan_lock: threading.Lock = threading.Lock();
+and appended its own duplicate `Folder`/`File` children -- reproduced as five duplicate entries for
+a two-child directory. The same unguarded pattern exists in `get_or_create_workspace`'s
+first-ever-open branch (`existing = [...]; ws = existing[0] if existing else root ++> Workspace()`)
+-- not yet reproduced there specifically, but it's the identical shape, so it gets the same lock
+rather than waiting for its own live reproduction (`command_registry.jac`'s `register_command` had
+this exact pattern too and *did* reproduce live, as a duplicate command-palette entry -- see its
+own `_registry_lock`). One process-wide lock, not per-parent: none of this is a hot path (one
+`os.listdir` plus a handful of node creations, at most once per folder), so serializing globally is
+simpler than per-key lock bookkeeping and costs nothing observable."""
+glob _workspace_lock: threading.Lock = threading.Lock();
 
 def:pub _reset_workspace_cache_for_tests {
     _cached_workspaces.clear();
@@ -67,33 +73,35 @@ too, and leaving them as unreachable graph garbage is a fine trade-off for a loc
 tool) and re-points `ws` at the newly requested path with a fresh `scanned=False`, so opening a
 different folder actually re-scans it instead of silently continuing to show the old one."""
 def get_or_create_workspace(root_path: str) -> Workspace {
-    key = jid(root);
-    if key in _cached_workspaces {
-        ws = _cached_workspaces[key];
-    } else {
-        existing = [root-->[?:Workspace]];
-        ws = existing[0] if existing else root ++> Workspace(root_path=root_path);
-        _cached_workspaces[key] = ws;
-    }
-    if ws.root_path != root_path {
-        for e in [edge ws ->:Contains:->] {
-            del e;
+    with _workspace_lock {
+        key = jid(root);
+        if key in _cached_workspaces {
+            ws = _cached_workspaces[key];
+        } else {
+            existing = [root-->[?:Workspace]];
+            ws = existing[0] if existing else root ++> Workspace(root_path=root_path);
+            _cached_workspaces[key] = ws;
         }
-        ws.root_path = root_path;
-        ws.scanned = False;
+        if ws.root_path != root_path {
+            for e in [edge ws ->:Contains:->] {
+                del e;
+            }
+            ws.root_path = root_path;
+            ws.scanned = False;
+        }
+        _path_index[key] = {ws.root_path: ws};
+        return ws;
     }
-    _path_index[key] = {ws.root_path: ws};
-    return ws;
 }
 
 """Materialize one directory level's worth of Folder/File children under `parent`, if it hasn't
-been scanned yet. Idempotent per `parent` via the `scanned` flag, guarded by `_scan_lock` so the
-check-then-scan-then-flag sequence is atomic across concurrent calls (see `_scan_lock`'s own
-docstring) -- never re-reads the directory or duplicates children on repeat calls, which is what
-makes lazy expand-on-demand safe to call on every UI expand click, including several
+been scanned yet. Idempotent per `parent` via the `scanned` flag, guarded by `_workspace_lock` so
+the check-then-scan-then-flag sequence is atomic across concurrent calls (see `_workspace_lock`'s
+own docstring) -- never re-reads the directory or duplicates children on repeat calls, which is
+what makes lazy expand-on-demand safe to call on every UI expand click, including several
 near-simultaneous ones."""
 def _ensure_scanned(parent: (Workspace | Folder)) -> None {
-    with _scan_lock {
+    with _workspace_lock {
         if parent.scanned {
             return;
         }

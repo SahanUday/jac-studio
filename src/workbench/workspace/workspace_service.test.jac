@@ -133,3 +133,22 @@ test "re-listing after scanning does not touch the filesystem again (scanned fla
     children = list_children_by_path(fixture);
     assert "new_after_scan.txt" not in [c["name"] for c in children];
 }
+
+"""Directly manufactures the duplicate-node graph state that the commit-timing race described in
+`_workspace_lock`'s docstring can leave behind, bypassing the normal scan path so this test
+exercises `list_children_by_path`'s read-side dedup itself rather than the lock that fails to
+prevent the duplicate in the first place."""
+test "list_children_by_path collapses two File nodes sharing one path into one entry" {
+    _reset_workspace_cache_for_tests();
+    fixture = make_fixture();
+    ws = get_or_create_workspace(fixture);
+    dup_path = os.path.join(fixture, "a.txt");
+    ws +>:Contains():+> File(name="a.txt", path=dup_path);
+    ws +>:Contains():+> File(name="a.txt", path=dup_path);
+    ws.scanned = True;
+
+    children = list_children_by_path(fixture);
+
+    matching = [c for c in children if c["path"] == dup_path];
+    assert len(matching) == 1;
+}

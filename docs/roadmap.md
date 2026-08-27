@@ -117,10 +117,29 @@ serialization.
   the current `@hugeicons` usage. Native token authoring, not a VS-Code-theme-format compatibility
   shim — that remains the separate, still-open installable-theme-extension question in
   `architecture.md`'s open questions.
+- **Close the gap between what Phase 2 documented and what it actually shipped, plus what a
+  2026-08-28 pass against the live `microsoft/vscode` source found missing entirely** (see
+  `vscode-complete-triage.md` v3 and `docs/phases/phase-2-workbench-shell.md`'s "what's left"):
+  - **Quick Open (Ctrl+P fuzzy file switcher)** — explicitly scoped into Phase 2 as a second
+    `quickaccess` provider alongside the command palette, but never built; add now as the
+    documented-but-undelivered item it is, not new scope.
+  - **Minimap** — `src/editor/client/monaco_editor.jac` currently sets
+    `"minimap": {"enabled": False}`; Monaco ships this natively, so this is a one-line flip once
+    it's deliberately decided rather than left off from an unrevisited Phase 2 default.
+  - **Activity bar** — the icon rail switching sidebar views (Explorer today; Search/SCM in
+    Phase 4). Not a shadcn primitive (`Sidebar` is a container, not a switcher) — hand-build it now
+    so Phase 4's new views have somewhere to mount instead of retrofitting under time pressure.
+  - **Title bar** — the custom title bar + Command Center search box; core to "looking like
+    VS Code" and was undocumented before this pass.
+  - **File-tree context menu** (new file/folder, rename, delete) via the `ContextMenu` primitive
+    already earmarked for this in `architecture.md`'s mapping table but unused so far.
+  - **Tab affordances**: an unsaved-changes indicator (dot vs. close button) at minimum; file-type
+    icons in the tree and tabs.
 
 Exit criteria: closing and reopening the app restores the previous session exactly; settings
 persist across restarts; opened files show syntax highlighting for at least a few common languages;
-two versions of a file can be diffed; the workbench chrome matches VS Code's default look and feel.
+two versions of a file can be diffed; the workbench chrome matches VS Code's default look and feel,
+including the activity bar, title bar, minimap, and Quick Open.
 
 ## Phase 4 — Extension system, Phase A (trusted, in-process)
 
@@ -151,11 +170,17 @@ Goal: prove the contribution-registry design end to end without solving sandboxi
 - **A merge-conflict UI** alongside the SCM work above — real conflicts only exist once real git
   integration does, so this is the natural phase for it, distinct from the two-way diff editor
   already shipped in Phase 3.
+- **Toast notifications + a notification center** (`workbench/browser/parts/notifications`, found
+  2026-08-28 — see `vscode-complete-triage.md`'s "workbench/browser/parts" section, previously
+  undocumented as a UI surface). Genuine prerequisite here, not polish deferred further: both the
+  task runner and SCM operations above need a way to report background success/failure to the
+  user, and there's currently no UI surface for that at all.
 
 Exit criteria: a fourth built-in feature can be added purely by writing a new contributing module,
 with zero changes to existing workbench code — the actual test of whether the contribution model
 is real; SCM shows real git status/diffs and can resolve a merge conflict; a build task's errors
-show up in a Problems panel; extension output is visible in a log channel.
+show up in a Problems panel; extension output is visible in a log channel; a background task's
+completion surfaces as a toast notification.
 
 ## Phase 5 — Extension system, Phase B (dynamic, still trusted)
 
@@ -177,6 +202,15 @@ Goal: extensions become separate packages with a manifest, loaded at runtime.
   somewhere to request/share OAuth tokens and store credentials safely rather than each extension
   reinventing it in plaintext settings. Small (upstream's `encryption` contrib is 48 lines, a thin
   OS-keychain wrapper) but a real dependency once any auth-requiring extension is written.
+- **Auxiliary bar** (`workbench/browser/parts/auxiliarybar`, found 2026-08-28 — see
+  `vscode-complete-triage.md`) — the secondary/right-side dockable panel. Upstream uses it for
+  Chat (excluded here, see `chat`'s Tier 2.5 disposition) but it's generic dockable-panel infra
+  independent of that — worth building once Search/SCM/Extensions views are competing for the
+  same sidebar real estate, which is true by this phase.
+- **"Continue Working On" / edit-session sync** (`editSessions`, found 2026-08-28) — syncs
+  uncommitted changes across devices via the same account the auth broker above manages. Natural
+  pairing with that broker and with `userDataSync`/`userDataProfile` (already Tracked); include if
+  time allows, not exit-blocking.
 
 Exit criteria: an extension can be installed/removed without a rebuild of the app itself, and a
 language extension can register a debug adapter that gets real breakpoint/step/inspect support.
@@ -201,6 +235,10 @@ client bundle used elsewhere).
   expect to build this pipeline largely from scratch, per
   [`research/vscodium-packaging.md`](research/vscodium-packaging.md); Jac doesn't ship one yet
   (tracked upstream gap #6436).
+- **The in-app update UI** (`update` contrib, found 2026-08-28 — see `vscode-complete-triage.md`):
+  release-notes viewer, "Restart to Update" notification, title-bar update indicator. Distinct
+  from the auto-update *feed* bullet above — that's the packaging/build side; this is the surface
+  that actually tells the user an update is available, and doesn't fall out of the feed for free.
 
 Exit criteria: a signed, installable binary for at least one OS, built via a repeatable CI
 pipeline (not a manual `jac nacompile` on a developer's machine).

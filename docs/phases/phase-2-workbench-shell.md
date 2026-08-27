@@ -213,6 +213,24 @@ silently dropped either:
    VS-Code-theme-format compatibility shim — see `architecture.md`'s Visual identity section and
    `roadmap.md`'s Phase 3 bullet. Raised in conversation, not found by building; recorded here
    rather than silently left for whoever starts Phase 3 to rediscover.
+7. **A genuine slip found in the same conversation (2026-08-28), not just a raised concern**:
+   `vscode-complete-triage.md` had already scoped Quick Open (Ctrl+P) into Phase 2 as a second
+   `quickaccess` provider alongside the command palette — `command_palette.jac` only implements
+   the command list, no file-switcher provider exists. Phase 2 was marked complete without it, and
+   this doc's own "what's left" list (this section) didn't catch the gap either the first time it
+   was written. Now scoped into Phase 3, see `roadmap.md`.
+8. **A live-source check against `microsoft/vscode` on GitHub (2026-08-28, `gh api`, not just
+   re-reading our own docs) found this project's own triage had a blind spot**: `activitybar`,
+   `titlebar`, `auxiliarybar`, and `notifications` live in `workbench/browser/parts/*`, a tree
+   `vscode-complete-triage.md` v1/v2 never checked at all (its stated scope was only the two
+   `contrib` trees). `architecture.md`'s primitive-mapping table had folded "activity bar" into
+   the same row as `Sidebar`, which is wrong — it's a view-switcher, not a container, and Phase 2
+   shipped with no such switcher because there was only ever one sidebar view to switch between.
+   Now split out and scoped into Phase 3 (activity bar, title bar) and Phase 4
+   (notifications) — see `vscode-complete-triage.md`'s new "workbench/browser/parts" section and
+   `roadmap.md`. The lesson for future phase docs: "reread the triage doc" (item 5 above) isn't
+   enough on its own — the triage doc itself needs occasional reverification against the live
+   upstream source, not just against its own prior text.
 
 Per `roadmap.md`, Phase 3 (settings, persistence, and workspace state) starts next — see the
 roadmap for the full bullet list and exit criteria.

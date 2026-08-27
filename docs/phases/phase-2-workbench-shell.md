@@ -201,10 +201,18 @@ silently dropped either:
    idempotency, not an app-level lock, as its actual correctness guarantee.
 5. Per `jac-studio-architecture`'s own instruction to revisit `vscode-feature-gap-analysis.md`/
    `vscode-complete-triage.md` before each new phase: both were reread while writing this doc.
-   Nothing found changes Phase 3's scope as already written in `roadmap.md` — settings/keybindings
-   as graph-attached `obj`s, workspace-state persistence, syntax highlighting and a diff-editor mode
-   both now largely free via Monaco's own bundled tokenizer and `createDiffEditor`, and a
-   `Diagnostic` node type with no producer yet. Proceed with Phase 3 as already scoped.
+   Nothing found at the time changed Phase 3's scope as already written in `roadmap.md` —
+   settings/keybindings as graph-attached `obj`s, workspace-state persistence, syntax highlighting
+   and a diff-editor mode both now largely free via Monaco's own bundled tokenizer and
+   `createDiffEditor`, and a `Diagnostic` node type with no producer yet.
+6. **Added to Phase 3's scope after this doc was first written (2026-08-28)**: match VS Code's
+   default visual identity — the Phase 2 workbench chrome (sidebar, tabs, editor groups, command
+   palette, status bar, terminal) currently uses shadcn's stock `nova`/`neutral` look
+   (`jac.toml`'s `[jac-shadcn]` table) and `@hugeicons` icons, not VS Code's own Dark+/Light+
+   palette or Codicons-style iconography. Decided natively via `jac retheme` OKLCH tokens, not a
+   VS-Code-theme-format compatibility shim — see `architecture.md`'s Visual identity section and
+   `roadmap.md`'s Phase 3 bullet. Raised in conversation, not found by building; recorded here
+   rather than silently left for whoever starts Phase 3 to rediscover.
 
 Per `roadmap.md`, Phase 3 (settings, persistence, and workspace state) starts next — see the
 roadmap for the full bullet list and exit criteria.

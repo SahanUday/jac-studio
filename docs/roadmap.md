@@ -110,10 +110,17 @@ serialization.
 - **A `Diagnostic` node type** attached to `File` in the workspace graph, with no producer yet —
   just the data model, so Phase 4's task/problem-matcher work and later language-intelligence work
   have somewhere to write to from day one.
+- **Match VS Code's default visual identity** (decided 2026-08-28, see `architecture.md`'s Visual
+  identity section) — retheme the Phase 2 workbench chrome (sidebar, tabs, editor groups, command
+  palette, status bar, terminal) from shadcn's stock look to VS Code's own default Dark+/Light+
+  palette, driven as native `jac retheme` OKLCH tokens, plus a Codicons-style icon set in place of
+  the current `@hugeicons` usage. Native token authoring, not a VS-Code-theme-format compatibility
+  shim — that remains the separate, still-open installable-theme-extension question in
+  `architecture.md`'s open questions.
 
 Exit criteria: closing and reopening the app restores the previous session exactly; settings
 persist across restarts; opened files show syntax highlighting for at least a few common languages;
-two versions of a file can be diffed.
+two versions of a file can be diffed; the workbench chrome matches VS Code's default look and feel.
 
 ## Phase 4 — Extension system, Phase A (trusted, in-process)
 

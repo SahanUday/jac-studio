@@ -1,12 +1,23 @@
 # Complete triage: every upstream workbench feature area, one disposition each
 
-Status: v2 — 2026-08-22. Direct answer to "have we documented all of VS Code, covered by a Jac
+Status: v3 — 2026-08-28. Direct answer to "have we documented all of VS Code, covered by a Jac
 version?": **no, not fully designed — and that's intentional, per the MVP-first principle in
 [`architecture.md`](architecture.md).** What this document provides instead is a different,
-achievable bar: **every one of the 99 areas in `src/vs/workbench/contrib/*`, and every one of the
-59 areas in `src/vs/editor/contrib/*`, has been looked at and assigned a disposition.** Nothing
-upstream is silently unaddressed anymore, even where the honest disposition is "deferred, not
-designed yet."
+achievable bar: **every one of the 100 areas in `src/vs/workbench/contrib/*` (99 at v2's count —
+`gh api repos/microsoft/vscode/contents/src/vs/workbench/contrib` now returns 100; see v3 below
+for the three that weren't yet triaged), and every one of the 59 areas in `src/vs/editor/contrib/*`
+(unchanged, reverified), has been looked at and assigned a disposition.** Nothing upstream is
+silently unaddressed anymore, even where the honest disposition is "deferred, not designed yet."
+
+**v3 (2026-08-28)**: reverified directly against the live `microsoft/vscode` source on GitHub
+(`gh api repos/microsoft/vscode/contents/...`), not just re-read from this document — v1/v2 were
+never checked against the actual upstream tree, only against research notes. That check found two
+real gaps this document had missed entirely (`editSessions`, `update` — see their new rows below)
+plus one trivial one (`commands`), and — more significantly — that this document's own stated scope
+("`workbench/contrib` + `editor/contrib`") was itself incomplete: VS Code's activity bar, title bar,
+auxiliary (secondary side) bar, and notifications center live in `workbench/browser/parts/*`, a
+sibling tree this document never triaged at all. See the new "workbench/browser/parts" section
+below for that gap, added rather than silently left for the next person to rediscover.
 
 v1 of this document clustered all 59 `editor/contrib` areas under Language Intelligence as a
 single group without checking them individually — on closer inspection that claim was wrong: about
@@ -60,6 +71,27 @@ found during this triage pass, not previously mentioned anywhere in the docs.
 | issue | New — Tracked | Built-in issue reporter. Low priority — though there's a mildly interesting idea of wiring this into our own challenge tracker someday rather than building a generic reporter; not pursued now. |
 | onboarding, welcomeBanner, welcomeGettingStarted, welcomeOnboarding, welcomeViews, welcomeWalkthrough | New — Tracked | The "Getting Started" walkthrough experience. Polish-tier, no phase assigned. |
 | limitIndicator, meteredConnection, modernUI, emergencyAlert, relauncher, splash, performance, processExplorer, policyExport, scrollLocking, sash, list, browserView, imageCarousel | New — mostly not applicable | Internal plumbing/UI-kit details specific to VS Code's own Electron implementation (a splash screen, a "reload window" relauncher, a virtualized-list widget, Electron's own process explorer) or already covered by an existing choice (`sash` ≈ our `Resizable` shadcn primitive, per `architecture.md`'s workbench-shell mapping). Nothing to design here beyond what's already decided. |
+| **commands** | **New (v3) — not applicable** | 4.8KB, `commands.contribution.ts` only. Just registers upstream's own built-in global commands (reload window, etc.) — the exact role `src/workbench/commands/command_registry.jac` already plays natively. Not a feature to port, confirms the existing design rather than adding to it. |
+| **editSessions** | **New (v3) — Tracked** | ~110KB across 7 files. "Continue Working On" — syncs uncommitted changes across devices via a Microsoft-account-backed cloud store, so a user can pick up mid-edit on another machine. Genuinely missed by v1/v2 (never checked against the live upstream tree). Pairs with the already-Tracked `userDataSync`/`userDataProfile` and depends on the same `authentication` broker staged for Phase 5 — group with those, no earlier. |
+| **update** | **New (v3) — Tracked, partially Scoped** | ~120KB across 8 files: in-app update UI (release-notes viewer, "Restart to Update" notification, title-bar update indicator) — distinct from `roadmap.md` Phase 7's "auto-update feed" bullet, which is the *packaging/build* side (the feed itself, code signing). Phase 7's bullet covers shipping updates; this is the in-app UI *telling the user* one's available — add as an explicit Phase 7 sub-bullet so it isn't assumed to fall out of the feed for free. |
+
+## `workbench/browser/parts` — chrome & layout (a separate tree from `contrib`, newly triaged)
+
+Found during the v3 (2026-08-28) live-source check: everything above is `workbench/contrib/*`, the
+*feature* layer. VS Code's actual window chrome — the parts a user's eye lands on first, and
+exactly what "match VS Code's default visual identity" (the decision recorded in `architecture.md`
+following this document's earlier `themes` row) is about — lives in a sibling tree,
+`workbench/browser/parts/*`, that neither v1 nor v2 of this document ever triaged. Confirmed via
+`gh api repos/microsoft/vscode/contents/src/vs/workbench/browser/parts`:
+
+| Part | Disposition | Notes |
+|---|---|---|
+| **activitybar** | **New — Scoped, Phase 3/4** | The icon rail down the left edge (Explorer/Search/SCM/Debug/Extensions, sidebar toggle). `architecture.md`'s primitive-mapping table previously folded this into one "Activity bar + sidebar → `Sidebar`" row — that's wrong: `activitybarPart.ts` is its own module upstream, distinct from `sidebar`, because it's a multi-view *switcher*, not a container. Hasn't mattered yet since Phase 2 shipped exactly one sidebar view (Explorer); becomes load-bearing the moment Phase 4 adds Search/SCM views with nowhere else to mount. Scope it explicitly now (Phase 3, alongside the other visual-identity work) rather than retrofitting it under Phase 4 time pressure. |
+| **titlebar** | **New — Tracked** | The custom title bar (window controls + centered Command Center search box + menu). Directly relevant to the default-visual-identity decision — this is one of the most visually distinctive pieces of "looking like VS Code," and was completely unmentioned in any doc before this pass. No phase assigned yet; natural fit alongside `activitybar` once Phase 3's chrome work is underway. |
+| **auxiliarybar** | **New — Tracked** | The secondary/right-side dockable panel (upstream uses it for Chat/Copilot and any view a user drags there). Generic dockable-panel infra, useful independent of chat (which stays Tier 2.5/excluded per the `chat` row above) — e.g. as a second home for Search results or SCM. No phase assigned; revisit once Phase 4/5 has more than one panel-worthy view competing for space. |
+| **notifications** | **New — Tracked** | Toast notifications + the notification-center bell icon. Previously only glancingly referenced as a backend `IFooService` in the "Not covered" section below, never as its own UI surface. Real prerequisite for Phase 4's task runner and SCM work (both need to report background success/failure to the user) — add as infra alongside those, not deferred further. |
+| **banner** | **New — Tracked, low priority** | Dismissible in-app banner messages (e.g. upstream's workspace-trust prompt). Small, polish-tier, no phase assigned. |
+| statusbar, sidebar, panel, editor, dialogs, views, compositeBar/paneCompositePart (the shared multi-view-container machinery `activitybar`/`panel`/`auxiliarybar` all sit on) | Already covered | `statusbar`/`sidebar`/`editor`/`panel` already map onto existing choices (`StatusBar` component, `Sidebar` primitive, the Monaco embed, the terminal's bottom panel) per `architecture.md`. `dialogs`/`views` are generic UI-kit plumbing shadcn already provides (`Dialog`, the view-container pattern itself). |
 
 ## Editor-level feature areas (`src/vs/editor/contrib`, 59 areas)
 
@@ -104,12 +136,17 @@ choice, revisit only if our own rendering performance requires it, not a feature
 
 ## What this settles vs. what it doesn't
 
-**Settled — the two `contrib` trees (158 areas total: 99 workbench + 59 editor)**: no feature area
-in either is unaccounted for anymore — everything has a name, a disposition, and (where relevant)
-a phase. Six real gaps came out of the workbench pass that hadn't been written down anywhere
-before (`authentication`+`encryption`, `bulkEdit`, `mergeEditor`, `themes`, `localization`,
-`workspace`/multi-root); the editor pass corrected a wrong claim from v1 rather than finding new
-gaps. This is genuinely complete triage of the parts of VS Code a user directly interacts with.
+**Settled — the two `contrib` trees (159 areas total: 100 workbench + 59 editor) plus
+`workbench/browser/parts`'s five user-visible chrome components**: no feature area in either
+`contrib` tree is unaccounted for anymore — everything has a name, a disposition, and (where
+relevant) a phase. Nine real gaps have come out of this document's two passes now: v2's workbench
+pass found six (`authentication`+`encryption`, `bulkEdit`, `mergeEditor`, `themes`, `localization`,
+`workspace`/multi-root); v3's live-source check (2026-08-28, checked directly against
+`microsoft/vscode` on GitHub rather than only against research notes) found three more
+(`editSessions`, `update`, and the entire `workbench/browser/parts` tree, which neither v1 nor v2
+had ever triaged at all — `commands` was also new but not a real gap, see its row). The editor pass
+found no new gaps, only corrected a wrong v1 claim. This is genuinely complete triage of the parts
+of VS Code a user directly interacts with, now source-verified rather than notes-verified.
 
 **Not covered by this document, and worth being explicit about rather than implying otherwise**:
 

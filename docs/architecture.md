@@ -222,18 +222,24 @@ VS Code's workbench parts map almost directly onto existing Jac shadcn primitive
 
 | Workbench part | Jac primitive |
 |---|---|
-| Activity bar + sidebar | `Sidebar` |
+| Sidebar (Explorer view) | `Sidebar` |
+| Activity bar (icon rail switching sidebar views) | No direct shadcn primitive — a small icon-strip component we build ourselves, since `Sidebar` is a container, not a view-*switcher*. Not yet built (see below). |
+| Title bar (window controls + Command Center search) | No direct shadcn primitive — hand-built chrome. Not yet built (see below). |
 | Editor groups (split panes) | `Resizable` / `ResizablePanel` / `ResizableHandle` |
 | Tabs | `Tabs` |
 | Command palette | `Command` |
 | Right-click menus | `ContextMenu` |
 | Status bar hints, hover info | `Tooltip` |
 | File tree, output panels | `ScrollArea` (+ a tree component we likely build ourselves — not in the ~50-primitive shadcn set) |
+| Toast notifications + notification center | No direct shadcn primitive equivalent to VS Code's notification center; shadcn's `Sonner`/toast pattern covers the toast half. Not yet built. |
 
-Because the primitive layer already exists, the workbench-shell phase of the roadmap is
-realistically a composition/layout effort, not a from-scratch UI-toolkit-building effort — this is
-the part of the reimplementation where "everything in Jac" is closest to free, and where we expect
-the fewest tracked blockers.
+Because the primitive layer already exists for most of this, the workbench-shell phase of the
+roadmap is realistically a composition/layout effort, not a from-scratch UI-toolkit-building effort
+for the *majority* of parts — but the activity bar, title bar, and notifications rows above are a
+real exception, found only by checking VS Code's actual `workbench/browser/parts/*` source
+directly (2026-08-28) rather than assuming shadcn already covered them; see
+`vscode-complete-triage.md`'s new "workbench/browser/parts" section and `roadmap.md`'s Phase 3/4
+bullets for where these land.
 
 Following the self-registering **contribution model** VS Code uses (rather than one monolithic
 layout file), each workbench feature (file explorer, search, settings UI, later: debug/terminal)

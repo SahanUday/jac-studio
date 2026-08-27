@@ -10,7 +10,7 @@ state of its own, so there's no paired `.impl.jac` annex.
 """
 
 def:pub app(line: int, column: int, path: str) -> JsxElement {
-    <div style={{
+    <div role="status" aria-live="polite" aria-label="Editor status" style={{
         "display": "flex",
         "alignItems": "center",
         "justifyContent": "flex-end",

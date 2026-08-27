@@ -60,8 +60,13 @@ def:pub FileTreeNode(props: any) -> JsxElement {
     is_selected = (path == selected_path);
     indent = 8 + depth * 14;
 
-    <div>
+    <div role="none">
         <div
+            role="treeitem"
+            aria-level={depth + 1}
+            aria-selected={is_selected}
+            aria-expanded={is_open if is_dir else None}
+            tabIndex={0 if is_selected else -1}
             onClick={lambda (e: any) { on_toggle(path) if is_dir else on_select(path, item["name"]); }}
             style={{
                 **ROW_BASE_STYLE,
@@ -75,20 +80,22 @@ def:pub FileTreeNode(props: any) -> JsxElement {
             <span>{item["name"]}</span>
         </div>
         {(
-            [
-                <FileTreeNode
-                    key={c["path"]}
-                    node={c}
-                    depth={depth + 1}
-                    expanded={expanded}
-                    children_by_path={children_by_path}
-                    selected_path={selected_path}
-                    onToggle={on_toggle}
-                    onSelect={on_select}
-                />
-                for c in (children_by_path[path] if path in children_by_path else [])
-            ] if (is_dir and is_open) else None
-        )}
+            <div role="group">
+                {[
+                    <FileTreeNode
+                        key={c["path"]}
+                        node={c}
+                        depth={depth + 1}
+                        expanded={expanded}
+                        children_by_path={children_by_path}
+                        selected_path={selected_path}
+                        onToggle={on_toggle}
+                        onSelect={on_select}
+                    />
+                    for c in (children_by_path[path] if path in children_by_path else [])
+                ]}
+            </div>
+        ) if (is_dir and is_open) else None}
     </div>
 }
 
@@ -129,19 +136,21 @@ def:pub app(props: any) -> JsxElement {
             <SidebarContent>
                 <ScrollArea style={{"height": "70vh"}}>
                     {(
-                        [
-                            <FileTreeNode
-                                key={c["path"]}
-                                node={c}
-                                depth={0}
-                                expanded={expanded}
-                                children_by_path={children_by_path}
-                                selected_path={selected_path}
-                                onToggle={toggle_folder}
-                                onSelect={select_file}
-                            />
-                            for c in (children_by_path[root_path] if root_path in children_by_path else [])
-                        ]
+                        <div role="tree" aria-label={root_name if root_name != "" else "Files"}>
+                            {[
+                                <FileTreeNode
+                                    key={c["path"]}
+                                    node={c}
+                                    depth={0}
+                                    expanded={expanded}
+                                    children_by_path={children_by_path}
+                                    selected_path={selected_path}
+                                    onToggle={toggle_folder}
+                                    onSelect={select_file}
+                                />
+                                for c in (children_by_path[root_path] if root_path in children_by_path else [])
+                            ]}
+                        </div>
                     ) if opened else (
                         <div style={{"padding": "1rem", "fontSize": "12px", "color": "#888", "fontFamily": "system-ui, sans-serif"}}>
                             Enter a folder path above and click Open.

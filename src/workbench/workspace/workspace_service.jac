@@ -123,6 +123,22 @@ def _ensure_scanned(parent: (Workspace | Folder)) -> None {
     }
 }
 
+"""Resolves an already-scanned path straight to its `File` node, for callers that need the node
+itself rather than the plain-dict shape `list_children_by_path` returns -- `diagnostics.jac` is
+the first such caller (`File --Reports--> Diagnostic` needs a real node to attach the edge to).
+Returns `None` for a path that hasn't been scanned into the tree yet (nothing to resolve) or that
+resolves to a `Folder` instead of a `File`; unlike `list_children_by_path`, this never scans on the
+caller's behalf, since a diagnostics producer has no reason to trigger a directory listing as a
+side effect of reporting on one specific file."""
+def:pub get_file_node_by_path(path: str) -> File | None {
+    key = jid(root);
+    if key not in _path_index or path not in _path_index[key] {
+        return None;
+    }
+    found = _path_index[key][path];
+    return found if isinstance(found, File) else None;
+}
+
 def:pub open_workspace(root_path: str) -> dict[str, str] {
     ws = get_or_create_workspace(root_path);
     return {"root_path": ws.root_path, "name": os.path.basename(ws.root_path.rstrip("/")) or ws.root_path};

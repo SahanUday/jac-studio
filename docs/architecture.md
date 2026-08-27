@@ -241,6 +241,35 @@ should be its own set of Jac modules that attach `Command`/`View`/`Menu` nodes t
 graph on load — the direct Jac analog of VS Code's `workbench/contrib/*` self-registration, and
 the mechanism that lets `workbench` scale to 4,000 files without a central switchboard.
 
+### Visual identity: match VS Code's default look, natively (decided 2026-08-28)
+
+**Decided**: jac-studio should look like VS Code out of the box — the same default experience a
+user gets opening [vscode.dev](https://vscode.dev) with zero extensions installed (Dark+/Light+
+palette, Codicons-style iconography, the same chrome proportions/spacing) — not shadcn's own
+default aesthetic. This is separate from, and does not require resolving, the installable-theme-
+extension question below; it's about the *baseline* look every jac-studio user sees, regardless of
+whether third-party themes are ever supported.
+
+Get there the Jactastic way, consistent with principle 1: reproduce VS Code's default color/type
+tokens as `jac retheme`'s own OKLCH CSS variables (configured via `jac.toml`'s `[jac-shadcn]`
+table — currently `style = "nova"`, `baseColor = "neutral"`, `theme = "neutral"`, shadcn's stock
+look, not VS Code's), not by importing VS Code's actual theme JSON format or building a
+compatibility shim for it. Concretely:
+
+- Derive an OKLCH token set from VS Code's default Dark+/Light+ colors and drive `jac retheme`
+  with it, the same mechanism already styling every shadcn-in-Jac primitive — no new theming
+  machinery needed, just the right token values.
+- Replace the icon set. `jac.toml` currently pulls `@hugeicons/react` (see `editor_tabs.jac`'s
+  split-editor icon) — a fine general-purpose icon set, but not what makes a workbench read as
+  VS Code. Move to Codicons (or a Codicons-equivalent) for anything standing in for a VS Code chrome
+  element (file-tree/tab icons, activity bar, status bar).
+- Scope this against the actual chrome that exists so far: sidebar, tabs, resizable editor groups,
+  command palette, status bar, terminal (all shipped in Phase 2) — not a hypothetical full surface.
+
+This does not change the Editor core section below — Monaco already ships its own
+`vs-dark`/`vs-light` themes matching VS Code's editor colors; the work here is the *workbench
+chrome around* Monaco, which Monaco has no opinion on.
+
 ## Editor core: embed the real thing, don't reimplement it
 
 **Status (2026-08-25): the editor engine is the real `monaco-editor` npm package**, embedded via a
@@ -461,9 +490,15 @@ into every section of this document.
   compatibility with (enabling existing extensions to port over) vs. a from-scratch API idiomatic
   to Jac's walker/node model? Not decided — affects Phase B scope significantly and deserves its
   own design doc once Phase A ships.
-- Color/icon theming: adopt a VS-Code-compatible installable-theme-extension model (ecosystem-
-  compatible, more work), or lean entirely on Jac's own native `jac retheme` system (simpler,
-  native, incompatible with existing VS Code themes)? Not decided — see
+- ~~Color/icon theming: match VS Code's default visual identity, or keep shadcn's own default
+  look?~~ **Decided (2026-08-28)**: match VS Code's default identity (Dark+/Light+-derived OKLCH
+  tokens via `jac retheme`, Codicons-style icons), built natively rather than by importing
+  VS Code's theme format — see the Visual identity section above.
+- Installable, VS-Code-compatible **third-party** theme *extensions* (arbitrary `.vsix` color/icon
+  themes a user installs): a genuinely separate question from the default-identity one above, and
+  still open — ecosystem-compatible support is real extra work (parsing VS Code's theme JSON
+  format, mapping it onto `jac retheme` tokens at runtime) versus themes only ever being authored
+  as native `jac retheme` configs. Not decided — see
   [`vscode-complete-triage.md`](vscode-complete-triage.md)'s `themes` row. Decide once Phase 4/5
   extensions exist to actually contribute a theme.
 - Debug Adapter Protocol client: is a Jac/Python DAP client library reachable via Python interop

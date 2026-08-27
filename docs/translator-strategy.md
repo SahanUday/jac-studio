@@ -25,12 +25,24 @@ translate + review in one sitting. In priority order:
 1. `src/vs/editor/common/model/prefixSumComputer.ts` — line/offset arithmetic, no dependencies.
 2. `src/vs/editor/common/model/intervalTree.ts` — decoration lookup structure.
 3. `src/vs/editor/common/model/pieceTreeTextBuffer/` — the actual text storage engine. Larger,
-   but still pure; this is the one that matters most, since it's the foundation of the whole
-   editor core (see `architecture.md`'s Editor Core section).
+   but still pure.
 4. `textModel.ts`'s non-DOM-facing subset (edit stack/undo, search) — once 1–3 are solid.
 
+All four landed (see `manifest.toml`) with parity against VS Code's own test suites for those
+modules — a clean signal that jac-lang was ready for this. **None of it is wired into the running
+app as of 2026-08-25**, though: the editor engine now embeds the real `monaco-editor` npm package
+instead (a reuse-over-reinvention call, not a verdict that the port failed — see
+`architecture.md`'s Editor Core section). The ported code is archived, not deleted, at
+`internal/native-editor-archive/` for a possible future revival. This list is kept as the record
+of what the translator was actually pointed at and proved capable of, not as a statement that the
+piece-tree buffer is currently the editor core's foundation — Monaco is.
+
 Everything past this point (tokenization, language services, anything touching the DOM) is
-designed fresh in Jac, informed by reading the TS source rather than translating it.
+designed fresh in Jac, informed by reading the TS source rather than translating it — doubly so
+now that Monaco supplies its own tokenizer and diff engine for the languages it already ships (see
+`roadmap.md`'s Phase 3), leaving no currently-queued translator target. The workflow below and the
+tool in `internal/translator/` stay ready for whenever a genuinely pure, tested, in-scope module
+turns up again — this strategy isn't retired, just currently idle.
 
 ## Workflow
 
@@ -181,9 +193,11 @@ that are genuinely judgment calls (see `architecture.md`'s open questions).
 
 ## Success signal
 
-The translator strategy is working if, by the end of the Phase 0/1 spike (see
-[`roadmap.md`](roadmap.md)), we have: the piece tree text buffer running under `jac test` with
-parity against VS Code's own test cases, and a non-trivial, well-formed set of tracker entries
-describing exactly where and why it was harder than expected. Both outcomes are useful — a clean
+**Met, as of the Phase 0/1 spike** (see [`roadmap.md`](roadmap.md)): the piece tree text buffer
+ran under `jac test` with parity against VS Code's own test cases, plus a non-trivial, well-formed
+set of tracker entries describing exactly where and why it was harder than expected — see `What
+it's for` above for the current status of that specific port (archived, superseded by embedding
+Monaco). The strategy itself is judged working independent of that particular module's fate: both
+outcomes below are useful — a clean
 port with few blockers means jac-lang is more ready than assumed; a rough port with many blockers
 is exactly the signal this whole project exists to produce for the jac-lang team.

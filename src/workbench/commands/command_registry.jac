@@ -30,6 +30,18 @@ context-evaluation layer itself. `when` is a single optionally-`!`-negated conte
 `src/vs/platform/contextkey` (`&&`/`||` per `vscode-feature-gap-analysis.md`) -- nothing here
 needs a compound condition yet, and a single-flag check is a two-line addition to extend into `&&`
 later if something ever does.
+
+**Keybinding overrides (2026-08-28, `docs/roadmap.md` Phase 3's "keybindings as graph-attached
+objects" bullet)** -- `KeybindingOverrides` is a second, separate root-attached node rather than a
+field bolted onto `CommandRegistry`, because it has a different lifecycle: `register_command`
+already re-syncs a `Command`'s `title`/`keybindings` from `BUILTIN_COMMANDS` on every call (so a
+later code change to a command's *default* binding always wins), and mixing a user's persisted
+override into that same resync path would mean every deploy silently reverts it. Keeping the
+override store separate, and applying it only at the `list_commands` read boundary (mirroring
+upstream's own `keybindings.json`-overrides-`package.json`-contributed-defaults model), means a
+built-in default can keep evolving in code without ever touching what a user already customized.
+An override for a `command_id` replaces that command's whole `keybindings` list rather than
+patching one entry -- nothing here needs upstream's more granular add/remove-one-binding model yet.
 """
 
 import threading;
@@ -54,10 +66,50 @@ glob BUILTIN_COMMANDS: list[dict[str, any]] = [
             {"key": "ctrl+`", "when": ""},
             {"key": "escape", "when": "terminalFocus"}
         ]
-    }
+    },
+    {"id": "workbench.action.toggleColorTheme", "title": "Preferences: Toggle Color Theme", "keybindings": []}
 ];
 
+node KeybindingOverrides {
+    has overrides: dict[str, list[dict[str, str]]] = {};
+}
+
 glob _cached_command_registries: dict[str, CommandRegistry] = {};
+glob _cached_keybinding_overrides: dict[str, KeybindingOverrides] = {};
+
+def:pub _reset_keybinding_overrides_cache_for_tests {
+    _cached_keybinding_overrides.clear();
+}
+
+def get_keybinding_overrides -> KeybindingOverrides {
+    key = jid(root);
+    if key in _cached_keybinding_overrides {
+        return _cached_keybinding_overrides[key];
+    }
+    existing = [root-->[?:KeybindingOverrides]];
+    overrides_node = existing[0] if existing else root ++> KeybindingOverrides();
+    _cached_keybinding_overrides[key] = overrides_node;
+    return overrides_node;
+}
+
+"""Replacing, not merging, `keybindings` -- see the module docstring's "Keybinding overrides"
+section for why a whole-list replace is the right granularity today."""
+def:pub set_keybinding_override(command_id: str, keybindings: list[dict[str, str]]) {
+    store = get_keybinding_overrides();
+    updated = {**store.overrides};
+    updated[command_id] = keybindings;
+    store.overrides = updated;
+}
+
+def:pub clear_keybinding_override(command_id: str) -> None {
+    store = get_keybinding_overrides();
+    if command_id not in store.overrides {
+        return;
+    }
+    updated = {**store.overrides};
+    del updated[command_id];
+    store.overrides = updated;
+}
 
 """Narrows, but does not close, the window for `list_commands`'s check-existing-else-create race
 (two genuinely concurrent callers -- `workbench.jac` and `command_palette.jac` both fetch
@@ -129,6 +181,7 @@ def:pub list_commands -> list[dict[str, any]] {
         }
         reg = get_command_registry();
         commands = [reg->:Contributes:->[?:Command]];
+        overrides = get_keybinding_overrides().overrides;
         seen_ids: set[str] = set();
         deduped = [];
         for c in commands {
@@ -136,7 +189,8 @@ def:pub list_commands -> list[dict[str, any]] {
                 continue;
             }
             seen_ids.add(c.command_id);
-            deduped.append({"id": c.command_id, "title": c.title, "keybindings": c.keybindings});
+            keybindings = overrides[c.command_id] if c.command_id in overrides else c.keybindings;
+            deduped.append({"id": c.command_id, "title": c.title, "keybindings": keybindings});
         }
         return deduped;
     }

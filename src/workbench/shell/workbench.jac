@@ -71,6 +71,35 @@ entirely -- so `handle_command` can't just flip a local `has` field the way `ter
 state" shape used everywhere else in this file, just one level further up the tree than usual since
 the state in question (what wraps the *whole* app in a `.dark`/`.light` class) genuinely belongs
 above this component, not inside it.
+
+**Workspace-state persistence (2026-08-28, `docs/roadmap.md` Phase 3)** -- `groups`/
+`active_group_id`/`next_group_id`/`terminal_open`/`cursor_positions` restore from
+`session_service.jac`'s `load_session()` on mount (falling back to today's single-empty-group
+default when nothing was ever saved) and save back via `_save_session` after every *structural*
+mutation (`open_tab`, `select_tab`, `close_tab`, `split_group`, the terminal-toggle branch of
+`handle_command`) -- all of which is why those methods are `async` now, not just cosmetic.
+`handle_cursor_change` deliberately does **not** call `_save_session` synchronously on every
+firing -- it fires on every keystroke (typing moves the cursor), the same per-keystroke frequency
+this project already refused to round-trip for the editor's own content
+(`docs/architecture.md`'s Monaco-embed "no per-keystroke RPC round-trip" decision). Instead it
+debounces through `cursor_save_timer` (a plain `setTimeout`/`clearTimeout` pair stashed in a `Ref`,
+the same "value that survives re-renders without triggering one" idiom `monaco_editor.jac` uses
+for its own `editor_ref`): each keystroke resets an 800ms timer, so a session save only actually
+fires once cursor movement settles, and always reads whatever `cursor_positions` holds at that
+later moment rather than a stale snapshot from when the timer was set.
+
+**Restore ordering is load-bearing, not incidental (caught live, `jac browse`, a real restart)**:
+inside the `can with entry` restore block, `cursor_positions` is assigned *before* `groups` on
+purpose. `groups` becoming non-empty is what causes each tab's `MonacoEditorApp` to mount for the
+first time, and `monaco_editor.jac`'s `initialCursor` prop is only ever read once, at that mount
+(`handle_mount` never re-fires on a later prop change, matching how it can't re-run for an
+already-mounted third-party Monaco instance). Assigning `groups` first previously mounted every
+restored tab with a still-empty `cursor_positions`, so each one immediately reported Monaco's
+default `(1, 1)` back up through `onCursorChange` -- which didn't just fail to restore the display,
+it *overwrote* the just-loaded correct value in state, and the debounce in
+`handle_cursor_change` then dutifully persisted that overwritten `(1, 1)` back to the server,
+silently destroying the real data on the very next save. Setting `cursor_positions` first ensures
+it's already correct by the time `groups`'s update causes anything to mount.
 """
 
 import from "react" { useEffect }
@@ -80,6 +109,7 @@ import from src.workbench.command_palette.command_palette { app as CommandPalett
 import from src.workbench.status_bar.status_bar { app as StatusBarApp }
 import from src.workbench.terminal.terminal { app as TerminalApp }
 import from src.workbench.commands.command_registry { list_commands }
+import from src.workbench.session.session_service { load_session, save_session }
 import from components.ui.resizable { ResizablePanelGroup, ResizablePanel, ResizableHandle }
 
 def:pub app(onToggleTheme: any) -> JsxElement {
@@ -90,12 +120,14 @@ def:pub app(onToggleTheme: any) -> JsxElement {
     has terminal_open: bool = False;
     has commands: list[dict[str, any]] = [];
     has context: dict[str, bool] = {};
+    has cursor_save_timer: Ref[any] = Ref();
 
-    def open_tab(path: str, name: str) -> None;
-    def select_tab(group_id: str, path: str) -> None;
-    def close_tab(group_id: str, path: str) -> None;
-    def split_group(group_id: str) -> None;
-    def handle_command(command_id: str) -> None;
+    async def _save_session -> None;
+    async def open_tab(path: str, name: str) -> None;
+    async def select_tab(group_id: str, path: str) -> None;
+    async def close_tab(group_id: str, path: str) -> None;
+    async def split_group(group_id: str) -> None;
+    async def handle_command(command_id: str) -> None;
     def handle_cursor_change(path: str, line: int, column: int) -> None;
     def set_context(key: str, value: bool) -> None;
     def context_matches(when: str) -> bool;
@@ -103,6 +135,19 @@ def:pub app(onToggleTheme: any) -> JsxElement {
 
     async can with entry {
         commands = await list_commands();
+        session = await load_session();
+        if len(session["groups"]) > 0 {
+            # cursor_positions must land before groups: groups is what causes each tab's
+            # MonacoEditorApp to mount for the first time, and its initialCursor prop is only
+            # ever read once, at that mount -- if cursor_positions hadn't been assigned yet, the
+            # editor would mount with a stale default and then report it right back up,
+            # corrupting the just-restored value (found live, see this file's own docstring)
+            cursor_positions = session["cursorPositions"];
+            active_group_id = session["activeGroupId"];
+            next_group_id = session["nextGroupId"];
+            terminal_open = session["terminalOpen"];
+            groups = session["groups"];
+        }
     }
 
     useEffect(lambda {
@@ -129,6 +174,7 @@ def:pub app(onToggleTheme: any) -> JsxElement {
                     onCloseTab={close_tab}
                     onSplitGroup={split_group}
                     onCursorChange={handle_cursor_change}
+                    initialCursors={cursor_positions}
                 />
             </ResizablePanel>
         );

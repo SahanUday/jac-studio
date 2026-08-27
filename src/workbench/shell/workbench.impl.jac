@@ -1,7 +1,16 @@
 """Every group update rebuilds `groups` as a fresh list of fresh dicts rather than mutating in
 place, per this project's established reactivity convention for `has` fields holding
 lists/dicts (see `file_tree.impl.jac`'s docstring) -- a `has` field write is only picked up
-reactively when the field itself is reassigned to a new object."""
+reactively when the field itself is reassigned to a new object.
+
+`_save_session` is called (`await`-ed, not fire-and-forget) at the end of every method here that
+changes `groups`/`active_group_id`/`next_group_id`/`terminal_open` -- see `workbench.jac`'s
+"Workspace-state persistence" docstring section for why `handle_cursor_change` is the one
+exception, debouncing instead."""
+
+impl app._save_session -> None {
+    await save_session(groups, active_group_id, next_group_id, terminal_open, cursor_positions);
+}
 
 impl app.open_tab(path: str, name: str) -> None {
     updated_groups = [];
@@ -15,6 +24,7 @@ impl app.open_tab(path: str, name: str) -> None {
         updated_groups.append({"id": g["id"], "tabs": new_tabs, "activePath": path});
     }
     groups = updated_groups;
+    await _save_session();
 }
 
 impl app.select_tab(group_id: str, path: str) -> None {
@@ -28,6 +38,7 @@ impl app.select_tab(group_id: str, path: str) -> None {
     }
     groups = updated_groups;
     active_group_id = group_id;
+    await _save_session();
 }
 
 impl app.close_tab(group_id: str, path: str) -> None {
@@ -54,6 +65,7 @@ impl app.close_tab(group_id: str, path: str) -> None {
     if removed_group_id != "" and active_group_id == removed_group_id {
         active_group_id = updated_groups[0]["id"];
     }
+    await _save_session();
 }
 
 impl app.split_group(group_id: str) -> None {
@@ -77,17 +89,23 @@ impl app.split_group(group_id: str) -> None {
     groups = updated_groups;
     next_group_id = next_group_id + 1;
     active_group_id = new_group_id;
+    await _save_session();
 }
 
 impl app.handle_cursor_change(path: str, line: int, column: int) -> None {
     updated_cursor_positions = {**cursor_positions};
     updated_cursor_positions[path] = {"line": line, "column": column};
     cursor_positions = updated_cursor_positions;
+
+    if cursor_save_timer.current {
+        clearTimeout(cursor_save_timer.current);
+    }
+    cursor_save_timer.current = setTimeout(lambda { _save_session(); }, 800);
 }
 
 impl app.handle_command(command_id: str) -> None {
     if command_id == "workbench.action.splitEditorRight" {
-        split_group(active_group_id);
+        await split_group(active_group_id);
         return;
     }
     if command_id == "workbench.action.closeActiveEditor" {
@@ -95,15 +113,16 @@ impl app.handle_command(command_id: str) -> None {
         if len(active_group) == 0 or active_group[0]["activePath"] == "" {
             return;
         }
-        close_tab(active_group_id, active_group[0]["activePath"]);
+        await close_tab(active_group_id, active_group[0]["activePath"]);
         return;
     }
     if command_id == "workbench.action.terminal.toggle" {
         terminal_open = not terminal_open;
+        await _save_session();
         return;
     }
     if command_id == "workbench.action.toggleColorTheme" {
-        onToggleTheme();
+        await onToggleTheme();
     }
 }
 

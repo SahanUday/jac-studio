@@ -5,14 +5,11 @@ bracket-assign instead (`updated = {**d}; updated[key] = value; d = updated;`), 
 computed keys inside a literal entirely while still reassigning the whole object each time, per
 this project's reactivity convention (see `text_editor.impl.jac`'s `lines = new_lines;`)."""
 
-impl app.open_folder -> None {
-    path = input_value.strip();
-    if path == "" {
-        return;
-    }
+impl app._open_path_into_tree(path: str) -> None {
     result = await open_workspace(path);
     root_path = result["root_path"];
     root_name = result["name"];
+    input_value = root_path;
     expanded = {};
     selected_path = "";
     top_children = await list_children_by_path(root_path);
@@ -20,6 +17,14 @@ impl app.open_folder -> None {
     fresh_children_by_path[root_path] = top_children;
     children_by_path = fresh_children_by_path;
     opened = True;
+}
+
+impl app.open_folder -> None {
+    path = input_value.strip();
+    if path == "" {
+        return;
+    }
+    await _open_path_into_tree(path);
 }
 
 impl app.toggle_folder(path: str) -> None {

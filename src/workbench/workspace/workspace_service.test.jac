@@ -152,3 +152,38 @@ test "list_children_by_path collapses two File nodes sharing one path into one e
     matching = [c for c in children if c["path"] == dup_path];
     assert len(matching) == 1;
 }
+
+test "get_current_workspace returns None when nothing has ever been opened" {
+    _reset_workspace_cache_for_tests();
+
+    assert get_current_workspace() is None;
+}
+
+test "get_current_workspace returns the previously opened workspace" {
+    _reset_workspace_cache_for_tests();
+    fixture = make_fixture();
+    open_workspace(fixture);
+
+    result = get_current_workspace();
+
+    assert result is not None;
+    assert result["root_path"] == fixture;
+    assert result["name"] == os.path.basename(fixture);
+}
+
+test "get_current_workspace re-populates the path index so list_children_by_path works after restore" {
+    _reset_workspace_cache_for_tests();
+    fixture = make_fixture();
+    open_workspace(fixture);
+    list_children_by_path(fixture);
+
+    # simulate a fresh page load: the cache is cleared, but the graph itself still holds the
+    # previously created Workspace node (as it would across a real process restart)
+    _cached_workspace_jid.clear();
+    _path_index.clear();
+
+    restored = get_current_workspace();
+    children = list_children_by_path(restored["root_path"]);
+
+    assert [c["name"] for c in children] == ["sub", "a.txt"];
+}

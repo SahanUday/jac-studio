@@ -24,9 +24,18 @@ reports which file was clicked, matching the file tree's job in a real editor.
 
 Handler bodies live in the paired `file_tree.impl.jac` annex, per the client-component
 "handler annex" pattern -- see `jac-studio-code-organization`.
+
+**Session restore (2026-08-28, `docs/roadmap.md` Phase 3)** -- on mount, this component asks
+`workspace_service.jac`'s `get_current_workspace` whether a workspace was already opened in a
+previous session and, if so, opens it the same way a manual "Open" click would
+(`_open_path_into_tree`, factored out of `open_folder` so both paths share one implementation).
+Skips straight to the empty "enter a folder path" state when nothing was ever opened, same as
+today's first-ever-run behavior -- there's no third state to design for.
 """
 
-import from src.workbench.workspace.workspace_service { open_workspace, list_children_by_path }
+import from src.workbench.workspace.workspace_service {
+    open_workspace, list_children_by_path, get_current_workspace
+}
 
 import from components.ui.sidebar {
     SidebarProvider, Sidebar, SidebarHeader, SidebarContent
@@ -109,9 +118,17 @@ def:pub app(props: any) -> JsxElement {
     has children_by_path: dict[str, list[dict]] = {};
     has selected_path: str = "";
 
+    async def _open_path_into_tree(path: str) -> None;
     async def open_folder -> None;
     async def toggle_folder(path: str) -> None;
     def select_file(path: str, name: str) -> None;
+
+    async can with entry {
+        restored = await get_current_workspace();
+        if restored is not None {
+            await _open_path_into_tree(restored["root_path"]);
+        }
+    }
 
     <SidebarProvider>
         <Sidebar>

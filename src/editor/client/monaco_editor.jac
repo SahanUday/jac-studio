@@ -30,6 +30,16 @@ same "leaf reports, parent owns state" shape as `editor_tabs.jac`'s callbacks. R
 more right after mount so the status bar has a value for a freshly-opened tab before the user
 moves the cursor at all, rather than depending on Monaco's own mount-time firing behavior.
 
+**`initialCursor` (2026-08-28, `docs/roadmap.md` Phase 3 workspace-state persistence)** -- a
+restored `{"line", "column"}` from `session_service.jac`'s persisted session, or `None` for an
+ordinarily-opened tab. Applied via `editor.setPosition`/`revealPositionInCenter` in `handle_mount`
+*before* the mount-time `onCursorChange` report below, so a restored tab reports (and visibly
+scrolls to) where the user actually left off, instead of every restored tab silently reporting
+Monaco's own default `(1, 1)` and clobbering the just-restored value in `workbench.jac`'s
+`cursor_positions` the moment it mounts -- caught live (`jac browse`, a real restart): the session
+round-tripped the correct persisted position through `load_session` correctly, but the status bar
+still showed "Ln 1, Col 1" until this fix, because nothing told Monaco itself to seek there.
+
 **`keepCurrentModel` (2026-08-25, caught live: splitting the editor then closing one copy of the
 file left the *other* copy blank)** -- `@monaco-editor/react`'s `path` prop shares one underlying
 Monaco text model across every `<Editor>` instance mounted with the same path
@@ -50,7 +60,7 @@ dev tool.
 import from "@monaco-editor/react" { Editor }
 import from src.editor.document_service { open_document, save_document }
 
-def:pub app(path: str, onCursorChange: any) -> JsxElement {
+def:pub app(path: str, onCursorChange: any, initialCursor: any) -> JsxElement {
     has content: str = "";
     has loaded: bool = False;
     has editor_ref: Ref[any] = Ref();

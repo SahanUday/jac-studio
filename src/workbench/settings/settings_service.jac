@@ -17,6 +17,27 @@ nothing here should force a `__jac_schema__` migration (`jac-sv-persistence`) ev
 setting is introduced. `get_setting`/`set_setting` read and write one key at a time so callers
 never need to know the whole settings shape just to touch the one value they care about.
 
+**Cache the jid, not the node, and resolve via `jobj()` on every access (2026-08-28) -- a real
+finding, not a style preference.** The `jid(root)`-keyed cache pattern from `docs/architecture.md`'s
+service-registry section says to cache "the resolved node," but a *node object* reused across
+separate requests silently drops any `has`-field mutation made through it: verified live (`jac
+browse`, a real `jac run --serve --dev` process kill + restart, not just a page reload) that
+`settings.values = updated;` through a cached raw `Settings` object never survived a restart --
+`version` stayed `0` in the underlying row forever, confirming the mutation was never durably
+committed, even though every *read* within the same live process looked correct (the illusion
+that misled this bug into shipping in the first place, in `set_setting`'s first version). Edge
+attachment from that same kind of cached object (e.g. `workspace_service.jac`'s
+`parent +>:Contains():+> child`) does NOT have this problem -- verified separately, an edge created
+through a cross-request cached node survived a real restart. The gap is specific to field
+mutations on a reused object, not the caching pattern itself. Re-resolving via `jobj(cached_jid)`
+(the `jac-sv-persistence` guide's own canonical "UPDATE" pattern) immediately before mutating fixes
+it -- verified live, the identical `set_setting` call through a jid-then-`jobj()` cache survived a
+real restart. `jobj()` is documented O(1), so this keeps the whole point of the original cache
+(avoiding the ~600us/call `[root-->[?:Type]]` traversal) while actually being correct. See tracker
+entry `2026-08-28-field-mutation-on-cached-node-not-persisted` for the full repro and root-cause
+writeup, and `docs/architecture.md`'s service-registry section for the corrected caching rule this
+also updates.
+
 **First real consumer**: `main.jac`'s `workbench.colorTheme` (`"dark" | "light"`), toggled via the
 `workbench.action.toggleColorTheme` command -- proof this isn't just inert data model, the same bar
 `command_registry.jac`'s keybinding overrides clear via their own test coverage. Phase 3's later
@@ -28,21 +49,24 @@ node Settings {
     has values: dict[str, any] = {};
 }
 
-glob _cached_settings: dict[str, Settings] = {};
+glob _cached_settings_jid: dict[str, str] = {};
 
 def:pub _reset_settings_cache_for_tests {
-    _cached_settings.clear();
+    _cached_settings_jid.clear();
 }
 
+"""Resolves fresh via `jobj()` on every call, keyed by a cached jid rather than a cached object --
+see the module docstring's 2026-08-28 finding. Safe (and required) to call this on every read and
+every write: `jobj()` is O(1), so there's no cost reason to special-case reads."""
 def get_settings_node -> Settings {
     key = jid(root);
-    if key in _cached_settings {
-        return _cached_settings[key];
+    if key not in _cached_settings_jid {
+        existing = [root-->[?:Settings]];
+        settings = existing[0] if existing else root ++> Settings();
+        _cached_settings_jid[key] = jid(settings);
+        return settings;
     }
-    existing = [root-->[?:Settings]];
-    settings = existing[0] if existing else root ++> Settings();
-    _cached_settings[key] = settings;
-    return settings;
+    return jobj(_cached_settings_jid[key]) as Settings;
 }
 
 def:pub get_setting(key: str, fallback: any) -> any {

@@ -78,6 +78,19 @@ Goal: the app *looks* like an editor, using the shadcn-in-Jac primitives already
 Exit criteria: can open a folder, browse files in a tree, open multiple files in tabs, split the
 editor, run a handful of commands via the palette — a genuinely usable single-user local editor.
 
+**Complete (2026-08-25).** All bullets shipped (PRs #17–#25) and the exit criteria above are met.
+The editor engine was reversed to embedding real `monaco-editor` mid-phase (see the Phase 1 update
+above and `architecture.md`'s Editor Core section) — a reuse-over-reinvention call, not a scope
+change to this phase's own bullets. A first-ever real-browser verification pass (PRs #26/#27, using
+`jac browse`) then found and fixed seven real bugs that no amount of `jac check`/`jac test`/
+compiled-bundle inspection had caught, including a significant, still-open jaseci runtime gap
+(`WriteConflict` never firing — see tracker entry
+`2026-08-25-write-conflict-never-raised-session-commit-blind-retries`) that changes how any future
+Phase 3 persistence code must be written. See
+[`docs/phases/phase-2-workbench-shell.md`](phases/phase-2-workbench-shell.md) for the full record,
+including deviations from plan (browser verification came too late, ARIA semantics deferred,
+tracker entries logged late) carried forward rather than silently dropped.
+
 ## Phase 3 — Settings, persistence, and workspace state
 
 Goal: the app remembers things, using Jac's persistence-by-reachability instead of hand-rolled

@@ -100,6 +100,10 @@ impl app.handle_command(command_id: str) -> None {
     }
     if command_id == "workbench.action.terminal.toggle" {
         terminal_open = not terminal_open;
+        return;
+    }
+    if command_id == "workbench.action.toggleColorTheme" {
+        onToggleTheme();
     }
 }
 

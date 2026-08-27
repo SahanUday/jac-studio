@@ -23,6 +23,7 @@ import from src.workbench.shell.workbench { app as WorkbenchApp }
 # self-registration, this top-level import is what registers the /function/run_in_terminal route at
 # all (see the jac-sv-streaming guide's "Registration: streams need an entry-module import" section).
 import from src.workbench.terminal.terminal_service { run_in_terminal }
+import from src.workbench.settings.settings_service { get_setting, set_setting }
 
 """**Dark mode was never activated (2026-08-25, caught via real browser screenshots, again not
 compiled-bundle inspection)** -- `styles/global.css` defines dark-theme values behind
@@ -36,7 +37,15 @@ this whole time, which is why the app looked like a light-and-dark patchwork ins
 consistent VS-Code-style dark UI. `dark` is applied here, once, at the true root -- everything
 `WorkbenchApp` renders is a descendant, so this is the one place that needs it."""
 def:pub app -> JsxElement {
-    <div className="dark">
-        <WorkbenchApp />
+    has theme: str = "dark";
+
+    async can with entry {
+        theme = await get_setting("workbench.colorTheme", "dark");
+    }
+
+    async def toggle_theme -> None;
+
+    <div className={theme}>
+        <WorkbenchApp onToggleTheme={toggle_theme} />
     </div>
 }

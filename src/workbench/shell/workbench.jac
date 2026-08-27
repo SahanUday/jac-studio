@@ -61,6 +61,16 @@ not a contrived example. (It can only ever *close* the terminal, never reopen it
 dispatching through the same toggle command as the always-on `ctrl+\`` binding: a `display: none`
 element and its descendants can never hold DOM focus, so `terminalFocus` can only be true while the
 panel is already open.)
+
+**Settings persistence (2026-08-28, `docs/roadmap.md` Phase 3)** -- `workbench.action.toggleColorTheme`
+is the first command whose effect lives outside this component's own state: the *value* being
+toggled (`workbench.colorTheme`) is persisted by `src/workbench/settings/settings_service.jac`, and
+the class it drives (`.dark`/`.light`) is applied at `main.jac`'s true root, above `WorkbenchApp`
+entirely -- so `handle_command` can't just flip a local `has` field the way `terminal_open` does.
+`onToggleTheme` is a plain prop callback `main.jac` hands down, same "leaf reports, parent owns
+state" shape used everywhere else in this file, just one level further up the tree than usual since
+the state in question (what wraps the *whole* app in a `.dark`/`.light` class) genuinely belongs
+above this component, not inside it.
 """
 
 import from "react" { useEffect }
@@ -72,7 +82,7 @@ import from src.workbench.terminal.terminal { app as TerminalApp }
 import from src.workbench.commands.command_registry { list_commands }
 import from components.ui.resizable { ResizablePanelGroup, ResizablePanel, ResizableHandle }
 
-def:pub app -> JsxElement {
+def:pub app(onToggleTheme: any) -> JsxElement {
     has groups: list[dict[str, any]] = [{"id": "group-1", "tabs": [], "activePath": ""}];
     has active_group_id: str = "group-1";
     has next_group_id: int = 2;

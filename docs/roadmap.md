@@ -171,8 +171,15 @@ serialization.
     state to `workbench.jac` and registering `workbench.action.showCommands` in
     `command_registry.jac`, the same move `quick_open.jac` already made for the identical reason —
     the keyboard shortcut and the title bar's button now both dispatch through the one path.
-  - **File-tree context menu** (new file/folder, rename, delete) via the `ContextMenu` primitive
-    already earmarked for this in `architecture.md`'s mapping table but unused so far.
+  - **File-tree context menu — done (2026-08-28)** (new file/folder, rename, delete, plus a
+    right-click "Select for Compare"/"Compare with Selected" pair mirroring the Alt+Click gesture)
+    via the `ContextMenu` primitive (`jac install --shadcn context-menu`), previously earmarked in
+    `architecture.md`'s mapping table but unused. `workspace_service.jac` gained
+    `create_file`/`create_folder`/`rename_path`/`delete_path`. Found two real, previously-unknown
+    jaseci persistence gaps building this — edge deletion not reliably committing across real HTTP
+    requests, and a plain application-level dict `del` corrupting an unrelated node's edge
+    reachability — see `architecture.md`'s service-registry section for the full record and both
+    tracker entries.
   - **Tab affordances**: an unsaved-changes indicator (dot vs. close button) at minimum; file-type
     icons in the tree and tabs.
 

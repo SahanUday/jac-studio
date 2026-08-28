@@ -1,8 +1,6 @@
 import from "react" { useState, useEffect, useCallback, createContext, useContext }
 import from "class-variance-authority" { cva }
 import from "@radix-ui/react-slot" { Slot }
-import from "@hugeicons/react" { HugeiconsIcon }
-import from "@hugeicons/core-free-icons" { SidebarLeftIcon }
 import from .button { Button }
 import from .input { Input }
 import from .separator { Separator }
@@ -249,7 +247,7 @@ def:pub SidebarTrigger(props: any) -> JsxElement {
         onClick={handleClick}
         {**props}
     >
-        <HugeiconsIcon icon={SidebarLeftIcon} className="cn-rtl-flip" size={16}/>
+        <span className="codicon codicon-layout-sidebar-left cn-rtl-flip" style={{"fontSize": "16px"}} />
         <span className="sr-only">Toggle Sidebar</span>
     </Button>
 }

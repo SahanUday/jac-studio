@@ -1,8 +1,6 @@
 import from "radix-ui" { Dialog as DialogPrimitive }
 import from ...lib.utils { cn }
 import from .button { buttonVariants }
-import from "@hugeicons/react" { HugeiconsIcon }
-import from "@hugeicons/core-free-icons" { Cancel01Icon }
 
 def:pub Dialog(props: any) -> JsxElement {
     <DialogPrimitive.Root data-slot="dialog" {**props}/>
@@ -53,7 +51,7 @@ def:pub DialogContent(props: any) -> JsxElement {
                             "absolute top-2 right-2"
                         )}
                     >
-                        <HugeiconsIcon icon={Cancel01Icon} strokeWidth={2}/>
+                        <span className="codicon codicon-close" style={{"fontSize": "14px"}} />
                         <span className="sr-only">Close</span>
                     </button>
                 </DialogPrimitive.Close>}

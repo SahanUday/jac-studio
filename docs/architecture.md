@@ -175,6 +175,27 @@ uniformity — `settings_service.jac`, `session_service.jac`, `workspace_service
 server-side log line that first pointed at the real mechanism, and the false leads chased before
 finding it) and `docs/phases/phase-3-*.md` for which modules this affected.
 
+**Second correction (2026-08-28) — edge *deletion* has an analogous gap "edge creation is
+unaffected" above does not cover.** Found building the file-tree context menu's delete/rename
+operations: `del` on an edge object (from `[edge node ->:Type:->]`/`<-:Type:<-]`) inside a `def:pub`
+does not reliably take effect for a *later, separate* real HTTP request's traversal, even though
+the identical code passes every `jac test` (which never crosses that real request/response commit
+boundary at all). Confirmed live: deleting a file via the context menu removed it from disk
+correctly, but the detached graph node kept reappearing in the next `list_children_by_path` call,
+indefinitely, across a real `jac run --serve --dev` process. `get_or_create_workspace`'s own
+root-switch edge cleanup (just above) was only ever verified for "the *new* root re-scans
+correctly," never for "the *old* root's detached children stay gone if re-queried" — this finding
+means that path may carry the same latent gap, simply never triggered in practice. **Workaround
+shipped in `workspace_service.jac`'s `list_children_by_path`**: make the *read* path authoritative
+against the real filesystem (`os.path.exists`) rather than trusting graph edge state for
+correctness, the same stance already taken there for the pre-existing duplicate-node de-dup. See
+tracker entry `2026-08-28-edge-deletion-not-committed-across-real-http-requests` (blocker severity —
+this affects any future feature that needs to durably detach an edge and trust that on a later,
+separate request, not just the file tree) and the sibling entry
+`2026-08-28-path-index-dict-del-corrupts-unrelated-edge-reachability` for a second, distinct
+`del`-related surprise found in the same investigation (a plain application-level dict `del`, not a
+graph operation at all, corrupting an unrelated node's edge reachability).
+
 ### Not every service needs to be a node
 
 The spike above (and the rules just described) validated the pattern for services that are graph

@@ -37,19 +37,37 @@ today's first-ever-run behavior -- there's no third state to design for.
 hint) instead of opening it; Alt+clicking a *different* file then calls the new `onCompareFiles`
 prop with both paths, and `workbench.jac` opens a diff tab. Alt+clicking the *same* pending file
 again cancels it. Deliberately a click gesture, not the file-tree context menu VS Code itself uses
-for this (`ContextMenu`, right-click "Select for Compare" / "Compare with Selected") -- that menu
-is its own, separate, later Phase 3 bullet (`docs/roadmap.md`), not a prerequisite for the
-diff-editor mode itself; nothing here blocks wiring the same `onCompareFiles` prop into a real
-context-menu item once that lands, without touching this gesture."""
+for this, at the time this was built -- the context menu was its own, separate, later Phase 3
+bullet, not a prerequisite for the diff-editor mode itself. That menu now exists too (see
+`FileTreeNode`'s own docstring below) and calls the exact same `compare_select` handler via a
+"Select for Compare"/"Compare with Selected" item, without touching this gesture -- both trigger
+paths coexist rather than one replacing the other.
+
+**File-tree context menu (2026-08-28, `docs/roadmap.md` Phase 3)** -- new file/folder (folder rows
+and the workspace-root header), rename, delete, via the shadcn `ContextMenu` primitive
+(`jac install --shadcn context-menu`). `workspace_service.jac` gained the four corresponding
+mutating functions; this component's job is thin: prompt for input (`prompt()`/`confirm()` --
+there's no inline-rename-in-tree affordance yet, a deliberately simpler v1 than real VS Code's own
+in-place text field), call the RPC, then `refresh_children` the *affected parent* so the tree
+reflects the change without a full re-open. Building this surfaced two real, previously-unknown
+jaseci persistence gaps -- see `docs/architecture.md`'s service-registry section and tracker
+entries `2026-08-28-edge-deletion-not-committed-across-real-http-requests` and
+`2026-08-28-path-index-dict-del-corrupts-unrelated-edge-reachability` for the full record; the
+practical upshot is that `list_children_by_path` (`workspace_service.jac`) now double-checks
+`os.path.exists` on every child before returning it, rather than trusting graph edge state alone."""
 
 import from src.workbench.workspace.workspace_service {
-    open_workspace, list_children_by_path, get_current_workspace
+    open_workspace, list_children_by_path, get_current_workspace,
+    create_file, create_folder, rename_path, delete_path
 }
 
 import from components.ui.sidebar {
     SidebarProvider, Sidebar, SidebarHeader, SidebarContent
 }
 import from components.ui.scroll_area { ScrollArea }
+import from components.ui.context_menu {
+    ContextMenu, ContextMenuTrigger, ContextMenuContent, ContextMenuItem, ContextMenuSeparator
+}
 
 glob ROW_BASE_STYLE: dict[str, str] = {
     "display": "flex",
@@ -66,6 +84,7 @@ glob ROW_BASE_STYLE: dict[str, str] = {
 def:pub FileTreeNode(props: any) -> JsxElement {
     item = props["node"];
     depth = props["depth"];
+    parent_path = props["parentPath"];
     expanded = props["expanded"];
     children_by_path = props["children_by_path"];
     selected_path = props["selected_path"];
@@ -73,44 +92,66 @@ def:pub FileTreeNode(props: any) -> JsxElement {
     on_toggle = props["onToggle"];
     on_select = props["onSelect"];
     on_compare_select = props["onCompareSelect"];
+    on_create_file = props["onCreateFile"];
+    on_create_folder = props["onCreateFolder"];
+    on_rename = props["onRename"];
+    on_delete = props["onDelete"];
 
     is_dir = item["is_dir"];
     path = item["path"];
     is_open = expanded[path] if path in expanded else False;
     is_selected = (path == selected_path);
     is_compare_pending = (not is_dir) and (path == compare_pending_path);
+    has_compare_pending = compare_pending_path != "";
     indent = 8 + depth * 14;
 
     <div role="none">
-        <div
-            role="treeitem"
-            aria-level={depth + 1}
-            aria-selected={is_selected}
-            aria-expanded={is_open if is_dir else None}
-            tabIndex={0 if is_selected else -1}
-            title={"Alt+Click another file to compare, or Alt+Click again to cancel" if is_compare_pending else ""}
-            onClick={lambda (e: any) {
-                if is_dir {
-                    on_toggle(path);
-                } elif e.altKey {
-                    on_compare_select(path, item["name"]);
-                } else {
-                    on_select(path, item["name"]);
-                }
-            }}
-            style={{
-                **ROW_BASE_STYLE,
-                "paddingLeft": str(indent) + "px",
-                "background": "#FFFFFF22" if is_selected else ("#e5ba7d26" if is_compare_pending else "transparent"),
-                "outline": "1px dashed #e5ba7d" if is_compare_pending else "none"
-            }}
-        >
-            <span
-                className={("codicon " + ("codicon-chevron-down" if is_open else "codicon-chevron-right")) if is_dir else ""}
-                style={{"width": "14px", "display": "inline-block", "fontSize": "14px", "opacity": "0.75"}}
-            />
-            <span>{item["name"]}</span>
-        </div>
+        <ContextMenu>
+            <ContextMenuTrigger asChild={True}>
+                <div
+                    role="treeitem"
+                    aria-level={depth + 1}
+                    aria-selected={is_selected}
+                    aria-expanded={is_open if is_dir else None}
+                    tabIndex={0 if is_selected else -1}
+                    title={"Alt+Click another file to compare, or Alt+Click again to cancel" if is_compare_pending else ""}
+                    onClick={lambda (e: any) {
+                        if is_dir {
+                            on_toggle(path);
+                        } elif e.altKey {
+                            on_compare_select(path, item["name"]);
+                        } else {
+                            on_select(path, item["name"]);
+                        }
+                    }}
+                    style={{
+                        **ROW_BASE_STYLE,
+                        "paddingLeft": str(indent) + "px",
+                        "background": "#FFFFFF22" if is_selected else ("#e5ba7d26" if is_compare_pending else "transparent"),
+                        "outline": "1px dashed #e5ba7d" if is_compare_pending else "none"
+                    }}
+                >
+                    <span
+                        className={("codicon " + ("codicon-chevron-down" if is_open else "codicon-chevron-right")) if is_dir else ""}
+                        style={{"width": "14px", "display": "inline-block", "fontSize": "14px", "opacity": "0.75"}}
+                    />
+                    <span>{item["name"]}</span>
+                </div>
+            </ContextMenuTrigger>
+            <ContextMenuContent>
+                {(<ContextMenuItem onSelect={lambda (e: any) { on_create_file(path); }}>New File</ContextMenuItem>) if is_dir else None}
+                {(<ContextMenuItem onSelect={lambda (e: any) { on_create_folder(path); }}>New Folder</ContextMenuItem>) if is_dir else None}
+                {(<ContextMenuSeparator />) if is_dir else None}
+                {(
+                    <ContextMenuItem onSelect={lambda (e: any) { on_compare_select(path, item["name"]); }}>
+                        {"Cancel Compare" if is_compare_pending else ("Compare with Selected" if has_compare_pending else "Select for Compare")}
+                    </ContextMenuItem>
+                ) if not is_dir else None}
+                {(<ContextMenuSeparator />) if not is_dir else None}
+                <ContextMenuItem onSelect={lambda (e: any) { on_rename(path, parent_path, item["name"]); }}>Rename...</ContextMenuItem>
+                <ContextMenuItem variant="destructive" onSelect={lambda (e: any) { on_delete(path, parent_path, is_dir); }}>Delete</ContextMenuItem>
+            </ContextMenuContent>
+        </ContextMenu>
         {(
             <div role="group">
                 {[
@@ -118,6 +159,7 @@ def:pub FileTreeNode(props: any) -> JsxElement {
                         key={c["path"]}
                         node={c}
                         depth={depth + 1}
+                        parentPath={path}
                         expanded={expanded}
                         children_by_path={children_by_path}
                         selected_path={selected_path}
@@ -125,6 +167,10 @@ def:pub FileTreeNode(props: any) -> JsxElement {
                         onToggle={on_toggle}
                         onSelect={on_select}
                         onCompareSelect={on_compare_select}
+                        onCreateFile={on_create_file}
+                        onCreateFolder={on_create_folder}
+                        onRename={on_rename}
+                        onDelete={on_delete}
                     />
                     for c in (children_by_path[path] if path in children_by_path else [])
                 ]}
@@ -149,8 +195,13 @@ def:pub app(props: any) -> JsxElement {
     async def _open_path_into_tree(path: str) -> None;
     async def open_folder -> None;
     async def toggle_folder(path: str) -> None;
+    async def refresh_children(parent_path: str) -> None;
     def select_file(path: str, name: str) -> None;
     def compare_select(path: str, name: str) -> None;
+    async def create_new_file(parent_path: str) -> None;
+    async def create_new_folder(parent_path: str) -> None;
+    async def rename_item(path: str, parent_path: str, current_name: str) -> None;
+    async def delete_item(path: str, parent_path: str, is_dir: bool) -> None;
 
     async can with entry {
         restored = await get_current_workspace();
@@ -174,9 +225,17 @@ def:pub app(props: any) -> JsxElement {
                     </button>
                 </div>
                 {(
-                    <div style={{"padding": "0 0.5rem 0.4rem", "fontSize": "12px", "fontWeight": "600", "fontFamily": "system-ui, sans-serif"}}>
-                        {root_name}
-                    </div>
+                    <ContextMenu>
+                        <ContextMenuTrigger asChild={True}>
+                            <div style={{"padding": "0 0.5rem 0.4rem", "fontSize": "12px", "fontWeight": "600", "fontFamily": "system-ui, sans-serif"}}>
+                                {root_name}
+                            </div>
+                        </ContextMenuTrigger>
+                        <ContextMenuContent>
+                            <ContextMenuItem onSelect={lambda (e: any) { create_new_file(root_path); }}>New File</ContextMenuItem>
+                            <ContextMenuItem onSelect={lambda (e: any) { create_new_folder(root_path); }}>New Folder</ContextMenuItem>
+                        </ContextMenuContent>
+                    </ContextMenu>
                 ) if opened else None}
                 {(
                     <div style={{"padding": "0 0.5rem 0.4rem", "fontSize": "11px", "color": "#e5ba7d", "fontFamily": "system-ui, sans-serif"}}>
@@ -193,6 +252,7 @@ def:pub app(props: any) -> JsxElement {
                                     key={c["path"]}
                                     node={c}
                                     depth={0}
+                                    parentPath={root_path}
                                     expanded={expanded}
                                     children_by_path={children_by_path}
                                     selected_path={selected_path}
@@ -200,6 +260,10 @@ def:pub app(props: any) -> JsxElement {
                                     onToggle={toggle_folder}
                                     onSelect={select_file}
                                     onCompareSelect={compare_select}
+                                    onCreateFile={create_new_file}
+                                    onCreateFolder={create_new_folder}
+                                    onRename={rename_item}
+                                    onDelete={delete_item}
                                 />
                                 for c in (children_by_path[root_path] if root_path in children_by_path else [])
                             ]}

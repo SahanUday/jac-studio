@@ -1,6 +1,4 @@
 import from "cmdk" { Command as CommandPrimitive }
-import from "@hugeicons/react" { HugeiconsIcon }
-import from "@hugeicons/core-free-icons" { SearchIcon, Tick02Icon }
 import from .dialog {
     Dialog,
     DialogContent,
@@ -57,11 +55,7 @@ def:pub CommandInput(props: any) -> JsxElement {
                 )}
             />
             <InputGroupAddon>
-                <HugeiconsIcon
-                    icon={SearchIcon}
-                    className="size-4 shrink-0 opacity-50"
-                    size={16}
-                />
+                <span className="codicon codicon-search shrink-0 opacity-50" style={{"fontSize": "14px"}} />
             </InputGroupAddon>
         </InputGroup>
     </div>
@@ -111,10 +105,9 @@ def:pub CommandItem(props: any) -> JsxElement {
         )}
     >
         {props["children"]}
-        <HugeiconsIcon
-            icon={Tick02Icon}
-            className="data-selected:bg-muted data-selected:text-foreground data-selected:*:[svg]:text-foreground relative flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-hidden select-none in-data-[slot=dialog-content]:rounded-lg! [&_svg:not([class*='size-'])]:size-4-indicator ml-auto opacity-0 group-has-data-[slot=command-shortcut]/command-item:hidden group-data-[checked=true]/command-item:opacity-100"
-            size={16}
+        <span
+            className="codicon codicon-check data-selected:bg-muted data-selected:text-foreground data-selected:*:[svg]:text-foreground relative flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-hidden select-none in-data-[slot=dialog-content]:rounded-lg! [&_svg:not([class*='size-'])]:size-4-indicator ml-auto opacity-0 group-has-data-[slot=command-shortcut]/command-item:hidden group-data-[checked=true]/command-item:opacity-100"
+            style={{"fontSize": "14px"}}
         />
     </CommandPrimitive.Item>
 }

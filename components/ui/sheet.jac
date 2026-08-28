@@ -1,8 +1,6 @@
 import from "radix-ui" { Dialog as SheetPrimitive }
 import from ...lib.utils { cn }
 import from ".button" { Button }
-import from "@hugeicons/react" { HugeiconsIcon }
-import from "@hugeicons/core-free-icons" { Cancel01Icon }
 
 def:pub Sheet(props: any) -> JsxElement {
     <SheetPrimitive.Root data-slot="sheet" {**props}/>
@@ -45,7 +43,7 @@ def:pub SheetContent(props: any) -> JsxElement {
             {props["children"]}{showCloseButton
                 and <SheetPrimitive.Close data-slot="sheet-close" asChild={True}>
                     <Button variant="ghost" className="absolute top-3 right-3" size="icon-sm">
-                        <HugeiconsIcon icon={Cancel01Icon} strokeWidth={2}/>
+                        <span className="codicon codicon-close" style={{"fontSize": "14px"}} />
                         <span className="sr-only">Close</span>
                     </Button>
                 </SheetPrimitive.Close>}

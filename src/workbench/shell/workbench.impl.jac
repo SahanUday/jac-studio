@@ -139,7 +139,15 @@ impl app.handle_command(command_id: str) -> None {
     }
     if command_id == "workbench.action.toggleColorTheme" {
         await onToggleTheme();
+        return;
     }
+    if command_id == "workbench.action.quickOpen" {
+        quick_open_open = not quick_open_open;
+    }
+}
+
+impl app.set_quick_open_open(next_open: bool) -> None {
+    quick_open_open = next_open;
 }
 
 impl app.set_context(key: str, value: bool) -> None {

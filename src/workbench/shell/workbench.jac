@@ -116,6 +116,7 @@ import from "react" { useEffect }
 import from src.workbench.file_tree.file_tree { app as FileTreeApp }
 import from src.workbench.editor_tabs.editor_tabs { app as EditorTabsApp }
 import from src.workbench.command_palette.command_palette { app as CommandPaletteApp }
+import from src.workbench.quick_open.quick_open { app as QuickOpenApp }
 import from src.workbench.status_bar.status_bar { app as StatusBarApp }
 import from src.workbench.terminal.terminal { app as TerminalApp }
 import from src.workbench.commands.command_registry { list_commands }
@@ -128,6 +129,7 @@ def:pub app(onToggleTheme: any) -> JsxElement {
     has next_group_id: int = 2;
     has cursor_positions: dict[str, dict[str, int]] = {};
     has terminal_open: bool = False;
+    has quick_open_open: bool = False;
     has commands: list[dict[str, any]] = [];
     has context: dict[str, bool] = {};
     has cursor_save_timer: Ref[any] = Ref();
@@ -144,6 +146,7 @@ def:pub app(onToggleTheme: any) -> JsxElement {
     def set_context(key: str, value: bool) -> None;
     def context_matches(when: str) -> bool;
     def handle_keydown(e: any) -> None;
+    def set_quick_open_open(next_open: bool) -> None;
 
     async can with entry {
         commands = await list_commands();
@@ -197,8 +200,9 @@ def:pub app(onToggleTheme: any) -> JsxElement {
 
     <div style={{"display": "flex", "flexDirection": "column", "height": "100vh"}}>
         <CommandPaletteApp onRunCommand={handle_command} />
+        <QuickOpenApp open={quick_open_open} onOpenChange={set_quick_open_open} onOpenFile={open_tab} />
         <div style={{"display": "flex", "flex": "1", "overflow": "hidden"}}>
-            <div style={{"width": "260px", "flexShrink": "0", "borderRight": "1px solid #3c3c3c", "overflow": "hidden"}}>
+            <div style={{"width": "260px", "flexShrink": "0", "borderRight": "1px solid #2A2B2C", "overflow": "hidden"}}>
                 <FileTreeApp onOpenFile={open_tab} onCompareFiles={open_diff_tab} />
             </div>
             <div style={{"flex": "1", "overflow": "hidden"}}>

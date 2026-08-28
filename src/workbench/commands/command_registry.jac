@@ -79,7 +79,8 @@ glob BUILTIN_COMMANDS: list[dict[str, any]] = [
             {"key": "escape", "when": "terminalFocus"}
         ]
     },
-    {"id": "workbench.action.toggleColorTheme", "title": "Preferences: Toggle Color Theme", "keybindings": []}
+    {"id": "workbench.action.toggleColorTheme", "title": "Preferences: Toggle Color Theme", "keybindings": []},
+    {"id": "workbench.action.quickOpen", "title": "Go to File...", "keybindings": [{"key": "ctrl+p", "when": ""}]}
 ];
 
 node KeybindingOverrides {

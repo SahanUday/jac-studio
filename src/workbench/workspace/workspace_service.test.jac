@@ -187,3 +187,56 @@ test "get_current_workspace re-populates the path index so list_children_by_path
 
     assert [c["name"] for c in children] == ["sub", "a.txt"];
 }
+
+test "list_all_files returns nothing when no workspace has ever been opened" {
+    _reset_workspace_cache_for_tests();
+
+    assert list_all_files() == [];
+}
+
+test "list_all_files finds every file in the whole tree, not just the top level" {
+    _reset_workspace_cache_for_tests();
+    fixture = make_fixture();
+    open_workspace(fixture);
+
+    files = list_all_files();
+
+    names = sorted([f["name"] for f in files]);
+    assert names == ["a.txt", "b.txt", "c.txt"];
+}
+
+test "list_all_files excludes node_modules without walking into it" {
+    _reset_workspace_cache_for_tests();
+    fixture = make_fixture();
+    open_workspace(fixture);
+
+    files = list_all_files();
+
+    assert "ignored.txt" not in [f["name"] for f in files];
+}
+
+test "list_all_files does not require any prior list_children_by_path scan" {
+    _reset_workspace_cache_for_tests();
+    fixture = make_fixture();
+    open_workspace(fixture);
+
+    # unlike list_children_by_path, list_all_files walks the filesystem directly -- it must not
+    # depend on _path_index having been populated by a prior expand-click
+    files = list_all_files();
+
+    assert len(files) == 3;
+}
+
+test "list_all_files reflects files added after the workspace was opened (no stale scanned flag)" {
+    _reset_workspace_cache_for_tests();
+    fixture = make_fixture();
+    open_workspace(fixture);
+    list_all_files();
+
+    with open(os.path.join(fixture, "new_after_scan.txt"), "w") as f {
+        f.write("late");
+    }
+
+    files = list_all_files();
+    assert "new_after_scan.txt" in [f["name"] for f in files];
+}

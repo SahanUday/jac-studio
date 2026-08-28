@@ -30,6 +30,7 @@ full repro, and `settings_service.jac`'s docstring for where this was first foun
 """
 
 import os;
+import shutil;
 import threading;
 
 node Workspace {
@@ -53,7 +54,7 @@ glob DEFAULT_EXCLUDED_DIRS: list[str] = [
 ];
 
 glob _cached_workspace_jid: dict[str, str] = {};
-glob _path_index: dict[str, dict[str, (Workspace | Folder)]] = {};
+glob _path_index: dict[str, dict[str, (Workspace | Folder | File)]] = {};
 
 """Narrows, but does not close, the check-existing-else-create race in this module
 (`get_or_create_workspace`'s creation branch, `_ensure_scanned`'s check-then-scan-then-flag).
@@ -187,20 +188,38 @@ De-dupes by `path` before returning -- `_workspace_lock` narrows but doesn't clo
 can leave two `Folder`/`File` nodes for the same path (see its own docstring), so this is the
 actual guarantee the file tree never shows a duplicate, regardless of what the graph underneath
 ends up holding. Safe to keep just the first match: a duplicate here was always scanned from the
-same real directory entry, so their fields are identical."""
+same real directory entry, so their fields are identical.
+
+**Also filters out any child whose path no longer exists on disk (2026-08-28, the file-tree context
+menu's rename/delete bullet) -- a real, load-bearing check, not defensive padding.** Found live,
+not assumed: `rename_path`/`delete_path` both try to detach the old graph node's edges (`del e` on
+an `[edge node ->:Contains:->]`/`<-:Contains:<-` query result), but this does **not** reliably take
+effect across separate real HTTP requests, the same class of gap already documented for field
+mutation (`2026-08-28-field-mutation-on-cached-node-not-persisted`) but for edge deletion instead --
+confirmed live (`jac browse` against a real `jac run --serve --dev` process, not `jac test`, which
+never crosses that boundary and so never caught it): deleting a file via the context menu removed it
+from disk correctly but it kept reappearing in the next `list_children_by_path` call, and the exact
+same graph-level `del e` code passed every `jac test` run in isolation. Rather than chase edge
+deletion's reliability further, this filter makes the *read* path the actual source of truth against
+the real filesystem, the same "guarantee the display is correct regardless of what the graph
+underneath ends up holding" stance the de-dup step above already takes for a different failure mode.
+`rename_path`/`delete_path` still attempt the edge cleanup (harmless best-effort, and matches the
+existing "detach and let it become graph garbage" convention if it ever does take effect), but
+nothing here depends on it succeeding anymore. See tracker entry
+`2026-08-28-edge-deletion-not-committed-across-real-http-requests` for the full record."""
 def:pub list_children_by_path(parent_path: str) -> list[dict] {
     key = jid(root);
     if key not in _path_index or parent_path not in _path_index[key] {
         return [];
     }
-    parent = _path_index[key][parent_path];
+    parent = _path_index[key][parent_path] as (Workspace | Folder);
     _ensure_scanned(parent);
 
     children = [parent->:Contains:->];
     seen_paths: set[str] = set();
     deduped_children = [];
     for child in children {
-        if child.path in seen_paths {
+        if child.path in seen_paths or not os.path.exists(child.path) {
             continue;
         }
         seen_paths.add(child.path);
@@ -250,4 +269,143 @@ def:pub list_all_files -> list[dict[str, str]] {
         }
     }
     return results;
+}
+
+"""The file-tree context menu's (`docs/roadmap.md` Phase 3) write operations -- new file/folder,
+rename, delete. All four require `parent_path`/`old_path`/`path` to already be a key in
+`_path_index`, same precondition `list_children_by_path` enforces on `parent_path` -- a mutation
+targeting a path the tree hasn't scanned into yet has nothing to attach to or resolve.
+
+**Edge creation doesn't need the `jobj(jid(...))` re-resolve; field mutation does** -- the
+distinction this module's own docstring already establishes. `create_file`/`create_folder` only
+attach a new `Contains` edge, so the plain `_path_index`-cached `parent` reference is fine as-is.
+`rename_path`/`delete_path` mutate an existing node's own `name`/`path` fields (or need a stable
+identity to detach edges from), so both re-resolve via `jobj(jid(...))` first, matching
+`_ensure_scanned`'s already-established pattern."""
+def:pub create_file(parent_path: str, name: str) -> dict[str, any] {
+    key = jid(root);
+    if key not in _path_index or parent_path not in _path_index[key] {
+        raise ValueError("Unknown parent path: " + parent_path);
+    }
+    parent = _path_index[key][parent_path] as (Workspace | Folder);
+    _ensure_scanned(parent);
+    new_path = os.path.join(parent_path, name);
+    if os.path.exists(new_path) {
+        raise ValueError("Already exists: " + new_path);
+    }
+    open(new_path, "w").close();
+    child = File(name=name, path=new_path);
+    parent +>:Contains():+> child;
+    _path_index[key][new_path] = child;
+    return {"name": name, "path": new_path, "is_dir": False};
+}
+
+def:pub create_folder(parent_path: str, name: str) -> dict[str, any] {
+    key = jid(root);
+    if key not in _path_index or parent_path not in _path_index[key] {
+        raise ValueError("Unknown parent path: " + parent_path);
+    }
+    parent = _path_index[key][parent_path] as (Workspace | Folder);
+    _ensure_scanned(parent);
+    new_path = os.path.join(parent_path, name);
+    if os.path.exists(new_path) {
+        raise ValueError("Already exists: " + new_path);
+    }
+    os.makedirs(new_path);
+    # a brand-new folder is known to be empty -- scanned=True skips a pointless first listdir
+    child = Folder(name=name, path=new_path, scanned=True);
+    parent +>:Contains():+> child;
+    _path_index[key][new_path] = child;
+    return {"name": name, "path": new_path, "is_dir": True};
+}
+
+"""Renaming creates a brand-new node and detaches the old one, rather than mutating the existing
+node's own `name`/`path` fields in place -- **not the first design tried, and not a style choice**.
+The mutate-in-place version passed every `jac test` (isolated a separate, real, now-fixed bug that
+way -- see below) but still produced a live duplicate once actually exercised over real HTTP
+requests (`jac browse` against a real `jac run --serve --dev` process, not just `jac test`):
+renaming a file left **two** entries in the next `list_children_by_path` call, one correctly
+bearing the new name, one a phantom still bearing the *old* name at a path that no longer existed
+on disk. `jac test` never crosses the real request/response commit boundary a served app does
+(`_finalize_call_response` in `jaclang/runtimelib/impl/server.impl.jac` is what actually commits a
+`def:pub`'s writes, and only fires for a real served call) -- exactly the boundary the project's
+existing `jac-studio-implementation` "cache the jid" discipline was written around, and apparently
+one this specific field-mutation-then-immediately-read-elsewhere shape still crosses badly, even
+after resolving fresh via `jobj(jid(...))` first. Switching to create-a-new-node-and-detach-the-old
+one sidesteps it entirely, reusing only the already-proven-safe primitives this same module already
+relies on elsewhere (`get_or_create_workspace`'s root-switch, `delete_path` below): create the node,
+attach one edge, delete edges -- no field mutation on an already-attached node at all. Verified
+against the identical repro (rename over real HTTP, then re-list) after the fix: exactly one entry,
+correctly named. See tracker entry `2026-08-28-rename-field-mutation-duplicates-node-over-real-http`
+for the full record (the mutate-in-place version's own code, the exact duplicate reproduced, and
+why `jac test` alone couldn't have caught it).
+
+A renamed folder's already-scanned descendants are not cascade-rewritten to the new path prefix --
+the new folder node starts `scanned=False`, the identical "let it become unreachable graph garbage,
+re-scan lazily next expand" trade-off `get_or_create_workspace` already makes when switching
+workspace roots. A rewrite-in-place would need a recursive walk of however much of the subtree
+happened to be scanned; a fresh, unscanned node is correct either way, since the next expand-click
+re-derives fresh paths from the real (already-moved) filesystem anyway.
+
+**Still never `del`s the stale `old_path` entry out of `_path_index`** -- a second, separate real
+jaseci runtime finding, from before this rewrite: empirically isolated (`jac test`, bisecting
+line-by-line against a minimal repro) that deleting a dict entry holding the *last* Python-level
+reference to a node still reachable via a live edge elsewhere corrupts that *unrelated* edge's
+later visibility to a plain `[parent-->]` traversal -- reproduced as the parent's child list coming
+back completely empty right after the `del`. See tracker entry
+`2026-08-28-path-index-dict-del-corrupts-unrelated-edge-reachability` for that isolation.
+`delete_path` below does the equivalent `del` safely, confirmed by the same bisection: its node is
+*already* fully edge-detached first, unlike a rename's old node at the point this function stops
+touching it -- that appears to be the actual load-bearing difference. Leaving the stale `old_path`
+key behind is harmless -- nothing will ever legitimately look it up again, since the path no longer
+exists on disk."""
+def:pub rename_path(old_path: str, new_name: str) -> dict[str, any] {
+    key = jid(root);
+    if key not in _path_index or old_path not in _path_index[key] {
+        raise ValueError("Unknown path: " + old_path);
+    }
+    cached = _path_index[key][old_path];
+    new_path = os.path.join(os.path.dirname(old_path), new_name);
+    if os.path.exists(new_path) {
+        raise ValueError("Already exists: " + new_path);
+    }
+    os.rename(old_path, new_path);
+
+    old_node = jobj(jid(cached)) as (Folder | File);
+    is_dir = isinstance(old_node, Folder);
+    parents = [old_node <-:Contains:<-];
+    new_node = Folder(name=new_name, path=new_path) if is_dir else File(name=new_name, path=new_path);
+    if len(parents) > 0 {
+        parents[0] +>:Contains():+> new_node;
+    }
+    for e in [edge old_node ->:Contains:->] {
+        del e;
+    }
+    for e in [edge old_node <-:Contains:<-] {
+        del e;
+    }
+
+    _path_index[key][new_path] = new_node;
+    return {"name": new_name, "path": new_path, "is_dir": is_dir};
+}
+
+def:pub delete_path(path: str) -> None {
+    key = jid(root);
+    if key not in _path_index or path not in _path_index[key] {
+        return;
+    }
+    cached = _path_index[key][path];
+    fresh = jobj(jid(cached)) as (Folder | File);
+    if isinstance(fresh, Folder) {
+        shutil.rmtree(path);
+    } else {
+        os.remove(path);
+    }
+    for e in [edge fresh ->:Contains:->] {
+        del e;
+    }
+    for e in [edge fresh <-:Contains:<-] {
+        del e;
+    }
+    del _path_index[key][path];
 }

@@ -66,3 +66,87 @@ impl app.compare_select(path: str, name: str) -> None {
     compare_pending_path = "";
     compare_pending_name = "";
 }
+
+impl app.refresh_children(parent_path: str) -> None {
+    fetched = await list_children_by_path(parent_path);
+    updated_children = {**children_by_path};
+    updated_children[parent_path] = fetched;
+    children_by_path = updated_children;
+}
+
+impl app.create_new_file(parent_path: str) -> None {
+    name = prompt("New file name:");
+    if not name {
+        return;
+    }
+    try {
+        await create_file(parent_path, name);
+    } except Exception as err {
+        alert(str(err));
+        return;
+    }
+    await refresh_children(parent_path);
+    updated_expanded = {**expanded};
+    updated_expanded[parent_path] = True;
+    expanded = updated_expanded;
+}
+
+impl app.create_new_folder(parent_path: str) -> None {
+    name = prompt("New folder name:");
+    if not name {
+        return;
+    }
+    try {
+        await create_folder(parent_path, name);
+    } except Exception as err {
+        alert(str(err));
+        return;
+    }
+    await refresh_children(parent_path);
+    updated_expanded = {**expanded};
+    updated_expanded[parent_path] = True;
+    expanded = updated_expanded;
+}
+
+impl app.rename_item(path: str, parent_path: str, current_name: str) -> None {
+    new_name = prompt("Rename to:", current_name);
+    if not new_name or new_name == current_name {
+        return;
+    }
+    result: any = None;
+    try {
+        result = await rename_path(path, new_name);
+    } except Exception as err {
+        alert(str(err));
+        return;
+    }
+    await refresh_children(parent_path);
+    if selected_path == path {
+        selected_path = result["path"];
+    }
+    if compare_pending_path == path {
+        compare_pending_path = "";
+        compare_pending_name = "";
+    }
+}
+
+impl app.delete_item(path: str, parent_path: str, is_dir: bool) -> None {
+    kind = "folder and everything inside it" if is_dir else "file";
+    if not confirm("Delete this " + kind + "?") {
+        return;
+    }
+    try {
+        await delete_path(path);
+    } except Exception as err {
+        alert(str(err));
+        return;
+    }
+    await refresh_children(parent_path);
+    if selected_path == path {
+        selected_path = "";
+    }
+    if compare_pending_path == path {
+        compare_pending_path = "";
+        compare_pending_name = "";
+    }
+}

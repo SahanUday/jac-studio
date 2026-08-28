@@ -240,3 +240,154 @@ test "list_all_files reflects files added after the workspace was opened (no sta
     files = list_all_files();
     assert "new_after_scan.txt" in [f["name"] for f in files];
 }
+
+test "create_file makes a real empty file on disk and it appears in the listing" {
+    _reset_workspace_cache_for_tests();
+    fixture = make_fixture();
+    open_workspace(fixture);
+    list_children_by_path(fixture);
+
+    result = create_file(fixture, "new.txt");
+
+    new_path = os.path.join(fixture, "new.txt");
+    assert result == {"name": "new.txt", "path": new_path, "is_dir": False};
+    assert os.path.isfile(new_path);
+    children = list_children_by_path(fixture);
+    assert "new.txt" in [c["name"] for c in children];
+}
+
+test "create_file scans an unexpanded parent first, so no duplicate node is created later" {
+    _reset_workspace_cache_for_tests();
+    fixture = make_fixture();
+    open_workspace(fixture);
+    # deliberately never call list_children_by_path(fixture) before creating -- the parent has
+    # never been scanned yet
+
+    create_file(fixture, "new.txt");
+
+    children = list_children_by_path(fixture);
+    matching = [c for c in children if c["name"] == "a.txt"];
+    assert len(matching) == 1;
+}
+
+test "create_file refuses to overwrite an existing file" {
+    _reset_workspace_cache_for_tests();
+    fixture = make_fixture();
+    open_workspace(fixture);
+    list_children_by_path(fixture);
+
+    with testraises(ValueError) {
+        create_file(fixture, "a.txt");
+    }
+}
+
+test "create_folder makes a real directory and it appears in the listing" {
+    _reset_workspace_cache_for_tests();
+    fixture = make_fixture();
+    open_workspace(fixture);
+    list_children_by_path(fixture);
+
+    result = create_folder(fixture, "new_dir");
+
+    new_path = os.path.join(fixture, "new_dir");
+    assert result == {"name": "new_dir", "path": new_path, "is_dir": True};
+    assert os.path.isdir(new_path);
+    children = list_children_by_path(fixture);
+    assert "new_dir" in [c["name"] for c in children];
+}
+
+test "create_folder's new folder lists empty without a filesystem scan" {
+    _reset_workspace_cache_for_tests();
+    fixture = make_fixture();
+    open_workspace(fixture);
+    list_children_by_path(fixture);
+    create_folder(fixture, "new_dir");
+
+    children = list_children_by_path(os.path.join(fixture, "new_dir"));
+
+    assert children == [];
+}
+
+test "rename_path renames a file on disk and updates the tree" {
+    _reset_workspace_cache_for_tests();
+    fixture = make_fixture();
+    open_workspace(fixture);
+    list_children_by_path(fixture);
+
+    old_path = os.path.join(fixture, "a.txt");
+    result = rename_path(old_path, "renamed.txt");
+
+    new_path = os.path.join(fixture, "renamed.txt");
+    assert result == {"name": "renamed.txt", "path": new_path, "is_dir": False};
+    assert not os.path.exists(old_path);
+    assert os.path.isfile(new_path);
+    children = list_children_by_path(fixture);
+    names = [c["name"] for c in children];
+    assert "renamed.txt" in names;
+    assert "a.txt" not in names;
+}
+
+test "rename_path on a folder detaches its scanned children rather than rewriting their paths" {
+    _reset_workspace_cache_for_tests();
+    fixture = make_fixture();
+    open_workspace(fixture);
+    list_children_by_path(fixture);
+    sub_path = os.path.join(fixture, "sub");
+    list_children_by_path(sub_path);  # scan "sub" so it has children attached
+
+    result = rename_path(sub_path, "renamed_sub");
+
+    renamed_path = os.path.join(fixture, "renamed_sub");
+    assert result["path"] == renamed_path;
+    # the renamed folder must be re-scanned from scratch, not show stale pre-rename children
+    children = list_children_by_path(renamed_path);
+    assert [c["name"] for c in children] == ["nested", "b.txt"];
+}
+
+test "rename_path refuses to rename onto an existing path" {
+    _reset_workspace_cache_for_tests();
+    fixture = make_fixture();
+    open_workspace(fixture);
+    list_children_by_path(fixture);
+
+    with testraises(ValueError) {
+        rename_path(os.path.join(fixture, "a.txt"), "sub");
+    }
+}
+
+test "delete_path removes a file from disk and from the listing" {
+    _reset_workspace_cache_for_tests();
+    fixture = make_fixture();
+    open_workspace(fixture);
+    list_children_by_path(fixture);
+
+    target = os.path.join(fixture, "a.txt");
+    delete_path(target);
+
+    assert not os.path.exists(target);
+    children = list_children_by_path(fixture);
+    assert "a.txt" not in [c["name"] for c in children];
+}
+
+test "delete_path removes a folder and its contents recursively" {
+    _reset_workspace_cache_for_tests();
+    fixture = make_fixture();
+    open_workspace(fixture);
+    list_children_by_path(fixture);
+    sub_path = os.path.join(fixture, "sub");
+    list_children_by_path(sub_path);
+
+    delete_path(sub_path);
+
+    assert not os.path.exists(sub_path);
+    children = list_children_by_path(fixture);
+    assert "sub" not in [c["name"] for c in children];
+}
+
+test "delete_path on an unscanned path is a safe no-op" {
+    _reset_workspace_cache_for_tests();
+    fixture = make_fixture();
+    open_workspace(fixture);
+
+    delete_path(os.path.join(fixture, "never-scanned.txt"));
+}

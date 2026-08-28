@@ -55,15 +55,26 @@ it. Trade-off: a closed tab's model is never explicitly disposed at all now, a d
 leak (same trade-off already made for orphaned graph nodes in `workspace_service.jac`) rather than
 tracking "is any other group still showing this path" just to free memory in a local, single-user
 dev tool.
-"""
+
+**Unsaved-changes indicator (2026-08-28, `docs/roadmap.md` Phase 3's tab-affordances bullet)** --
+`onDirtyChange(path, isDirty)` reports up to `editor_tabs.jac`/`workbench.jac`, same "leaf reports,
+parent owns state" shape as `onCursorChange`. Wired through `@monaco-editor/react`'s own `onChange`
+prop rather than a manual `editor.onDidChangeModelContent` registration in `handle_mount` -- the two
+are equivalent here (both fire per keystroke), but `onChange` is the documented prop for this and
+needs no `Ref`-stashed instance to reach. Deliberately does **not** reintroduce the per-keystroke
+`has`-state churn the module docstring above already ruled out for content: `dirty` only ever
+transitions `False -> True` once per unsaved edit session (`handle_content_change` no-ops once
+already dirty) and `True -> False` once on save, not on every keystroke -- so this stays a rare
+state update, not a hot one, unlike a content mirror would be."""
 
 import from "@monaco-editor/react" { Editor }
 import from src.editor.document_service { open_document, save_document }
 import from src.editor.client.jac_language { register_jac_language }
 
-def:pub app(path: str, onCursorChange: any, initialCursor: any) -> JsxElement {
+def:pub app(path: str, onCursorChange: any, initialCursor: any, onDirtyChange: any) -> JsxElement {
     has content: str = "";
     has loaded: bool = False;
+    has dirty: bool = False;
     has editor_ref: Ref[any] = Ref();
 
     async can with entry {
@@ -75,6 +86,7 @@ def:pub app(path: str, onCursorChange: any, initialCursor: any) -> JsxElement {
     def handle_mount(editor: any, monaco: any) -> None;
     async def handle_save -> None;
     def handle_cursor_change(e: any) -> None;
+    def handle_content_change(e: any) -> None;
 
     <div style={{"height": "100%", "width": "100%"}}>
         {(
@@ -84,6 +96,7 @@ def:pub app(path: str, onCursorChange: any, initialCursor: any) -> JsxElement {
                 theme="vs-dark"
                 beforeMount={register_jac_language}
                 onMount={handle_mount}
+                onChange={handle_content_change}
                 keepCurrentModel={True}
                 options={{"automaticLayout": True, "minimap": {"enabled": True}}}
             />

@@ -60,11 +60,30 @@ identity" shape `file_tree.jac`'s `FileTreeNode` already uses for `onSelect`/`on
 real split duplicates the *active* editor into a new group beside it, so the split button is a
 no-op (still shown, per real-editor convention of always offering it) when this group has no active
 tab to duplicate -- `workbench.impl.jac`'s `split_group` is where that guard lives, not here.
+
+**Tab affordances (2026-08-28, `docs/roadmap.md` Phase 3, the last item on the phase's list)** --
+two additions, both purely presentational like everything else in this file:
+
+- **File-type icon**: each tab now shows the same `file_icons.jac`-derived glyph
+  `file_tree.jac`'s rows use, keyed off the tab's `name` (the real filename for an ordinary tab).
+  A diff tab (`t.get("kind") == "diff"`) gets a fixed `codicon-diff` glyph instead -- its `name` is
+  a combined `"a ↔ b"` display string, not a real filename, so running it through the extension-
+  bucketing helper would be meaningless.
+- **Unsaved-changes indicator**: `dirtyPaths` (a `dict[str, bool]`, forwarded from `workbench.jac`,
+  which is in turn fed by `monaco_editor.jac`'s new `onDirtyChange` report) drives a dot-vs-close-
+  button swap matching real VS Code's own tab convention -- a dirty tab shows a filled dot
+  (`codicon-circle-filled`) in place of the close "x" by default, and the dot swaps back to the
+  close "x" on hover so the tab can still be closed without saving first. Built with Tailwind's
+  `group`/`group-hover:` utilities (already used elsewhere in this project's shadcn-generated
+  primitives, e.g. `components/ui/sidebar.jac`) rather than JS-tracked hover state, since the
+  show/hide-on-hover behavior is pure CSS and doesn't need a re-render to drive it. A clean tab's
+  close button is unchanged -- always visible, exactly as before this bullet.
 """
 
 import from src.editor.client.monaco_editor { app as MonacoEditorApp }
 import from src.editor.client.monaco_diff_editor { app as MonacoDiffEditorApp }
 import from components.ui.button { Button }
+import from src.workbench.file_icons.file_icons { file_icon_class }
 
 """Jac's comprehension grammar doesn't support tuple-unpacking loop targets (`for i, t in
 enumerate(...)` fails to parse), so tab/panel DOM ids are derived from the path itself rather than
@@ -98,6 +117,8 @@ def:pub app(props: any) -> JsxElement {
     on_split_group = props["onSplitGroup"];
     on_cursor_change = props["onCursorChange"];
     initial_cursors = props["initialCursors"];
+    dirty_paths = props["dirtyPaths"];
+    on_dirty_change = props["onDirtyChange"];
 
     <div style={{"display": "flex", "flexDirection": "column", "height": "100%", "overflow": "hidden"}}>
         <div role="tablist" aria-label="Open editors" style={{"display": "flex", "alignItems": "center", "borderBottom": "1px solid #2A2B2C", "background": "#191A1B", "flexShrink": "0"}}>
@@ -111,18 +132,29 @@ def:pub app(props: any) -> JsxElement {
                         aria-controls={"panel-" + _tab_dom_id(group_id, t["path"])}
                         tabIndex={0 if t["path"] == active_path else -1}
                         onClick={lambda (e: any) { on_select_tab(group_id, t["path"]); }}
+                        className="group"
                         style={{
                             **TAB_STYLE,
                             "background": "#121314" if t["path"] == active_path else "transparent",
                             "color": "#bfbfbf" if t["path"] == active_path else "#8C8C8C"
                         }}
                     >
+                        <span
+                            className={"codicon " + ("codicon-diff" if t.get("kind") == "diff" else file_icon_class(t["name"], False, False))}
+                            style={{"fontSize": "14px", "opacity": "0.85"}}
+                        />
                         <span>{t["name"]}</span>
+                        {(
+                            <span
+                                className="codicon codicon-circle-filled group-hover:hidden"
+                                style={{"opacity": "0.8", "fontSize": "10px", "lineHeight": "1"}}
+                            />
+                        ) if dirty_paths.get(t["path"], False) else None}
                         <span
                             role="button"
                             aria-label={"Close " + t["name"]}
                             onClick={lambda (e: any) { e.stopPropagation(); on_close_tab(group_id, t["path"]); }}
-                            className="codicon codicon-close"
+                            className={"codicon codicon-close " + ("hidden group-hover:inline-flex" if dirty_paths.get(t["path"], False) else "")}
                             style={{"opacity": "0.6", "fontSize": "13px", "lineHeight": "1"}}
                         />
                     </div>
@@ -156,6 +188,7 @@ def:pub app(props: any) -> JsxElement {
                                 path={t["path"]}
                                 onCursorChange={on_cursor_change}
                                 initialCursor={initial_cursors[t["path"]] if t["path"] in initial_cursors else None}
+                                onDirtyChange={on_dirty_change}
                             />
                         )}
                     </div>

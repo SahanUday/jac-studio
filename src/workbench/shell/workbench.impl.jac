@@ -81,6 +81,11 @@ impl app.close_tab(group_id: str, path: str) -> None {
     if removed_group_id != "" and active_group_id == removed_group_id {
         active_group_id = updated_groups[0]["id"];
     }
+    if dirty_paths.get(path, False) {
+        updated_dirty_paths = {**dirty_paths};
+        updated_dirty_paths[path] = False;
+        dirty_paths = updated_dirty_paths;
+    }
     await _save_session();
 }
 
@@ -117,6 +122,12 @@ impl app.handle_cursor_change(path: str, line: int, column: int) -> None {
         clearTimeout(cursor_save_timer.current);
     }
     cursor_save_timer.current = setTimeout(lambda { _save_session(); }, 800);
+}
+
+impl app.handle_dirty_change(path: str, is_dirty: bool) -> None {
+    updated_dirty_paths = {**dirty_paths};
+    updated_dirty_paths[path] = is_dirty;
+    dirty_paths = updated_dirty_paths;
 }
 
 impl app.handle_command(command_id: str) -> None {

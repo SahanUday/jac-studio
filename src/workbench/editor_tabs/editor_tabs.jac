@@ -72,12 +72,26 @@ two additions, both purely presentational like everything else in this file:
 - **Unsaved-changes indicator**: `dirtyPaths` (a `dict[str, bool]`, forwarded from `workbench.jac`,
   which is in turn fed by `monaco_editor.jac`'s new `onDirtyChange` report) drives a dot-vs-close-
   button swap matching real VS Code's own tab convention -- a dirty tab shows a filled dot
-  (`codicon-circle-filled`) in place of the close "x" by default, and the dot swaps back to the
-  close "x" on hover so the tab can still be closed without saving first. Built with Tailwind's
+  (`codicon-circle-filled`) in place of the close "x" by default, and the dot fades out in favor of
+  the close "x" on hover so the tab can still be closed without saving first. Built with Tailwind's
   `group`/`group-hover:` utilities (already used elsewhere in this project's shadcn-generated
   primitives, e.g. `components/ui/sidebar.jac`) rather than JS-tracked hover state, since the
   show/hide-on-hover behavior is pure CSS and doesn't need a re-render to drive it. A clean tab's
   close button is unchanged -- always visible, exactly as before this bullet.
+
+  **Opacity-based, not `display`-based -- caught live, not by reading either library's docs.**
+  The first version used Tailwind's `hidden`/`group-hover:inline-flex` (toggling `display`), which
+  compiled and rendered with no error but never actually hid anything: `@vscode/codicons`' own
+  base rule, `.codicon[class*='codicon-']{display:inline-block}`, carries specificity `(0,2,0)`
+  (one class plus one attribute selector) against Tailwind's plain single-class `.hidden{display:
+  none}` at `(0,1,0)` -- the codicon rule wins regardless of source order, on *any* element that
+  carries both a `codicon-*` class and a `display`-toggling utility class. Confirmed in isolation
+  (`jac browse eval`, a bare test element with only `codicon codicon-close hidden` computed to
+  `display: inline-block`, not `none`) before changing anything. The fix swaps to opacity +
+  `pointer-events` (`opacity-0 pointer-events-none group-hover:opacity-60
+  group-hover:pointer-events-auto`) -- properties the codicon rule never touches, so there's no
+  specificity fight to lose. Not filed as a tracker entry: this is a collision between two
+  third-party CSS files this project happens to combine, not a Jac/jaseci defect.
 """
 
 import from src.editor.client.monaco_editor { app as MonacoEditorApp }
@@ -146,16 +160,16 @@ def:pub app(props: any) -> JsxElement {
                         <span>{t["name"]}</span>
                         {(
                             <span
-                                className="codicon codicon-circle-filled group-hover:hidden"
-                                style={{"opacity": "0.8", "fontSize": "10px", "lineHeight": "1"}}
+                                className="codicon codicon-circle-filled opacity-80 group-hover:opacity-0 transition-opacity"
+                                style={{"fontSize": "10px", "lineHeight": "1"}}
                             />
                         ) if dirty_paths.get(t["path"], False) else None}
                         <span
                             role="button"
                             aria-label={"Close " + t["name"]}
                             onClick={lambda (e: any) { e.stopPropagation(); on_close_tab(group_id, t["path"]); }}
-                            className={"codicon codicon-close " + ("hidden group-hover:inline-flex" if dirty_paths.get(t["path"], False) else "")}
-                            style={{"opacity": "0.6", "fontSize": "13px", "lineHeight": "1"}}
+                            className={"codicon codicon-close transition-opacity " + ("opacity-0 pointer-events-none group-hover:opacity-60 group-hover:pointer-events-auto" if dirty_paths.get(t["path"], False) else "opacity-60")}
+                            style={{"fontSize": "13px", "lineHeight": "1"}}
                         />
                     </div>
                     for t in open_tabs

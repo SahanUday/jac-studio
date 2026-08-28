@@ -143,11 +143,19 @@ impl app.handle_command(command_id: str) -> None {
     }
     if command_id == "workbench.action.quickOpen" {
         quick_open_open = not quick_open_open;
+        return;
+    }
+    if command_id == "workbench.action.showCommands" {
+        command_palette_open = not command_palette_open;
     }
 }
 
 impl app.set_quick_open_open(next_open: bool) -> None {
     quick_open_open = next_open;
+}
+
+impl app.set_command_palette_open(next_open: bool) -> None {
+    command_palette_open = next_open;
 }
 
 impl app.select_view(view_id: str) -> None {

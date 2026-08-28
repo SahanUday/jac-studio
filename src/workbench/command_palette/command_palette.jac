@@ -10,20 +10,20 @@ picked command's id, same "leaf reports, parent owns behavior" shape `editor_tab
 its own callbacks -- see `command_registry.jac`'s docstring for why there's no server-side handler
 table to call into instead.
 
-**Global Ctrl/Cmd+Shift+P, no scoping yet.** `docs/roadmap.md` lists the "keybinding when-clause
-context system" as its own, later Phase 2 bullet specifically so keybindings for *other* commands
-can be scoped (e.g. "only when the editor has focus") -- the palette's own shortcut has always been
-global in every real editor (nothing to scope: it should open no matter what has focus), so this
-ships with a plain unconditional `keydown` listener rather than waiting on that system.
-
-**Manually-written `useEffect`, not `can with entry`.** The listener registered on mount must be
-the exact same function reference `removeEventListener`s on unmount, and Jac's `entry`/`exit`
-lower to *separate* `useEffect` closures -- a handle from one is invisible in the other (see
-`jac-cl-components`). This acquire-then-release pair is the one case that guide calls out as a
-real reason to import `useEffect` directly instead of `can with entry`/`can with exit`.
+**Open/close state moved to `workbench.jac` (2026-08-28, Phase 3's title-bar bullet), reversing
+this component's original self-contained `useEffect` keydown listener.** That earlier choice
+(global `Ctrl/Cmd+Shift+P`, handled with a plain unconditional `keydown` listener inside this
+component) was made because Phase 2's when-clause keybinding dispatch
+(`workbench.jac`'s `handle_keydown`/`commands` matching) wasn't built yet -- `quick_open.jac`
+already made the same move once that mechanism existed and was proven (terminal-toggle,
+theme-toggle, quick-open). The concrete trigger for finally reversing it here too: `title_bar.jac`'s
+Command Center button needs to open this same dialog, and there was no way for anything outside
+this component to do that with `open` as private internal state. `workbench.action.showCommands`
+is now a real `command_registry.jac` entry (`ctrl+shift+p`), dispatched through `handle_command`
+like every other Phase 3 command -- the title bar's button and the keyboard shortcut both flow
+through the identical path, rather than the title bar needing its own separate wiring.
 """
 
-import from "react" { useEffect }
 import from src.workbench.commands.command_registry { list_commands }
 import from components.ui.command {
     CommandDialog, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem, CommandShortcut
@@ -49,30 +49,16 @@ def format_keybinding(keybindings: list[dict[str, str]]) -> str {
     return "+".join([p.capitalize() for p in parts]);
 }
 
-def:pub app(onRunCommand: any) -> JsxElement {
-    has open: bool = False;
+def:pub app(open: bool, onOpenChange: any, onRunCommand: any) -> JsxElement {
     has commands: list[dict[str, any]] = [];
 
     async can with entry {
         commands = await list_commands();
     }
 
-    useEffect(lambda {
-        handle_key = lambda (e: any) {
-            is_palette_shortcut = (e.key == "P" or e.key == "p") and (e.ctrlKey or e.metaKey) and e.shiftKey;
-            if is_palette_shortcut {
-                e.preventDefault();
-                open = not open;
-            }
-        };
-        document.addEventListener("keydown", handle_key);
-        return lambda { document.removeEventListener("keydown", handle_key); };
-    }, []);
-
-    def handle_open_change(next_open: bool) -> None;
     def handle_select(command_id: str) -> None;
 
-    <CommandDialog open={open} onOpenChange={handle_open_change}>
+    <CommandDialog open={open} onOpenChange={onOpenChange}>
         <CommandInput placeholder="Type a command..." />
         <CommandList>
             <CommandEmpty>No matching commands.</CommandEmpty>

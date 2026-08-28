@@ -161,8 +161,16 @@ serialization.
     list with one real entry today; the switching mechanism (`active_view_id` owned by
     `workbench.jac`, one `onSelectView` callback) is built end-to-end now so Phase 4's new views
     are a one-entry-plus-one-branch addition, not new plumbing under time pressure.
-  - **Title bar** — the custom title bar + Command Center search box; core to "looking like
-    VS Code" and was undocumented before this pass.
+  - **Title bar — done (2026-08-28)** (`src/workbench/title_bar/title_bar.jac`). The custom title
+    bar + Command Center search box; core to "looking like VS Code" and was undocumented before
+    this pass. No window controls (a web app, not a native desktop host yet) and no menu bar
+    (materially larger scope this bullet never named) — just the title bar chrome and a Command
+    Center pill that opens the command palette. Building it surfaced a real gap:
+    `command_palette.jac` had no way for anything outside itself to open it (its `open` state was
+    private, set only by its own self-contained `Ctrl+Shift+P` listener). Fixed by moving that
+    state to `workbench.jac` and registering `workbench.action.showCommands` in
+    `command_registry.jac`, the same move `quick_open.jac` already made for the identical reason —
+    the keyboard shortcut and the title bar's button now both dispatch through the one path.
   - **File-tree context menu** (new file/folder, rename, delete) via the `ContextMenu` primitive
     already earmarked for this in `architecture.md`'s mapping table but unused so far.
   - **Tab affordances**: an unsaved-changes indicator (dot vs. close button) at minimum; file-type

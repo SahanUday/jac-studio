@@ -358,17 +358,58 @@ accepted leak, same trade-off already made for orphaned graph nodes in `workspac
 local, single-user dev tool doesn't need active memory reclamation the way a long-running service
 would). **Confirmed for Phase 3's diff-editor bullet (2026-08-28)**: `@monaco-editor/react`'s
 `DiffEditor` (`src/editor/client/monaco_diff_editor.jac`) accepts `originalModelPath`/
-`modifiedModelPath` and gives the same free per-side language detection as the plain `Editor`'s
-`path` prop — the underlying `getModel(uri) || createModel(...)` sharing described above applies
-here too, verified live: diffing a file that's *also* open in a regular tab reuses that file's
-existing shared model rather than creating an independent copy. But the *disposal-avoidance* fix
-does **not** carry over by name: `DiffEditor` has no `keepCurrentModel` prop at all — passing it
-(the plain `Editor`'s prop) compiles and runs with zero warning, silently ignored, and closing a
-diff tab disposed the model a regular tab was still rendering (`Uncaught Error: TextModel got
-disposed before DiffEditorWidget model got reset`, reproduced live before the fix, not assumed).
-Reading the package's own source turned up the real, differently-named pair —
+`modifiedModelPath` and, when a diffed file is *also* open in a regular tab, reuses that file's
+existing shared model (the same `getModel(uri) || createModel(...)` sharing described above)
+rather than creating an independent copy. But the *disposal-avoidance* fix does **not** carry over
+by name: `DiffEditor` has no `keepCurrentModel` prop at all — passing it (the plain `Editor`'s
+prop) compiles and runs with zero warning, silently ignored, and closing a diff tab disposed the
+model a regular tab was still rendering (`Uncaught Error: TextModel got disposed before
+DiffEditorWidget model got reset`, reproduced live before the fix, not assumed). Reading the
+package's own source turned up the real, differently-named pair —
 `keepCurrentOriginalModel`/`keepCurrentModifiedModel`, both needed, both default `false` — which
 `monaco_diff_editor.jac` now sets, verified against the same repro.
+
+**CORRECTION (2026-08-28, Phase 3's syntax-highlighting-confirmation bullet)**: the "free per-side
+language detection" claimed just above does **not** hold in general — only checked against a diff
+where one side happened to already have a model from an open regular tab. Verified cold (a diff of
+two files neither open elsewhere): `@monaco-editor/react`'s `DiffEditor` falls back to a **literal
+language string `"text"`** for any side it has to create a model for itself (its internal
+`modifiedLanguage||language||"text"`, not the empty-string auto-detect fallback the plain `Editor`
+uses in the same spot), so a cold-diffed file's side renders as `plaintext` regardless of its
+extension. `monaco_diff_editor.jac`'s `handle_before_mount` now pre-creates both sides' models
+itself with the empty-string language spelling before `DiffEditor`'s own resolution runs, so its
+internal `getModel(uri)` check finds the correctly-tagged model instead. See that module's
+docstring for the full finding, including file:line citations into `@monaco-editor/react`'s source.
+
+## Syntax highlighting and the minimap: confirmed, not just assumed (2026-08-28)
+
+Phase 3's syntax-highlighting bullet was framed as "largely free via `monaco-editor`'s own bundled
+tokenizer/language services" — verified live (`jac browse`, `monaco.editor.colorize`,
+`monaco.editor.tokenize`) rather than taken on faith, and the claim holds for the languages Monaco
+actually ships: Python, JavaScript, CSS, JSON, and Markdown all produced real multi-class token
+output, not just a language-id label with no visible effect.
+
+**But `monaco.languages.getLanguages()` does not include `jac` (or `toml`)** — every `.jac` file in
+this project, including this file's own source, resolved to `plaintext` before this fix, since
+Monaco has no idea what a `.jac` extension is. For a "VS Code reimplemented in Jac" editor, this
+would have left the flagship syntax-highlighting feature invisible for the exact files a
+jac-studio user opens most. **Resolution**: `src/editor/client/jac_language.jac` registers a real,
+intentionally-scoped Monarch tokenizer for Jac (`monaco.languages.register`/
+`setMonarchTokensProvider`/`setLanguageConfiguration`, associated with the `.jac` extension),
+covering the constructs `jac-core-cheatsheet` and this project's own files actually use — keywords,
+`#` comments, single/double/triple-quoted strings, backtick-escaped identifiers, `->`/`::` — not a
+claim of full grammar fidelity. Registered via `@monaco-editor/react`'s `beforeMount` (confirmed
+from the package's own source to run before model creation), guarded by a module-level flag so
+repeated mounts don't re-register. `.toml` is left as `plaintext` — a single config file, not this
+project's own dominant language, isn't worth the same investment.
+
+**Minimap: decided on, not left off from an unrevisited Phase 2 default.** `monaco_editor.jac` now
+sets `"minimap": {"enabled": True}`, matching VS Code's own default. The diff editor's `DiffEditor`
+does **not** get the same flip: read `monaco-editor`'s own source
+(`diffEditor/components/diffEditorEditors.js`'s `_adjustOptionsForSubEditor`) and confirmed it
+hardcodes `minimap.enabled = false` for both diff panes unconditionally, regardless of the
+`options` passed in — real VS Code's diff view has no per-pane minimap either, so this is
+deliberate upstream design, not a gap to work around.
 
 **Decided in Phase 1: not taken.** The from-scratch widget (step 2 above) is fast/far enough
 along with real data in hand — see the resolved open question below and
@@ -527,7 +568,14 @@ into every section of this document.
 - Extension API surface shape: how much of VS Code's actual `vscode` API do we aim for
   compatibility with (enabling existing extensions to port over) vs. a from-scratch API idiomatic
   to Jac's walker/node model? Not decided — affects Phase B scope significantly and deserves its
-  own design doc once Phase A ships.
+  own design doc once Phase A ships. **A concrete test case identified (2026-08-28)**: the real,
+  published `jaseci-labs.jaclang-extension` VS Code extension ships a complete
+  `jac.tmLanguage.json` TextMate grammar (4,937 lines) far more thorough than the hand-rolled
+  Monarch tokenizer Phase 3 shipped as a stopgap (`src/editor/client/jac_language.jac`) — whether
+  jac-studio can load that extension (fully, or at least its grammar via a narrower
+  `vscode-textmate`/`vscode-oniguruma` bridge if full compatibility isn't feasible) is now scoped
+  into Phase 4's plan (see `roadmap.md`), and answering it also resolves this bullet, not just the
+  syntax-highlighting stopgap.
 - ~~Color/icon theming: match VS Code's default visual identity, or keep shadcn's own default
   look?~~ **Decided (2026-08-28)**: match VS Code's default identity (Dark+/Light+-derived OKLCH
   tokens via `jac retheme`, Codicons-style icons), built natively rather than by importing

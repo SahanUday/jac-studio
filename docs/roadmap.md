@@ -99,18 +99,28 @@ serialization.
 - Settings and keybindings as graph-attached `obj`s (per `architecture.md`'s data model).
 - Workspace state (open tabs, cursor positions, panel layout) persisted the same way — restoring
   a session on reopen "for free" via the graph, no explicit save/load code.
-- Basic syntax highlighting — now largely free via `monaco-editor`'s own bundled tokenizer/language
-  services (see `architecture.md`'s Editor Core section on the 2026-08-25 Monaco-embed decision);
-  the earlier "reach a TextMate tokenizer through Python/npm interop" question this bullet used to
-  pose no longer applies for the languages Monaco already ships.
-- **A diff-editor rendering mode** — largely free via `@monaco-editor/react`'s `DiffEditor`
-  (`src/editor/client/monaco_diff_editor.jac`), confirmed live to compose cleanly with this
-  project's document-service model: per-side language detection and cross-tab model sharing both
-  work the same way the plain editor's do, once the diff editor's own, differently-named
-  model-retention props (`keepCurrentOriginalModel`/`keepCurrentModifiedModel`, not
-  `keepCurrentModel`) are set correctly — see `architecture.md`'s Editor Core section for the full
-  finding. Triggered via the file tree's Alt+Click "select for compare" gesture; a real file-tree
-  context-menu entry for the same action is the separate context-menu bullet below.
+- **Basic syntax highlighting — confirmed live (2026-08-28), not just assumed free.** Verified
+  (`jac browse`, `monaco.editor.colorize`/`tokenize`) that Python, JavaScript, CSS, JSON, and
+  Markdown all get real, multi-class tokenization for free from `monaco-editor`'s bundled
+  languages — the earlier "reach a TextMate tokenizer through Python/npm interop" question this
+  bullet used to pose no longer applies for those. But `.jac` itself (and `.toml`) are not among
+  Monaco's bundled languages, so this project's own dominant file type rendered as flat plaintext
+  until now — `src/editor/client/jac_language.jac` registers a real, scoped Monarch tokenizer for
+  Jac (keywords, comments, strings, `->`/`::`) so opened `.jac` files actually highlight. See
+  `architecture.md`'s new "Syntax highlighting and the minimap" section for the full finding.
+- **A diff-editor rendering mode** — via `@monaco-editor/react`'s `DiffEditor`
+  (`src/editor/client/monaco_diff_editor.jac`), confirmed live to compose with this project's
+  document-service model, with two corrections found while confirming the syntax-highlighting
+  bullet above (2026-08-28): per-side language auto-detection from `originalModelPath`/
+  `modifiedModelPath` only works when a diffed file already has a model from an open regular tab —
+  a cold diff needs the fix `monaco_diff_editor.jac`'s `handle_before_mount` now applies (pre-create
+  each side's model itself) — and the diff view has no per-pane minimap at all, hardcoded off by
+  `monaco-editor` itself regardless of options, matching real VS Code's own diff view. The diff
+  editor's own, differently-named model-retention props
+  (`keepCurrentOriginalModel`/`keepCurrentModifiedModel`, not `keepCurrentModel`) are set correctly
+  — see `architecture.md`'s Editor Core section for the full finding. Triggered via the file tree's
+  Alt+Click "select for compare" gesture; a real file-tree context-menu entry for the same action
+  is the separate context-menu bullet below.
 - **A `Diagnostic` node type** attached to `File` in the workspace graph, with no producer yet —
   just the data model, so Phase 4's task/problem-matcher work and later language-intelligence work
   have somewhere to write to from day one.
@@ -127,9 +137,9 @@ serialization.
   - **Quick Open (Ctrl+P fuzzy file switcher)** — explicitly scoped into Phase 2 as a second
     `quickaccess` provider alongside the command palette, but never built; add now as the
     documented-but-undelivered item it is, not new scope.
-  - **Minimap** — `src/editor/client/monaco_editor.jac` currently sets
-    `"minimap": {"enabled": False}`; Monaco ships this natively, so this is a one-line flip once
-    it's deliberately decided rather than left off from an unrevisited Phase 2 default.
+  - **Minimap** — decided on (2026-08-28), matching VS Code's default: `monaco_editor.jac` now
+    sets `"minimap": {"enabled": True}`. The diff editor deliberately does not get the same flip —
+    see the diff-editor bullet above.
   - **Activity bar** — the icon rail switching sidebar views (Explorer today; Search/SCM in
     Phase 4). Not a shadcn primitive (`Sidebar` is a container, not a switcher) — hand-build it now
     so Phase 4's new views have somewhere to mount instead of retrofitting under time pressure.
@@ -167,6 +177,22 @@ Goal: prove the contribution-registry design end to end without solving sandboxi
   usable via interop — the same open question as the DAP client in Phase 5, worth answering once
   for both. Build the editor-side consumption UI (completion popup, hover card) as a Phase
   4-or-later increment once that research lands; don't block this phase's exit on it.
+- **Investigate real VS-Code-extension-API compatibility, using the actual published Jac extension
+  as the test case** (decided 2026-08-28, prompted by Phase 3's syntax-highlighting work) — the
+  real `jaseci-labs.jaclang-extension` (on the VS Code Marketplace, source at
+  `jaseci/jac/support/vscode_ext/jac`) ships a genuinely complete `jac.tmLanguage.json` TextMate
+  grammar (4,937 lines, 224 repository entries) plus a real language server, both far more complete
+  than the hand-rolled Monarch tokenizer `src/editor/client/jac_language.jac` shipped as a Phase 3
+  stopgap. Answer, in order: (1) can jac-studio load this `.vsix` largely unmodified (full
+  `vscode` module shim, activation events, contribution loading)? If yes, this single effort also
+  resolves `architecture.md`'s still-open "how much vscode-API compatibility to target" question
+  and replaces the Phase 3 stopgap tokenizer with the authoritative, jaseci-team-maintained grammar
+  in one move. (2) If full compatibility isn't feasible, investigate the narrower fallback:
+  reusing just the bundled TextMate grammar via a `vscode-textmate` + `vscode-oniguruma` bridge
+  into Monaco's token provider (the same technique vscode.dev/StackBlitz use), decoupled from the
+  extension-API question entirely — unverified whether this project's Vite/jac-cl toolchain handles
+  the WASM grammar-engine asset cleanly, so spike it rather than assume. Either outcome replaces
+  `jac_language.jac`; until this lands, the Phase 3 tokenizer stays as the working baseline.
 - **An Output panel with a log-channel abstraction** — moved earlier than its upstream scale would
   suggest, because it's needed to debug the extensions being written *in this phase*, not just as
   a later user-facing feature (per [`vscode-complete-triage.md`](vscode-complete-triage.md)'s

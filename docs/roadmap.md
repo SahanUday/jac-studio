@@ -99,18 +99,28 @@ serialization.
 - Settings and keybindings as graph-attached `obj`s (per `architecture.md`'s data model).
 - Workspace state (open tabs, cursor positions, panel layout) persisted the same way — restoring
   a session on reopen "for free" via the graph, no explicit save/load code.
-- Basic syntax highlighting — now largely free via `monaco-editor`'s own bundled tokenizer/language
-  services (see `architecture.md`'s Editor Core section on the 2026-08-25 Monaco-embed decision);
-  the earlier "reach a TextMate tokenizer through Python/npm interop" question this bullet used to
-  pose no longer applies for the languages Monaco already ships.
-- **A diff-editor rendering mode** — largely free via `@monaco-editor/react`'s `DiffEditor`
-  (`src/editor/client/monaco_diff_editor.jac`), confirmed live to compose cleanly with this
-  project's document-service model: per-side language detection and cross-tab model sharing both
-  work the same way the plain editor's do, once the diff editor's own, differently-named
-  model-retention props (`keepCurrentOriginalModel`/`keepCurrentModifiedModel`, not
-  `keepCurrentModel`) are set correctly — see `architecture.md`'s Editor Core section for the full
-  finding. Triggered via the file tree's Alt+Click "select for compare" gesture; a real file-tree
-  context-menu entry for the same action is the separate context-menu bullet below.
+- **Basic syntax highlighting — confirmed live (2026-08-28), not just assumed free.** Verified
+  (`jac browse`, `monaco.editor.colorize`/`tokenize`) that Python, JavaScript, CSS, JSON, and
+  Markdown all get real, multi-class tokenization for free from `monaco-editor`'s bundled
+  languages — the earlier "reach a TextMate tokenizer through Python/npm interop" question this
+  bullet used to pose no longer applies for those. But `.jac` itself (and `.toml`) are not among
+  Monaco's bundled languages, so this project's own dominant file type rendered as flat plaintext
+  until now — `src/editor/client/jac_language.jac` registers a real, scoped Monarch tokenizer for
+  Jac (keywords, comments, strings, `->`/`::`) so opened `.jac` files actually highlight. See
+  `architecture.md`'s new "Syntax highlighting and the minimap" section for the full finding.
+- **A diff-editor rendering mode** — via `@monaco-editor/react`'s `DiffEditor`
+  (`src/editor/client/monaco_diff_editor.jac`), confirmed live to compose with this project's
+  document-service model, with two corrections found while confirming the syntax-highlighting
+  bullet above (2026-08-28): per-side language auto-detection from `originalModelPath`/
+  `modifiedModelPath` only works when a diffed file already has a model from an open regular tab —
+  a cold diff needs the fix `monaco_diff_editor.jac`'s `handle_before_mount` now applies (pre-create
+  each side's model itself) — and the diff view has no per-pane minimap at all, hardcoded off by
+  `monaco-editor` itself regardless of options, matching real VS Code's own diff view. The diff
+  editor's own, differently-named model-retention props
+  (`keepCurrentOriginalModel`/`keepCurrentModifiedModel`, not `keepCurrentModel`) are set correctly
+  — see `architecture.md`'s Editor Core section for the full finding. Triggered via the file tree's
+  Alt+Click "select for compare" gesture; a real file-tree context-menu entry for the same action
+  is the separate context-menu bullet below.
 - **A `Diagnostic` node type** attached to `File` in the workspace graph, with no producer yet —
   just the data model, so Phase 4's task/problem-matcher work and later language-intelligence work
   have somewhere to write to from day one.
@@ -127,9 +137,9 @@ serialization.
   - **Quick Open (Ctrl+P fuzzy file switcher)** — explicitly scoped into Phase 2 as a second
     `quickaccess` provider alongside the command palette, but never built; add now as the
     documented-but-undelivered item it is, not new scope.
-  - **Minimap** — `src/editor/client/monaco_editor.jac` currently sets
-    `"minimap": {"enabled": False}`; Monaco ships this natively, so this is a one-line flip once
-    it's deliberately decided rather than left off from an unrevisited Phase 2 default.
+  - **Minimap** — decided on (2026-08-28), matching VS Code's default: `monaco_editor.jac` now
+    sets `"minimap": {"enabled": True}`. The diff editor deliberately does not get the same flip —
+    see the diff-editor bullet above.
   - **Activity bar** — the icon rail switching sidebar views (Explorer today; Search/SCM in
     Phase 4). Not a shadcn primitive (`Sidebar` is a container, not a switcher) — hand-build it now
     so Phase 4's new views have somewhere to mount instead of retrofitting under time pressure.

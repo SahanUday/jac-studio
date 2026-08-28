@@ -59,6 +59,7 @@ dev tool.
 
 import from "@monaco-editor/react" { Editor }
 import from src.editor.document_service { open_document, save_document }
+import from src.editor.client.jac_language { register_jac_language }
 
 def:pub app(path: str, onCursorChange: any, initialCursor: any) -> JsxElement {
     has content: str = "";
@@ -81,9 +82,10 @@ def:pub app(path: str, onCursorChange: any, initialCursor: any) -> JsxElement {
                 path={path}
                 defaultValue={content}
                 theme="vs-dark"
+                beforeMount={register_jac_language}
                 onMount={handle_mount}
                 keepCurrentModel={True}
-                options={{"automaticLayout": True, "minimap": {"enabled": False}}}
+                options={{"automaticLayout": True, "minimap": {"enabled": True}}}
             />
         ) if loaded else (
             <div style={{"padding": "1rem", "fontSize": "12px", "color": "#888", "fontFamily": "system-ui, sans-serif"}}>

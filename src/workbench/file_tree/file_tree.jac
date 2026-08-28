@@ -31,7 +31,16 @@ previous session and, if so, opens it the same way a manual "Open" click would
 (`_open_path_into_tree`, factored out of `open_folder` so both paths share one implementation).
 Skips straight to the empty "enter a folder path" state when nothing was ever opened, same as
 today's first-ever-run behavior -- there's no third state to design for.
-"""
+
+**"Select for Compare" via Alt+Click (2026-08-28, `docs/roadmap.md` Phase 3's diff-editor bullet)**
+-- Alt+clicking a file marks it as `compare_pending_path` (highlighted distinctly, with a header
+hint) instead of opening it; Alt+clicking a *different* file then calls the new `onCompareFiles`
+prop with both paths, and `workbench.jac` opens a diff tab. Alt+clicking the *same* pending file
+again cancels it. Deliberately a click gesture, not the file-tree context menu VS Code itself uses
+for this (`ContextMenu`, right-click "Select for Compare" / "Compare with Selected") -- that menu
+is its own, separate, later Phase 3 bullet (`docs/roadmap.md`), not a prerequisite for the
+diff-editor mode itself; nothing here blocks wiring the same `onCompareFiles` prop into a real
+context-menu item once that lands, without touching this gesture."""
 
 import from src.workbench.workspace.workspace_service {
     open_workspace, list_children_by_path, get_current_workspace
@@ -60,13 +69,16 @@ def:pub FileTreeNode(props: any) -> JsxElement {
     expanded = props["expanded"];
     children_by_path = props["children_by_path"];
     selected_path = props["selected_path"];
+    compare_pending_path = props["comparePendingPath"];
     on_toggle = props["onToggle"];
     on_select = props["onSelect"];
+    on_compare_select = props["onCompareSelect"];
 
     is_dir = item["is_dir"];
     path = item["path"];
     is_open = expanded[path] if path in expanded else False;
     is_selected = (path == selected_path);
+    is_compare_pending = (not is_dir) and (path == compare_pending_path);
     indent = 8 + depth * 14;
 
     <div role="none">
@@ -76,11 +88,21 @@ def:pub FileTreeNode(props: any) -> JsxElement {
             aria-selected={is_selected}
             aria-expanded={is_open if is_dir else None}
             tabIndex={0 if is_selected else -1}
-            onClick={lambda (e: any) { on_toggle(path) if is_dir else on_select(path, item["name"]); }}
+            title={"Alt+Click another file to compare, or Alt+Click again to cancel" if is_compare_pending else ""}
+            onClick={lambda (e: any) {
+                if is_dir {
+                    on_toggle(path);
+                } elif e.altKey {
+                    on_compare_select(path, item["name"]);
+                } else {
+                    on_select(path, item["name"]);
+                }
+            }}
             style={{
                 **ROW_BASE_STYLE,
                 "paddingLeft": str(indent) + "px",
-                "background": "#37373d" if is_selected else "transparent"
+                "background": "#37373d" if is_selected else ("#3d3d1e" if is_compare_pending else "transparent"),
+                "outline": "1px dashed #d7ba7d" if is_compare_pending else "none"
             }}
         >
             <span style={{"width": "12px", "display": "inline-block", "fontSize": "10px", "opacity": "0.75"}}>
@@ -98,8 +120,10 @@ def:pub FileTreeNode(props: any) -> JsxElement {
                         expanded={expanded}
                         children_by_path={children_by_path}
                         selected_path={selected_path}
+                        comparePendingPath={compare_pending_path}
                         onToggle={on_toggle}
                         onSelect={on_select}
+                        onCompareSelect={on_compare_select}
                     />
                     for c in (children_by_path[path] if path in children_by_path else [])
                 ]}
@@ -110,6 +134,7 @@ def:pub FileTreeNode(props: any) -> JsxElement {
 
 def:pub app(props: any) -> JsxElement {
     has on_open_file: any = props["onOpenFile"];
+    has on_compare_files: any = props["onCompareFiles"];
     has opened: bool = False;
     has root_path: str = "";
     has root_name: str = "";
@@ -117,11 +142,14 @@ def:pub app(props: any) -> JsxElement {
     has expanded: dict[str, bool] = {};
     has children_by_path: dict[str, list[dict]] = {};
     has selected_path: str = "";
+    has compare_pending_path: str = "";
+    has compare_pending_name: str = "";
 
     async def _open_path_into_tree(path: str) -> None;
     async def open_folder -> None;
     async def toggle_folder(path: str) -> None;
     def select_file(path: str, name: str) -> None;
+    def compare_select(path: str, name: str) -> None;
 
     async can with entry {
         restored = await get_current_workspace();
@@ -149,6 +177,11 @@ def:pub app(props: any) -> JsxElement {
                         {root_name}
                     </div>
                 ) if opened else None}
+                {(
+                    <div style={{"padding": "0 0.5rem 0.4rem", "fontSize": "11px", "color": "#d7ba7d", "fontFamily": "system-ui, sans-serif"}}>
+                        {"Alt+Click another file to compare with \"" + compare_pending_name + "\", or Alt+Click it again to cancel"}
+                    </div>
+                ) if compare_pending_path != "" else None}
             </SidebarHeader>
             <SidebarContent>
                 <ScrollArea style={{"height": "70vh"}}>
@@ -162,8 +195,10 @@ def:pub app(props: any) -> JsxElement {
                                     expanded={expanded}
                                     children_by_path={children_by_path}
                                     selected_path={selected_path}
+                                    comparePendingPath={compare_pending_path}
                                     onToggle={toggle_folder}
                                     onSelect={select_file}
+                                    onCompareSelect={compare_select}
                                 />
                                 for c in (children_by_path[root_path] if root_path in children_by_path else [])
                             ]}

@@ -356,9 +356,19 @@ the other group's still-mounted editor is rendering — reproduced live, not a h
 exactly this reason, with the trade-off that a closed tab's model is never explicitly disposed (an
 accepted leak, same trade-off already made for orphaned graph nodes in `workspace_service.jac` — a
 local, single-user dev tool doesn't need active memory reclamation the way a long-running service
-would). **Relevant to Phase 3's diff-editor bullet**: `createDiffEditor` takes two of Monaco's own
-models directly, not paths — confirm whether/how the same shared-model semantics apply before
-assuming the diff editor composes with the existing per-path model-sharing behavior for free.
+would). **Confirmed for Phase 3's diff-editor bullet (2026-08-28)**: `@monaco-editor/react`'s
+`DiffEditor` (`src/editor/client/monaco_diff_editor.jac`) accepts `originalModelPath`/
+`modifiedModelPath` and gives the same free per-side language detection as the plain `Editor`'s
+`path` prop — the underlying `getModel(uri) || createModel(...)` sharing described above applies
+here too, verified live: diffing a file that's *also* open in a regular tab reuses that file's
+existing shared model rather than creating an independent copy. But the *disposal-avoidance* fix
+does **not** carry over by name: `DiffEditor` has no `keepCurrentModel` prop at all — passing it
+(the plain `Editor`'s prop) compiles and runs with zero warning, silently ignored, and closing a
+diff tab disposed the model a regular tab was still rendering (`Uncaught Error: TextModel got
+disposed before DiffEditorWidget model got reset`, reproduced live before the fix, not assumed).
+Reading the package's own source turned up the real, differently-named pair —
+`keepCurrentOriginalModel`/`keepCurrentModifiedModel`, both needed, both default `false` — which
+`monaco_diff_editor.jac` now sets, verified against the same repro.
 
 **Decided in Phase 1: not taken.** The from-scratch widget (step 2 above) is fast/far enough
 along with real data in hand — see the resolved open question below and

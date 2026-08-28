@@ -103,10 +103,14 @@ serialization.
   services (see `architecture.md`'s Editor Core section on the 2026-08-25 Monaco-embed decision);
   the earlier "reach a TextMate tokenizer through Python/npm interop" question this bullet used to
   pose no longer applies for the languages Monaco already ships.
-- **A diff-editor rendering mode** — also largely free via Monaco's own `createDiffEditor`; confirm
-  it composes cleanly with this project's document-service/workspace-graph model before treating it
-  as done, since Monaco's diff editor expects two of its own text models, not our `File` nodes
-  directly.
+- **A diff-editor rendering mode** — largely free via `@monaco-editor/react`'s `DiffEditor`
+  (`src/editor/client/monaco_diff_editor.jac`), confirmed live to compose cleanly with this
+  project's document-service model: per-side language detection and cross-tab model sharing both
+  work the same way the plain editor's do, once the diff editor's own, differently-named
+  model-retention props (`keepCurrentOriginalModel`/`keepCurrentModifiedModel`, not
+  `keepCurrentModel`) are set correctly — see `architecture.md`'s Editor Core section for the full
+  finding. Triggered via the file tree's Alt+Click "select for compare" gesture; a real file-tree
+  context-menu entry for the same action is the separate context-menu bullet below.
 - **A `Diagnostic` node type** attached to `File` in the workspace graph, with no producer yet —
   just the data model, so Phase 4's task/problem-matcher work and later language-intelligence work
   have somewhere to write to from day one.

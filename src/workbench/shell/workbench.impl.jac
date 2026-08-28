@@ -12,18 +12,34 @@ impl app._save_session -> None {
     await save_session(groups, active_group_id, next_group_id, terminal_open, cursor_positions);
 }
 
-impl app.open_tab(path: str, name: str) -> None {
+impl app._upsert_tab_in_active_group(tab: dict[str, any]) -> list[dict[str, any]] {
     updated_groups = [];
     for g in groups {
         if g["id"] != active_group_id {
             updated_groups.append(g);
             continue;
         }
-        already_open = [t for t in g["tabs"] if t["path"] == path];
-        new_tabs = g["tabs"] if len(already_open) > 0 else g["tabs"] + [{"path": path, "name": name}];
-        updated_groups.append({"id": g["id"], "tabs": new_tabs, "activePath": path});
+        already_open = [t for t in g["tabs"] if t["path"] == tab["path"]];
+        new_tabs = g["tabs"] if len(already_open) > 0 else g["tabs"] + [tab];
+        updated_groups.append({"id": g["id"], "tabs": new_tabs, "activePath": tab["path"]});
     }
-    groups = updated_groups;
+    return updated_groups;
+}
+
+impl app.open_tab(path: str, name: str) -> None {
+    groups = _upsert_tab_in_active_group({"path": path, "name": name});
+    await _save_session();
+}
+
+impl app.open_diff_tab(path_a: str, name_a: str, path_b: str, name_b: str) -> None {
+    diff_path = "diff::" + path_a + "::" + path_b;
+    groups = _upsert_tab_in_active_group({
+        "path": diff_path,
+        "name": name_a + " ↔ " + name_b,
+        "kind": "diff",
+        "originalPath": path_a,
+        "modifiedPath": path_b
+    });
     await _save_session();
 }
 

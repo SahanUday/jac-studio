@@ -100,6 +100,16 @@ it *overwrote* the just-loaded correct value in state, and the debounce in
 `handle_cursor_change` then dutifully persisted that overwritten `(1, 1)` back to the server,
 silently destroying the real data on the very next save. Setting `cursor_positions` first ensures
 it's already correct by the time `groups`'s update causes anything to mount.
+
+**Diff tabs (2026-08-28, `docs/roadmap.md` Phase 3)** -- `open_diff_tab` is `open_tab`'s sibling:
+both insert a tab dict into the active group via the shared `_upsert_tab_in_active_group` helper
+(factored out of `open_tab`'s own logic once a second caller needed the identical
+"insert-or-activate in the active group, dedupe by `path`" shape), differing only in the tab dict's
+own shape -- a diff tab's synthetic `path` (`"diff::" + path_a + "::" + path_b`) is what `close_tab`/
+`select_tab` key off unchanged, no special-casing needed there. `path_a`/`path_b` come from
+`file_tree.jac`'s Alt+Click "select for compare" gesture (see its own docstring); nothing here
+assumes any particular UI trigger, so a future context-menu "Compare with Selected" item can call
+the same `open_diff_tab` directly.
 """
 
 import from "react" { useEffect }
@@ -123,7 +133,9 @@ def:pub app(onToggleTheme: any) -> JsxElement {
     has cursor_save_timer: Ref[any] = Ref();
 
     async def _save_session -> None;
+    def _upsert_tab_in_active_group(tab: dict[str, any]) -> list[dict[str, any]];
     async def open_tab(path: str, name: str) -> None;
+    async def open_diff_tab(path_a: str, name_a: str, path_b: str, name_b: str) -> None;
     async def select_tab(group_id: str, path: str) -> None;
     async def close_tab(group_id: str, path: str) -> None;
     async def split_group(group_id: str) -> None;
@@ -187,7 +199,7 @@ def:pub app(onToggleTheme: any) -> JsxElement {
         <CommandPaletteApp onRunCommand={handle_command} />
         <div style={{"display": "flex", "flex": "1", "overflow": "hidden"}}>
             <div style={{"width": "260px", "flexShrink": "0", "borderRight": "1px solid #3c3c3c", "overflow": "hidden"}}>
-                <FileTreeApp onOpenFile={open_tab} />
+                <FileTreeApp onOpenFile={open_tab} onCompareFiles={open_diff_tab} />
             </div>
             <div style={{"flex": "1", "overflow": "hidden"}}>
                 <ResizablePanelGroup direction="horizontal">

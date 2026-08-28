@@ -35,6 +35,13 @@ session restore) is looked up per-tab by `path` and forwarded as each `MonacoEdi
 `initialCursor` prop -- `None` for an ordinarily-opened tab with no restored position, matching that
 prop's own documented default.
 
+**Diff tabs (2026-08-28, `docs/roadmap.md` Phase 3)** -- a tab whose dict carries `"kind": "diff"`
+(alongside `"originalPath"`/`"modifiedPath"`, from `workbench.impl.jac`'s `open_diff_tab`) renders
+`MonacoDiffEditorApp` instead of `MonacoEditorApp` for its content panel. An ordinary tab's dict has
+no `"kind"` key at all, so `t.get("kind") == "diff"` is the one branch point -- no other change to
+this component's tab-bar rendering (the label, close button, and tab-row chrome are identical for a
+diff tab, matching real-editor convention of showing a diff view as just another tab).
+
 **Editor-group splitting (2026-08-25, `docs/roadmap.md` Phase 2)**: this component still renders
 exactly one group's tab row + content, unaware it's one of possibly several -- `workbench.jac` owns
 the list of groups and mounts one `EditorTabs` per group inside a `ResizablePanelGroup`. Rather than
@@ -49,6 +56,7 @@ tab to duplicate -- `workbench.impl.jac`'s `split_group` is where that guard liv
 """
 
 import from src.editor.client.monaco_editor { app as MonacoEditorApp }
+import from src.editor.client.monaco_diff_editor { app as MonacoDiffEditorApp }
 import from components.ui.button { Button }
 import from "@hugeicons/react" { HugeiconsIcon }
 import from "@hugeicons/core-free-icons" { SquareSplitHorizontalIcon }
@@ -137,11 +145,15 @@ def:pub app(props: any) -> JsxElement {
                         aria-labelledby={_tab_dom_id(group_id, t["path"])}
                         style={{"display": "block" if t["path"] == active_path else "none", "height": "100%"}}
                     >
-                        <MonacoEditorApp
-                            path={t["path"]}
-                            onCursorChange={on_cursor_change}
-                            initialCursor={initial_cursors[t["path"]] if t["path"] in initial_cursors else None}
-                        />
+                        {(
+                            <MonacoDiffEditorApp originalPath={t["originalPath"]} modifiedPath={t["modifiedPath"]} />
+                        ) if t.get("kind") == "diff" else (
+                            <MonacoEditorApp
+                                path={t["path"]}
+                                onCursorChange={on_cursor_change}
+                                initialCursor={initial_cursors[t["path"]] if t["path"] in initial_cursors else None}
+                            />
+                        )}
                     </div>
                     for t in open_tabs
                 ]

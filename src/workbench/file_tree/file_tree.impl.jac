@@ -50,3 +50,19 @@ impl app.select_file(path: str, name: str) -> None {
     selected_path = path;
     on_open_file(path, name);
 }
+
+impl app.compare_select(path: str, name: str) -> None {
+    if compare_pending_path == "" {
+        compare_pending_path = path;
+        compare_pending_name = name;
+        return;
+    }
+    if compare_pending_path == path {
+        compare_pending_path = "";
+        compare_pending_name = "";
+        return;
+    }
+    on_compare_files(compare_pending_path, compare_pending_name, path, name);
+    compare_pending_path = "";
+    compare_pending_name = "";
+}

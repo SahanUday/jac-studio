@@ -110,11 +110,23 @@ own shape -- a diff tab's synthetic `path` (`"diff::" + path_a + "::" + path_b`)
 `file_tree.jac`'s Alt+Click "select for compare" gesture (see its own docstring); nothing here
 assumes any particular UI trigger, so a future context-menu "Compare with Selected" item can call
 the same `open_diff_tab` directly.
+
+**Activity bar (2026-08-28, `docs/roadmap.md` Phase 3)** -- `active_view_id` names which sidebar
+view is showing; `ActivityBarApp` reports clicks via `select_view`, same "leaf reports, parent owns
+state" shape as everything else here. Only one real view exists this phase (`FileTreeApp` for
+`"explorer"`), so the sidebar content is a single-armed conditional today
+(`{(<FileTreeApp .../>) if active_view_id == "explorer" else None}`) -- deliberately a plain
+conditional *render*, not the mount-once-hide-via-CSS convention `editor_tabs.jac`'s
+`MonacoEditorApp` instances and the terminal panel use, since there's no second view yet for
+switching away to actually lose `FileTreeApp`'s state to. Once Phase 4 adds a second real view
+(Search/SCM per `roadmap.md`), that tradeoff becomes real and worth revisiting with the actual
+second view's requirements in hand, not speculatively now.
 """
 
 import from "react" { useEffect }
 import from src.workbench.file_tree.file_tree { app as FileTreeApp }
 import from src.workbench.editor_tabs.editor_tabs { app as EditorTabsApp }
+import from src.workbench.activity_bar.activity_bar { app as ActivityBarApp }
 import from src.workbench.command_palette.command_palette { app as CommandPaletteApp }
 import from src.workbench.quick_open.quick_open { app as QuickOpenApp }
 import from src.workbench.status_bar.status_bar { app as StatusBarApp }
@@ -130,6 +142,7 @@ def:pub app(onToggleTheme: any) -> JsxElement {
     has cursor_positions: dict[str, dict[str, int]] = {};
     has terminal_open: bool = False;
     has quick_open_open: bool = False;
+    has active_view_id: str = "explorer";
     has commands: list[dict[str, any]] = [];
     has context: dict[str, bool] = {};
     has cursor_save_timer: Ref[any] = Ref();
@@ -147,6 +160,7 @@ def:pub app(onToggleTheme: any) -> JsxElement {
     def context_matches(when: str) -> bool;
     def handle_keydown(e: any) -> None;
     def set_quick_open_open(next_open: bool) -> None;
+    def select_view(view_id: str) -> None;
 
     async can with entry {
         commands = await list_commands();
@@ -202,8 +216,9 @@ def:pub app(onToggleTheme: any) -> JsxElement {
         <CommandPaletteApp onRunCommand={handle_command} />
         <QuickOpenApp open={quick_open_open} onOpenChange={set_quick_open_open} onOpenFile={open_tab} />
         <div style={{"display": "flex", "flex": "1", "overflow": "hidden"}}>
+            <ActivityBarApp activeViewId={active_view_id} onSelectView={select_view} />
             <div style={{"width": "260px", "flexShrink": "0", "borderRight": "1px solid #2A2B2C", "overflow": "hidden"}}>
-                <FileTreeApp onOpenFile={open_tab} onCompareFiles={open_diff_tab} />
+                {(<FileTreeApp onOpenFile={open_tab} onCompareFiles={open_diff_tab} />) if active_view_id == "explorer" else None}
             </div>
             <div style={{"flex": "1", "overflow": "hidden"}}>
                 <ResizablePanelGroup direction="horizontal">

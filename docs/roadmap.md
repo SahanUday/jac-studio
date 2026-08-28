@@ -155,9 +155,12 @@ serialization.
   - **Minimap** — decided on (2026-08-28), matching VS Code's default: `monaco_editor.jac` now
     sets `"minimap": {"enabled": True}`. The diff editor deliberately does not get the same flip —
     see the diff-editor bullet above.
-  - **Activity bar** — the icon rail switching sidebar views (Explorer today; Search/SCM in
-    Phase 4). Not a shadcn primitive (`Sidebar` is a container, not a switcher) — hand-build it now
-    so Phase 4's new views have somewhere to mount instead of retrofitting under time pressure.
+  - **Activity bar — done (2026-08-28)** (`src/workbench/activity_bar/activity_bar.jac`). The icon
+    rail switching sidebar views (Explorer today; Search/SCM in Phase 4). No shadcn primitive
+    fits (`Sidebar` is a container, not a switcher) — hand-built. `VIEWS` is a plain module-level
+    list with one real entry today; the switching mechanism (`active_view_id` owned by
+    `workbench.jac`, one `onSelectView` callback) is built end-to-end now so Phase 4's new views
+    are a one-entry-plus-one-branch addition, not new plumbing under time pressure.
   - **Title bar** — the custom title bar + Command Center search box; core to "looking like
     VS Code" and was undocumented before this pass.
   - **File-tree context menu** (new file/folder, rename, delete) via the `ContextMenu` primitive

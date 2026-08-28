@@ -150,6 +150,10 @@ impl app.set_quick_open_open(next_open: bool) -> None {
     quick_open_open = next_open;
 }
 
+impl app.select_view(view_id: str) -> None {
+    active_view_id = view_id;
+}
+
 impl app.set_context(key: str, value: bool) -> None {
     updated_context = {**context};
     updated_context[key] = value;

@@ -121,6 +121,12 @@ conditional *render*, not the mount-once-hide-via-CSS convention `editor_tabs.ja
 switching away to actually lose `FileTreeApp`'s state to. Once Phase 4 adds a second real view
 (Search/SCM per `roadmap.md`), that tradeoff becomes real and worth revisiting with the actual
 second view's requirements in hand, not speculatively now.
+
+**Title bar (2026-08-28, `docs/roadmap.md` Phase 3)** -- `command_palette_open` moved here from
+being `command_palette.jac`'s own private state, specifically so `TitleBarApp`'s Command Center
+button has something to call: `onOpenCommandPalette` dispatches through `handle_command`'s
+`workbench.action.showCommands` branch, the exact same path `Ctrl+Shift+P` now uses too (see
+`command_palette.jac`'s docstring for the full reasoning behind that move).
 """
 
 import from "react" { useEffect }
@@ -129,6 +135,7 @@ import from src.workbench.editor_tabs.editor_tabs { app as EditorTabsApp }
 import from src.workbench.activity_bar.activity_bar { app as ActivityBarApp }
 import from src.workbench.command_palette.command_palette { app as CommandPaletteApp }
 import from src.workbench.quick_open.quick_open { app as QuickOpenApp }
+import from src.workbench.title_bar.title_bar { app as TitleBarApp }
 import from src.workbench.status_bar.status_bar { app as StatusBarApp }
 import from src.workbench.terminal.terminal { app as TerminalApp }
 import from src.workbench.commands.command_registry { list_commands }
@@ -142,6 +149,7 @@ def:pub app(onToggleTheme: any) -> JsxElement {
     has cursor_positions: dict[str, dict[str, int]] = {};
     has terminal_open: bool = False;
     has quick_open_open: bool = False;
+    has command_palette_open: bool = False;
     has active_view_id: str = "explorer";
     has commands: list[dict[str, any]] = [];
     has context: dict[str, bool] = {};
@@ -160,6 +168,7 @@ def:pub app(onToggleTheme: any) -> JsxElement {
     def context_matches(when: str) -> bool;
     def handle_keydown(e: any) -> None;
     def set_quick_open_open(next_open: bool) -> None;
+    def set_command_palette_open(next_open: bool) -> None;
     def select_view(view_id: str) -> None;
 
     async can with entry {
@@ -213,8 +222,9 @@ def:pub app(onToggleTheme: any) -> JsxElement {
     }
 
     <div style={{"display": "flex", "flexDirection": "column", "height": "100vh"}}>
-        <CommandPaletteApp onRunCommand={handle_command} />
+        <CommandPaletteApp open={command_palette_open} onOpenChange={set_command_palette_open} onRunCommand={handle_command} />
         <QuickOpenApp open={quick_open_open} onOpenChange={set_quick_open_open} onOpenFile={open_tab} />
+        <TitleBarApp onOpenCommandPalette={lambda (e: any) { handle_command("workbench.action.showCommands"); }} />
         <div style={{"display": "flex", "flex": "1", "overflow": "hidden"}}>
             <ActivityBarApp activeViewId={active_view_id} onSelectView={select_view} />
             <div style={{"width": "260px", "flexShrink": "0", "borderRight": "1px solid #2A2B2C", "overflow": "hidden"}}>

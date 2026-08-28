@@ -246,7 +246,7 @@ VS Code's workbench parts map almost directly onto existing Jac shadcn primitive
 |---|---|
 | Sidebar (Explorer view) | `Sidebar` |
 | Activity bar (icon rail switching sidebar views) | No direct shadcn primitive — a small icon-strip component we build ourselves, since `Sidebar` is a container, not a view-*switcher*. Built 2026-08-28, Phase 3 (`src/workbench/activity_bar/activity_bar.jac`). |
-| Title bar (window controls + Command Center search) | No direct shadcn primitive — hand-built chrome. Not yet built (see below). |
+| Title bar (Command Center search) | No direct shadcn primitive — hand-built chrome. Built 2026-08-28, Phase 3 (`src/workbench/title_bar/title_bar.jac`) — no window controls (web app, not a native desktop host yet) and no menu bar (separate, larger scope). |
 | Editor groups (split panes) | `Resizable` / `ResizablePanel` / `ResizableHandle` |
 | Tabs | `Tabs` |
 | Command palette | `Command` |

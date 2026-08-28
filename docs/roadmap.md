@@ -177,6 +177,22 @@ Goal: prove the contribution-registry design end to end without solving sandboxi
   usable via interop — the same open question as the DAP client in Phase 5, worth answering once
   for both. Build the editor-side consumption UI (completion popup, hover card) as a Phase
   4-or-later increment once that research lands; don't block this phase's exit on it.
+- **Investigate real VS-Code-extension-API compatibility, using the actual published Jac extension
+  as the test case** (decided 2026-08-28, prompted by Phase 3's syntax-highlighting work) — the
+  real `jaseci-labs.jaclang-extension` (on the VS Code Marketplace, source at
+  `jaseci/jac/support/vscode_ext/jac`) ships a genuinely complete `jac.tmLanguage.json` TextMate
+  grammar (4,937 lines, 224 repository entries) plus a real language server, both far more complete
+  than the hand-rolled Monarch tokenizer `src/editor/client/jac_language.jac` shipped as a Phase 3
+  stopgap. Answer, in order: (1) can jac-studio load this `.vsix` largely unmodified (full
+  `vscode` module shim, activation events, contribution loading)? If yes, this single effort also
+  resolves `architecture.md`'s still-open "how much vscode-API compatibility to target" question
+  and replaces the Phase 3 stopgap tokenizer with the authoritative, jaseci-team-maintained grammar
+  in one move. (2) If full compatibility isn't feasible, investigate the narrower fallback:
+  reusing just the bundled TextMate grammar via a `vscode-textmate` + `vscode-oniguruma` bridge
+  into Monaco's token provider (the same technique vscode.dev/StackBlitz use), decoupled from the
+  extension-API question entirely — unverified whether this project's Vite/jac-cl toolchain handles
+  the WASM grammar-engine asset cleanly, so spike it rather than assume. Either outcome replaces
+  `jac_language.jac`; until this lands, the Phase 3 tokenizer stays as the working baseline.
 - **An Output panel with a log-channel abstraction** — moved earlier than its upstream scale would
   suggest, because it's needed to debug the extensions being written *in this phase*, not just as
   a later user-facing feature (per [`vscode-complete-triage.md`](vscode-complete-triage.md)'s

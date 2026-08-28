@@ -568,7 +568,14 @@ into every section of this document.
 - Extension API surface shape: how much of VS Code's actual `vscode` API do we aim for
   compatibility with (enabling existing extensions to port over) vs. a from-scratch API idiomatic
   to Jac's walker/node model? Not decided — affects Phase B scope significantly and deserves its
-  own design doc once Phase A ships.
+  own design doc once Phase A ships. **A concrete test case identified (2026-08-28)**: the real,
+  published `jaseci-labs.jaclang-extension` VS Code extension ships a complete
+  `jac.tmLanguage.json` TextMate grammar (4,937 lines) far more thorough than the hand-rolled
+  Monarch tokenizer Phase 3 shipped as a stopgap (`src/editor/client/jac_language.jac`) — whether
+  jac-studio can load that extension (fully, or at least its grammar via a narrower
+  `vscode-textmate`/`vscode-oniguruma` bridge if full compatibility isn't feasible) is now scoped
+  into Phase 4's plan (see `roadmap.md`), and answering it also resolves this bullet, not just the
+  syntax-highlighting stopgap.
 - ~~Color/icon theming: match VS Code's default visual identity, or keep shadcn's own default
   look?~~ **Decided (2026-08-28)**: match VS Code's default identity (Dark+/Light+-derived OKLCH
   tokens via `jac retheme`, Codicons-style icons), built natively rather than by importing

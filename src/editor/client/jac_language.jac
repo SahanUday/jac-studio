@@ -26,6 +26,14 @@ match statement guards, walrus, and f-string interpolation braces tokenize as pl
 than nested expressions, an acceptable gap for a highlighting-only concern (no semantic analysis
 depends on this).
 
+**A stopgap, by explicit decision, not the final answer.** The real, published
+`jaseci-labs.jaclang-extension` VS Code extension ships a genuinely complete `jac.tmLanguage.json`
+TextMate grammar (4,937 lines, 224 repository entries) -- far more complete than this file.
+`docs/roadmap.md`'s Phase 4 now carries the plan to investigate reusing it (either by loading the
+real extension if jac-studio ever gets VS-Code-extension-API compatibility, or via a narrower
+`vscode-textmate`/`vscode-oniguruma` bridge into Monaco if not) as a direct replacement for this
+module. Don't invest further in this file's grammar completeness in the meantime.
+
 **Registered via `beforeMount`, not `onMount`.** Read `@monaco-editor/react`'s own source
 (`node_modules/@monaco-editor/react/dist/index.js`) to confirm the actual model-creation order:
 the `<Editor>` component resolves the model (`monaco.editor.getModel(uri) || createModel(...)`)

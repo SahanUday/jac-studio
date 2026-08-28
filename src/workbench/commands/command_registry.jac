@@ -42,6 +42,18 @@ upstream's own `keybindings.json`-overrides-`package.json`-contributed-defaults 
 built-in default can keep evolving in code without ever touching what a user already customized.
 An override for a `command_id` replaces that command's whole `keybindings` list rather than
 patching one entry -- nothing here needs upstream's more granular add/remove-one-binding model yet.
+
+**`KeybindingOverrides` caches the jid, not the node, and resolves via `jobj()` before mutating
+(2026-08-28).** A raw node object reused across separate requests silently drops any `has`-field
+mutation made through it -- verified live against a real `jac run --serve --dev` restart, not just
+a page reload; see `settings_service.jac`'s docstring for the full finding and tracker entry
+`2026-08-28-field-mutation-on-cached-node-not-persisted`. `get_command_registry`'s own cached
+`CommandRegistry` node does **not** need this fix -- it's only ever used for graph traversal
+(`[reg->:Contributes:->[?:Command]]`), never field-mutated directly, and traversal reads/edge
+creation through a cached object are unaffected by this finding (verified separately). Likewise
+`register_command`'s `existing_command.title = title;` is safe as written: `existing_command` comes
+from a *fresh* traversal query evaluated fresh on every call, never held in a cross-request cache,
+which is the actual distinction this finding turns on.
 """
 
 import threading;
@@ -75,21 +87,21 @@ node KeybindingOverrides {
 }
 
 glob _cached_command_registries: dict[str, CommandRegistry] = {};
-glob _cached_keybinding_overrides: dict[str, KeybindingOverrides] = {};
+glob _cached_keybinding_overrides_jid: dict[str, str] = {};
 
 def:pub _reset_keybinding_overrides_cache_for_tests {
-    _cached_keybinding_overrides.clear();
+    _cached_keybinding_overrides_jid.clear();
 }
 
 def get_keybinding_overrides -> KeybindingOverrides {
     key = jid(root);
-    if key in _cached_keybinding_overrides {
-        return _cached_keybinding_overrides[key];
+    if key not in _cached_keybinding_overrides_jid {
+        existing = [root-->[?:KeybindingOverrides]];
+        overrides_node = existing[0] if existing else root ++> KeybindingOverrides();
+        _cached_keybinding_overrides_jid[key] = jid(overrides_node);
+        return overrides_node;
     }
-    existing = [root-->[?:KeybindingOverrides]];
-    overrides_node = existing[0] if existing else root ++> KeybindingOverrides();
-    _cached_keybinding_overrides[key] = overrides_node;
-    return overrides_node;
+    return jobj(_cached_keybinding_overrides_jid[key]) as KeybindingOverrides;
 }
 
 """Replacing, not merging, `keybindings` -- see the module docstring's "Keybinding overrides"

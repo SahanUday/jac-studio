@@ -30,7 +30,10 @@ switch either way.
 **Cursor position (2026-08-25, `docs/roadmap.md` Phase 2)**: `onCursorChange` is forwarded to
 every mounted `MonacoEditorApp` unmodified -- unlike `onSelectTab`/`onCloseTab`/`onSplitGroup`, it
 doesn't need `groupId` threaded in, since `MonacoEditorApp` already reports its own `path`, which
-uniquely identifies the tab regardless of which group it's in.
+uniquely identifies the tab regardless of which group it's in. `initialCursors` (2026-08-28, Phase 3
+session restore) is looked up per-tab by `path` and forwarded as each `MonacoEditorApp`'s
+`initialCursor` prop -- `None` for an ordinarily-opened tab with no restored position, matching that
+prop's own documented default.
 
 **Editor-group splitting (2026-08-25, `docs/roadmap.md` Phase 2)**: this component still renders
 exactly one group's tab row + content, unaware it's one of possibly several -- `workbench.jac` owns
@@ -81,6 +84,7 @@ def:pub app(props: any) -> JsxElement {
     on_close_tab = props["onCloseTab"];
     on_split_group = props["onSplitGroup"];
     on_cursor_change = props["onCursorChange"];
+    initial_cursors = props["initialCursors"];
 
     <div style={{"display": "flex", "flexDirection": "column", "height": "100%", "overflow": "hidden"}}>
         <div role="tablist" aria-label="Open editors" style={{"display": "flex", "alignItems": "center", "borderBottom": "1px solid #3c3c3c", "background": "#252526", "flexShrink": "0"}}>
@@ -133,7 +137,11 @@ def:pub app(props: any) -> JsxElement {
                         aria-labelledby={_tab_dom_id(group_id, t["path"])}
                         style={{"display": "block" if t["path"] == active_path else "none", "height": "100%"}}
                     >
-                        <MonacoEditorApp path={t["path"]} onCursorChange={on_cursor_change} />
+                        <MonacoEditorApp
+                            path={t["path"]}
+                            onCursorChange={on_cursor_change}
+                            initialCursor={initial_cursors[t["path"]] if t["path"] in initial_cursors else None}
+                        />
                     </div>
                     for t in open_tabs
                 ]

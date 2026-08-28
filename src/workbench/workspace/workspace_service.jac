@@ -12,6 +12,21 @@ process-lifetime lookup.
 
 Client-facing functions (`open_workspace`, `list_children_by_path`) return plain dicts/lists, not
 node objects, matching `document_service.jac`'s precedent -- nodes stay server-side.
+
+**Cache the jid, not the node, for anything a call site will *mutate* (2026-08-28).** A raw node
+object reused across separate requests silently drops any `has`-field mutation made through it --
+verified live against a real `jac run --serve --dev` restart, not just a page reload: opening a
+*different* folder correctly updated `Workspace.root_path` in memory (this function's own return
+value looked right for the rest of that process's life) but the mutation never reached the
+database, so a later restart reverted back to whatever `root_path` was durably committed before.
+Edge creation/traversal through that same kind of cached object is **not** affected -- verified
+separately, `parent +>:Contains():+> child` below survives a real restart just fine -- so
+`_path_index`'s cache of `Folder`/`File` objects for *reading* children is unaffected by this
+finding and stays as-is. Only the two field mutations in this file (`get_or_create_workspace`'s
+`root_path`/`scanned` reset, `_ensure_scanned`'s `scanned = True`) needed the fix: re-resolve via
+`jobj(cached_jid)` (the `jac-sv-persistence` guide's own canonical "UPDATE" pattern) immediately
+before mutating. See tracker entry `2026-08-28-field-mutation-on-cached-node-not-persisted` for the
+full repro, and `settings_service.jac`'s docstring for where this was first found.
 """
 
 import os;
@@ -37,7 +52,7 @@ glob DEFAULT_EXCLUDED_DIRS: list[str] = [
     "node_modules", ".git", ".jac", "dist", "__pycache__", ".venv", "venv"
 ];
 
-glob _cached_workspaces: dict[str, Workspace] = {};
+glob _cached_workspace_jid: dict[str, str] = {};
 glob _path_index: dict[str, dict[str, (Workspace | Folder)]] = {};
 
 """Narrows, but does not close, the check-existing-else-create race in this module
@@ -59,7 +74,7 @@ simpler than per-key lock bookkeeping and costs nothing observable."""
 glob _workspace_lock: threading.Lock = threading.Lock();
 
 def:pub _reset_workspace_cache_for_tests {
-    _cached_workspaces.clear();
+    _cached_workspace_jid.clear();
     _path_index.clear();
 }
 
@@ -75,12 +90,12 @@ different folder actually re-scans it instead of silently continuing to show the
 def get_or_create_workspace(root_path: str) -> Workspace {
     with _workspace_lock {
         key = jid(root);
-        if key in _cached_workspaces {
-            ws = _cached_workspaces[key];
+        if key in _cached_workspace_jid {
+            ws = jobj(_cached_workspace_jid[key]) as Workspace;
         } else {
             existing = [root-->[?:Workspace]];
             ws = existing[0] if existing else root ++> Workspace(root_path=root_path);
-            _cached_workspaces[key] = ws;
+            _cached_workspace_jid[key] = jid(ws);
         }
         if ws.root_path != root_path {
             for e in [edge ws ->:Contains:->] {
@@ -105,7 +120,8 @@ def _ensure_scanned(parent: (Workspace | Folder)) -> None {
         if parent.scanned {
             return;
         }
-        dir_path = parent.root_path if isinstance(parent, Workspace) else parent.path;
+        fresh_parent = jobj(jid(parent)) as (Workspace | Folder);
+        dir_path = fresh_parent.root_path if isinstance(fresh_parent, Workspace) else fresh_parent.path;
         entries = sorted(os.listdir(dir_path)) if os.path.isdir(dir_path) else [];
         for name in entries {
             if name in DEFAULT_EXCLUDED_DIRS {
@@ -117,9 +133,9 @@ def _ensure_scanned(parent: (Workspace | Folder)) -> None {
                     if os.path.isdir(child_path)
                     else File(name=name, path=child_path)
             );
-            parent +>:Contains():+> child;
+            fresh_parent +>:Contains():+> child;
         }
-        parent.scanned = True;
+        fresh_parent.scanned = True;
     }
 }
 
@@ -141,6 +157,24 @@ def:pub get_file_node_by_path(path: str) -> File | None {
 
 def:pub open_workspace(root_path: str) -> dict[str, str] {
     ws = get_or_create_workspace(root_path);
+    return {"root_path": ws.root_path, "name": os.path.basename(ws.root_path.rstrip("/")) or ws.root_path};
+}
+
+"""The file tree's session-restore entry point (`docs/roadmap.md`'s Phase 3 workspace-state
+bullet) -- returns the previously opened workspace, if any, re-running it through
+`get_or_create_workspace` (not a bare read of the `Workspace` node) so `_path_index` is populated
+the same way a fresh `open_workspace` call would populate it; `list_children_by_path` depends on
+that index existing, restore or not. Passing the node's own `root_path` back into
+`get_or_create_workspace` is a no-op past the identity check (`ws.root_path != root_path` is
+false), so this never triggers a rescan of an already-scanned tree. Returns `None` when nothing
+was ever opened in this root -- a fresh install, or one where the workspace tree was never used --
+so `file_tree.jac` can fall back to its own "enter a folder path" empty state."""
+def:pub get_current_workspace -> dict[str, str] | None {
+    existing = [root-->[?:Workspace]];
+    if len(existing) == 0 {
+        return None;
+    }
+    ws = get_or_create_workspace(existing[0].root_path);
     return {"root_path": ws.root_path, "name": os.path.basename(ws.root_path.rstrip("/")) or ws.root_path};
 }
 

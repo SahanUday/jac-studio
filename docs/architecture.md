@@ -153,6 +153,28 @@ keyed dict), and every test exercising the accessor must call it. Two different 
 different fixes; neither substitutes for the other. See `internal/service-registry-spike/README.md` for the
 full writeup and measured numbers.
 
+**Correction (2026-08-28) — the rule above is incomplete for anything the accessor will *mutate*,
+not just read.** "Caches the reference" was written assuming a cached node object stays valid to
+write through indefinitely; a real Phase 3 restart test (`jac browse` against a genuine
+`jac run --serve --dev` process kill + restart, not just a page reload) found that it doesn't. A
+`has`-field mutation made through a node object that was cached from an *earlier, separate*
+request is never durably committed — the mutation is visible to every read for the rest of that
+process's life (the illusion that let this ship in `settings_service.jac`'s first version, verified
+surviving a page reload), but the underlying row's `version` never advances, and a real restart
+reverts to whatever was last committed before the cache started serving stale-but-plausible reads.
+Confirmed narrow: edge creation *and* traversal reads through that same kind of cached object are
+unaffected (verified separately, both survive a real restart) — only field mutation on a reused
+object is broken. The fix, verified live: **cache the jid (a `dict[str, str]`), not the node, and
+resolve via `jobj(cached_jid)` — the `jac-sv-persistence` guide's own canonical "UPDATE" pattern —
+immediately before any mutation.** `jobj()` is documented O(1), so this keeps the original rule's
+whole point (avoiding the ~600us/call traversal) while actually being correct; reads may keep using
+the raw cached object (traversal-based reads are unaffected), or resolve via `jobj()` too for
+uniformity — `settings_service.jac`, `session_service.jac`, `workspace_service.jac`, and
+`command_registry.jac`'s `KeybindingOverrides` all now do the latter. See tracker entry
+`2026-08-28-field-mutation-on-cached-node-not-persisted` for the full repro (including the exact
+server-side log line that first pointed at the real mechanism, and the false leads chased before
+finding it) and `docs/phases/phase-3-*.md` for which modules this affected.
+
 ### Not every service needs to be a node
 
 The spike above (and the rules just described) validated the pattern for services that are graph

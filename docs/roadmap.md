@@ -124,13 +124,19 @@ serialization.
 - **A `Diagnostic` node type** attached to `File` in the workspace graph, with no producer yet —
   just the data model, so Phase 4's task/problem-matcher work and later language-intelligence work
   have somewhere to write to from day one.
-- **Match VS Code's default visual identity** (decided 2026-08-28, see `architecture.md`'s Visual
-  identity section) — retheme the Phase 2 workbench chrome (sidebar, tabs, editor groups, command
-  palette, status bar, terminal) from shadcn's stock look to VS Code's own default Dark+/Light+
-  palette, driven as native `jac retheme` OKLCH tokens, plus a Codicons-style icon set in place of
-  the current `@hugeicons` usage. Native token authoring, not a VS-Code-theme-format compatibility
-  shim — that remains the separate, still-open installable-theme-extension question in
-  `architecture.md`'s open questions.
+- **Match VS Code's default visual identity — done (2026-08-28)**, see `architecture.md`'s Visual
+  identity section for the full record. Rethemed the Phase 2 workbench chrome (sidebar, tabs,
+  editor groups, command palette, status bar, terminal) from shadcn's stock look to VS Code's
+  *actual* current default palette — checking the live `microsoft/vscode` source directly found
+  this is "Dark 2026"/"Light 2026", not the "Dark+"/"Light+" pair this bullet originally assumed,
+  a real correction, not a naming nitpick (the 2026 default drops the classic blue status bar
+  entirely). Driven as native `jac retheme` OKLCH tokens (`--baseColor zinc --theme sky --radius
+  small` scaffold) plus hand-edited exact values for the tokens `jac retheme`'s presets can't reach
+  precisely, per its own documented one-off-custom-color escape hatch. Icon set swapped to the real
+  `@vscode/codicons` package (not just "Codicons-style") in place of the removed `@hugeicons`
+  dependency. Native token authoring, not a VS-Code-theme-format compatibility shim — that remains
+  the separate, still-open installable-theme-extension question in `architecture.md`'s open
+  questions.
 - **Close the gap between what Phase 2 documented and what it actually shipped, plus what a
   2026-08-28 pass against the live `microsoft/vscode` source found missing entirely** (see
   `vscode-complete-triage.md` v3 and `docs/phases/phase-2-workbench-shell.md`'s "what's left"):

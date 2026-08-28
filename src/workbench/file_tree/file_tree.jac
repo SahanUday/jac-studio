@@ -101,13 +101,14 @@ def:pub FileTreeNode(props: any) -> JsxElement {
             style={{
                 **ROW_BASE_STYLE,
                 "paddingLeft": str(indent) + "px",
-                "background": "#37373d" if is_selected else ("#3d3d1e" if is_compare_pending else "transparent"),
-                "outline": "1px dashed #d7ba7d" if is_compare_pending else "none"
+                "background": "#FFFFFF22" if is_selected else ("#e5ba7d26" if is_compare_pending else "transparent"),
+                "outline": "1px dashed #e5ba7d" if is_compare_pending else "none"
             }}
         >
-            <span style={{"width": "12px", "display": "inline-block", "fontSize": "10px", "opacity": "0.75"}}>
-                {("v" if is_open else ">") if is_dir else ""}
-            </span>
+            <span
+                className={("codicon " + ("codicon-chevron-down" if is_open else "codicon-chevron-right")) if is_dir else ""}
+                style={{"width": "14px", "display": "inline-block", "fontSize": "14px", "opacity": "0.75"}}
+            />
             <span>{item["name"]}</span>
         </div>
         {(
@@ -178,7 +179,7 @@ def:pub app(props: any) -> JsxElement {
                     </div>
                 ) if opened else None}
                 {(
-                    <div style={{"padding": "0 0.5rem 0.4rem", "fontSize": "11px", "color": "#d7ba7d", "fontFamily": "system-ui, sans-serif"}}>
+                    <div style={{"padding": "0 0.5rem 0.4rem", "fontSize": "11px", "color": "#e5ba7d", "fontFamily": "system-ui, sans-serif"}}>
                         {"Alt+Click another file to compare with \"" + compare_pending_name + "\", or Alt+Click it again to cancel"}
                     </div>
                 ) if compare_pending_path != "" else None}
@@ -204,7 +205,7 @@ def:pub app(props: any) -> JsxElement {
                             ]}
                         </div>
                     ) if opened else (
-                        <div style={{"padding": "1rem", "fontSize": "12px", "color": "#888", "fontFamily": "system-ui, sans-serif"}}>
+                        <div style={{"padding": "1rem", "fontSize": "12px", "color": "#8C8C8C", "fontFamily": "system-ui, sans-serif"}}>
                             Enter a folder path above and click Open.
                         </div>
                     )}

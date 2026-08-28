@@ -212,17 +212,16 @@ def:pub app(onToggleTheme: any) -> JsxElement {
             "flexDirection": "column",
             "height": "220px",
             "flexShrink": "0",
-            "borderTop": "1px solid #3c3c3c",
-            "background": "#1e1e1e"
+            "borderTop": "1px solid #2A2B2C",
+            "background": "#191A1B"
         }}>
-            <div style={{"display": "flex", "alignItems": "center", "justifyContent": "space-between", "padding": "0.25rem 0.5rem", "borderBottom": "1px solid #3c3c3c", "fontSize": "12px", "color": "#969696", "fontFamily": "system-ui, sans-serif", "flexShrink": "0"}}>
+            <div style={{"display": "flex", "alignItems": "center", "justifyContent": "space-between", "padding": "0.25rem 0.5rem", "borderBottom": "1px solid #2A2B2C", "fontSize": "12px", "color": "#8C8C8C", "fontFamily": "system-ui, sans-serif", "flexShrink": "0"}}>
                 <span>Terminal</span>
                 <span
                     onClick={lambda (e: any) { handle_command("workbench.action.terminal.toggle"); }}
+                    className="codicon codicon-close"
                     style={{"cursor": "pointer", "opacity": "0.7", "fontSize": "14px", "lineHeight": "1"}}
-                >
-                    &times;
-                </span>
+                />
             </div>
             <div style={{"flex": "1", "overflow": "hidden"}}>
                 <TerminalApp onFocusChange={lambda (focused: bool) { set_context("terminalFocus", focused); }} />

@@ -298,6 +298,29 @@ This does not change the Editor core section below — Monaco already ships its 
 `vs-dark`/`vs-light` themes matching VS Code's editor colors; the work here is the *workbench
 chrome around* Monaco, which Monaco has no opinion on.
 
+**CORRECTION (2026-08-28): "Dark+/Light+" is not actually VS Code's current default — "Dark 2026"/
+"Light 2026" is.** Found by checking the live `microsoft/vscode` source directly rather than
+assuming, the same discipline the "workbench/browser/parts" gap above was found with:
+`ThemeSettingDefaults.COLOR_THEME_DARK`/`COLOR_THEME_LIGHT` in
+`src/vs/workbench/services/themes/common/workbenchThemeService.ts` resolve to `'Dark 2026'`/
+`'Light 2026'`, not `'Dark+'`/`'Light+'` — VS Code shipped a new default theme pair at some release
+before this document's original 2026-08-28 decision was written, and that decision's "Dark+/Light+"
+framing was simply wrong, not a deliberate choice. The two are materially different, not a minor
+palette tweak: "Dark 2026" drops the classic bright-blue status bar entirely
+(`statusBar.background: #191A1B`, the same flat near-black as every other chrome surface — blue
+(`#3994BC`) only appears for the debugging-session state now), uses a muted teal-blue accent
+(`#297AA0`) instead of the classic vivid blue (`#007acc`), and leans on translucent white/black
+overlays for hover/selection states (`list.hoverBackground: #FFFFFF14`) rather than flat swapped
+colors. Values pulled directly from `extensions/theme-defaults/themes/2026-{dark,light}.json` in
+the same repo. `styles/global.css` and the workbench components' literal chrome colors
+(`status_bar.jac`, `editor_tabs.jac`, `file_tree.jac`, `workbench.jac`) now match this real
+default, hand-edited in per `jac retheme`'s own documented escape hatch for one-off custom colors
+(`jac retheme` was still run first, with `--baseColor zinc --theme sky --radius small` as the
+closest preset scaffold, since its OKLCH inputs are presets only, not arbitrary custom values).
+Icon set swapped to the actual `@vscode/codicons` package (the real font VS Code itself ships, not
+just "Codicons-style") — `@hugeicons/react`/`@hugeicons/core-free-icons` removed entirely, since
+the only usage was the split-editor icon.
+
 ## Editor core: embed the real thing, don't reimplement it
 
 **Status (2026-08-25): the editor engine is the real `monaco-editor` npm package**, embedded via a
@@ -577,9 +600,11 @@ into every section of this document.
   into Phase 4's plan (see `roadmap.md`), and answering it also resolves this bullet, not just the
   syntax-highlighting stopgap.
 - ~~Color/icon theming: match VS Code's default visual identity, or keep shadcn's own default
-  look?~~ **Decided (2026-08-28)**: match VS Code's default identity (Dark+/Light+-derived OKLCH
-  tokens via `jac retheme`, Codicons-style icons), built natively rather than by importing
-  VS Code's theme format — see the Visual identity section above.
+  look?~~ **Decided (2026-08-28), implemented (2026-08-28)**: match VS Code's default identity —
+  actually "Dark 2026"/"Light 2026"-derived OKLCH tokens via `jac retheme` plus hand-edited exact
+  values, real `@vscode/codicons` icons, not the "Dark+/Light+" pair originally assumed here (see
+  the Visual identity section's CORRECTION above for why that assumption was wrong) — built
+  natively rather than by importing VS Code's theme format.
 - Installable, VS-Code-compatible **third-party** theme *extensions* (arbitrary `.vsix` color/icon
   themes a user installs): a genuinely separate question from the default-identity one above, and
   still open — ecosystem-compatible support is real extra work (parsing VS Code's theme JSON

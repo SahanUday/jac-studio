@@ -115,7 +115,7 @@ def:pub app(originalPath: str, modifiedPath: str) -> JsxElement {
                 options={{"readOnly": True, "automaticLayout": True}}
             />
         ) if loaded else (
-            <div style={{"padding": "1rem", "fontSize": "12px", "color": "#888", "fontFamily": "system-ui, sans-serif"}}>
+            <div style={{"padding": "1rem", "fontSize": "12px", "color": "#8C8C8C", "fontFamily": "system-ui, sans-serif"}}>
                 Loading diff...
             </div>
         )}

@@ -42,6 +42,13 @@ no `"kind"` key at all, so `t.get("kind") == "diff"` is the one branch point -- 
 this component's tab-bar rendering (the label, close button, and tab-row chrome are identical for a
 diff tab, matching real-editor convention of showing a diff view as just another tab).
 
+**Icon set and colors (2026-08-28, Phase 3's visual-identity bullet)**: the split-editor icon moved
+from `@hugeicons/react` to a real `@vscode/codicons` glyph (`codicon-split-horizontal`), the same
+icon font VS Code itself ships, and the tab-close "x" moved from a literal `&times;` character to
+`codicon-close`, for the same reason. Tab bar/row colors were hand-corrected to VS Code's actual
+current default theme ("Dark 2026", not "Dark+" -- see `docs/architecture.md`'s Visual identity
+section for why that distinction matters).
+
 **Editor-group splitting (2026-08-25, `docs/roadmap.md` Phase 2)**: this component still renders
 exactly one group's tab row + content, unaware it's one of possibly several -- `workbench.jac` owns
 the list of groups and mounts one `EditorTabs` per group inside a `ResizablePanelGroup`. Rather than
@@ -58,8 +65,6 @@ tab to duplicate -- `workbench.impl.jac`'s `split_group` is where that guard liv
 import from src.editor.client.monaco_editor { app as MonacoEditorApp }
 import from src.editor.client.monaco_diff_editor { app as MonacoDiffEditorApp }
 import from components.ui.button { Button }
-import from "@hugeicons/react" { HugeiconsIcon }
-import from "@hugeicons/core-free-icons" { SquareSplitHorizontalIcon }
 
 """Jac's comprehension grammar doesn't support tuple-unpacking loop targets (`for i, t in
 enumerate(...)` fails to parse), so tab/panel DOM ids are derived from the path itself rather than
@@ -80,7 +85,7 @@ glob TAB_STYLE: dict[str, str] = {
     "fontFamily": "system-ui, sans-serif",
     "cursor": "pointer",
     "userSelect": "none",
-    "borderRight": "1px solid #3c3c3c",
+    "borderRight": "1px solid #2A2B2C",
     "whiteSpace": "nowrap"
 };
 
@@ -95,7 +100,7 @@ def:pub app(props: any) -> JsxElement {
     initial_cursors = props["initialCursors"];
 
     <div style={{"display": "flex", "flexDirection": "column", "height": "100%", "overflow": "hidden"}}>
-        <div role="tablist" aria-label="Open editors" style={{"display": "flex", "alignItems": "center", "borderBottom": "1px solid #3c3c3c", "background": "#252526", "flexShrink": "0"}}>
+        <div role="tablist" aria-label="Open editors" style={{"display": "flex", "alignItems": "center", "borderBottom": "1px solid #2A2B2C", "background": "#191A1B", "flexShrink": "0"}}>
             <div style={{"display": "flex", "flex": "1", "overflow": "auto"}}>
                 {[
                     <div
@@ -108,8 +113,8 @@ def:pub app(props: any) -> JsxElement {
                         onClick={lambda (e: any) { on_select_tab(group_id, t["path"]); }}
                         style={{
                             **TAB_STYLE,
-                            "background": "#1e1e1e" if t["path"] == active_path else "transparent",
-                            "color": "#d4d4d4" if t["path"] == active_path else "#969696"
+                            "background": "#121314" if t["path"] == active_path else "transparent",
+                            "color": "#bfbfbf" if t["path"] == active_path else "#8C8C8C"
                         }}
                     >
                         <span>{t["name"]}</span>
@@ -117,10 +122,9 @@ def:pub app(props: any) -> JsxElement {
                             role="button"
                             aria-label={"Close " + t["name"]}
                             onClick={lambda (e: any) { e.stopPropagation(); on_close_tab(group_id, t["path"]); }}
+                            className="codicon codicon-close"
                             style={{"opacity": "0.6", "fontSize": "13px", "lineHeight": "1"}}
-                        >
-                            &times;
-                        </span>
+                        />
                     </div>
                     for t in open_tabs
                 ]}
@@ -132,7 +136,7 @@ def:pub app(props: any) -> JsxElement {
                 onClick={lambda (e: any) { on_split_group(group_id); }}
                 style={{"flexShrink": "0", "marginRight": "0.25rem"}}
             >
-                <HugeiconsIcon icon={SquareSplitHorizontalIcon} strokeWidth={2} className="size-4" />
+                <span className="codicon codicon-split-horizontal" style={{"fontSize": "16px"}} />
             </Button>
         </div>
         <div style={{"flex": "1", "overflow": "auto", "padding": "0.75rem"}}>
@@ -158,7 +162,7 @@ def:pub app(props: any) -> JsxElement {
                     for t in open_tabs
                 ]
             ) if len(open_tabs) > 0 else (
-                <div style={{"padding": "1rem", "fontSize": "12px", "color": "#888", "fontFamily": "system-ui, sans-serif"}}>
+                <div style={{"padding": "1rem", "fontSize": "12px", "color": "#8C8C8C", "fontFamily": "system-ui, sans-serif"}}>
                     No file open. Select one from the file tree.
                 </div>
             )}

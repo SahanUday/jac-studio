@@ -7,6 +7,17 @@ piece uses.
 
 Purely presentational, like `editor_tabs.jac` -- takes `line`/`column`/`path` and renders, owns no
 state of its own, so there's no paired `.impl.jac` annex.
+
+**Not bright blue anymore (2026-08-28, Phase 3's visual-identity bullet).** This bar used to be
+hardcoded to `#007acc`, matching the classic Dark+ theme's most recognizable signature -- but
+checking VS Code's actual current default theme directly (`extensions/theme-defaults/themes/
+2026-dark.json` in `microsoft/vscode`, confirmed as the real default via
+`ThemeSettingDefaults.COLOR_THEME_DARK` in `workbenchThemeService.ts`) found that VS Code dropped
+the blue status bar as of "Dark 2026": `statusBar.background` is the same flat `#191A1B` as every
+other chrome surface there, with blue (`#3994BC`) reserved only for the debugging-session state.
+See `docs/architecture.md`'s Visual identity section for the full correction -- this project's
+earlier assumption that "Dark+/Light+" was still VS Code's default was wrong, found while doing
+this work, not assumed going in.
 """
 
 def:pub app(line: int, column: int, path: str) -> JsxElement {
@@ -17,8 +28,8 @@ def:pub app(line: int, column: int, path: str) -> JsxElement {
         "height": "22px",
         "flexShrink": "0",
         "padding": "0 0.75rem",
-        "background": "#007acc",
-        "color": "#ffffff",
+        "background": "#191A1B",
+        "color": "#8C8C8C",
         "fontSize": "12px",
         "fontFamily": "system-ui, sans-serif"
     }}>

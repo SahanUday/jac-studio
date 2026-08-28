@@ -88,7 +88,7 @@ def:pub app(path: str, onCursorChange: any, initialCursor: any) -> JsxElement {
                 options={{"automaticLayout": True, "minimap": {"enabled": True}}}
             />
         ) if loaded else (
-            <div style={{"padding": "1rem", "fontSize": "12px", "color": "#888", "fontFamily": "system-ui, sans-serif"}}>
+            <div style={{"padding": "1rem", "fontSize": "12px", "color": "#8C8C8C", "fontFamily": "system-ui, sans-serif"}}>
                 Loading...
             </div>
         )}

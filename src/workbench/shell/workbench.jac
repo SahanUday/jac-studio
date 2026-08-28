@@ -127,6 +127,21 @@ being `command_palette.jac`'s own private state, specifically so `TitleBarApp`'s
 button has something to call: `onOpenCommandPalette` dispatches through `handle_command`'s
 `workbench.action.showCommands` branch, the exact same path `Ctrl+Shift+P` now uses too (see
 `command_palette.jac`'s docstring for the full reasoning behind that move).
+
+**Tab affordances / unsaved-changes indicator (2026-08-28, `docs/roadmap.md` Phase 3, the phase's
+last bullet)** -- `dirty_paths` (a `dict[str, bool]`, keyed by tab path) is fed by
+`monaco_editor.jac`'s `onDirtyChange` report and forwarded to `EditorTabsApp` as `dirtyPaths`,
+which uses it to swap a tab's close button for an unsaved-changes dot (see `editor_tabs.jac`'s own
+docstring for the display logic). Deliberately **not** part of the persisted session -- unlike
+`cursor_positions`, dirty state describes in-memory Monaco buffer content that a page reload
+already can't recover (this project's Monaco integration never round-trips unsaved keystrokes to
+the server, see `monaco_editor.jac`'s "no per-keystroke RPC round-trip" decision), so persisting
+just the boolean flag without the actual unsaved content it describes would be misleading rather
+than useful. `close_tab` resets a path's entry to `False` when its tab closes (never deletes the
+key -- `dict` key deletion has no client-codegen lowering yet, see tracker entry
+`2026-08-28-client-dict-del-unsupported-by-jac2js`; overwriting with `False` is functionally
+identical for a value this component only ever reads via `.get(path, False)`), so reopening the
+same file later starts clean rather than showing a stale dot left over from before the close.
 """
 
 import from "react" { useEffect }
@@ -147,6 +162,7 @@ def:pub app(onToggleTheme: any) -> JsxElement {
     has active_group_id: str = "group-1";
     has next_group_id: int = 2;
     has cursor_positions: dict[str, dict[str, int]] = {};
+    has dirty_paths: dict[str, bool] = {};
     has terminal_open: bool = False;
     has quick_open_open: bool = False;
     has command_palette_open: bool = False;
@@ -164,6 +180,7 @@ def:pub app(onToggleTheme: any) -> JsxElement {
     async def split_group(group_id: str) -> None;
     async def handle_command(command_id: str) -> None;
     def handle_cursor_change(path: str, line: int, column: int) -> None;
+    def handle_dirty_change(path: str, is_dirty: bool) -> None;
     def set_context(key: str, value: bool) -> None;
     def context_matches(when: str) -> bool;
     def handle_keydown(e: any) -> None;
@@ -213,6 +230,8 @@ def:pub app(onToggleTheme: any) -> JsxElement {
                     onSplitGroup={split_group}
                     onCursorChange={handle_cursor_change}
                     initialCursors={cursor_positions}
+                    dirtyPaths={dirty_paths}
+                    onDirtyChange={handle_dirty_change}
                 />
             </ResizablePanel>
         );

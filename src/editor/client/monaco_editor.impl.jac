@@ -16,8 +16,19 @@ impl app.handle_save -> None {
         return;
     }
     await save_document(path, editor_ref.current.getValue());
+    if dirty {
+        dirty = False;
+        onDirtyChange(path, False);
+    }
 }
 
 impl app.handle_cursor_change(e: any) -> None {
     onCursorChange(path, e.position.lineNumber, e.position.column);
+}
+
+impl app.handle_content_change(e: any) -> None {
+    if not dirty {
+        dirty = True;
+        onDirtyChange(path, True);
+    }
 }

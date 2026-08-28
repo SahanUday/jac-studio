@@ -180,8 +180,27 @@ serialization.
     requests, and a plain application-level dict `del` corrupting an unrelated node's edge
     reachability — see `architecture.md`'s service-registry section for the full record and both
     tracker entries.
-  - **Tab affordances**: an unsaved-changes indicator (dot vs. close button) at minimum; file-type
-    icons in the tree and tabs.
+  - **Tab affordances — done (2026-08-28)**: an unsaved-changes indicator (dot vs. close button)
+    and file-type icons in the tree and tabs, the last Phase 3 bullet. `file_icons.jac` (new) is a
+    single extension-bucketed `file_icon_class` helper shared by `file_tree.jac`'s rows and
+    `editor_tabs.jac`'s tabs, so both surfaces pick the same glyph for the same file rather than
+    drifting apart. Dirty tracking threads through all three layers the same "leaf reports, parent
+    owns state" way cursor position already does: `monaco_editor.jac`'s new `onDirtyChange` (wired
+    via `@monaco-editor/react`'s `onChange`, transitioning `False -> True` once per edit session,
+    not per keystroke) reports up through `editor_tabs.jac` to `workbench.jac`'s new `dirty_paths`
+    dict, which drives the dot-vs-close swap. Deliberately not part of the persisted session, since
+    it describes in-memory Monaco content a reload can't recover anyway — see `workbench.jac`'s
+    docstring. Found and fixed two real bugs building this, neither one a jaseci defect: (1) a
+    `del` statement on a plain dict inside a client-lowered handler compiles clean under
+    `jac check`/`jac test` but has no `jac2js` lowering at all, caught only by the real dev server
+    build — logged as tracker entry `2026-08-28-client-dict-del-unsupported-by-jac2js`, worked
+    around by overwriting the flag to `False` instead of deleting the key; (2) the first
+    dot/close-button hide-on-hover implementation used Tailwind's `hidden`/`group-hover:` display
+    toggling, which silently never applied because `@vscode/codicons`' own base rule
+    (`.codicon[class*='codicon-']{display:inline-block}`) has higher CSS specificity than a plain
+    Tailwind utility class — fixed by switching to opacity/`pointer-events` toggling instead, which
+    the codicon rule never touches. This second one is a collision between two third-party
+    stylesheets this project combines, not a Jac/jaseci gap, so it wasn't tracker-logged.
 
 Exit criteria: closing and reopening the app restores the previous session exactly; settings
 persist across restarts; opened files show syntax highlighting for at least a few common languages;

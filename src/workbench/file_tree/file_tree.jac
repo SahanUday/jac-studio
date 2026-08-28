@@ -54,12 +54,18 @@ jaseci persistence gaps -- see `docs/architecture.md`'s service-registry section
 entries `2026-08-28-edge-deletion-not-committed-across-real-http-requests` and
 `2026-08-28-path-index-dict-del-corrupts-unrelated-edge-reachability` for the full record; the
 practical upshot is that `list_children_by_path` (`workspace_service.jac`) now double-checks
-`os.path.exists` on every child before returning it, rather than trusting graph edge state alone."""
+`os.path.exists` on every child before returning it, rather than trusting graph edge state alone.
+
+**File-type icons (2026-08-28, `docs/roadmap.md` Phase 3's tab-affordances bullet)** -- each row now
+renders a second glyph (folder/folder-opened, or an extension-bucketed file glyph) alongside the
+existing expand chevron, via the shared `file_icons.jac` helper -- shared with `editor_tabs.jac`'s
+tab labels so both surfaces agree on which glyph a given file gets, rather than drifting apart."""
 
 import from src.workbench.workspace.workspace_service {
     open_workspace, list_children_by_path, get_current_workspace,
     create_file, create_folder, rename_path, delete_path
 }
+import from src.workbench.file_icons.file_icons { file_icon_class }
 
 import from components.ui.sidebar {
     SidebarProvider, Sidebar, SidebarHeader, SidebarContent
@@ -134,6 +140,10 @@ def:pub FileTreeNode(props: any) -> JsxElement {
                     <span
                         className={("codicon " + ("codicon-chevron-down" if is_open else "codicon-chevron-right")) if is_dir else ""}
                         style={{"width": "14px", "display": "inline-block", "fontSize": "14px", "opacity": "0.75"}}
+                    />
+                    <span
+                        className={"codicon " + file_icon_class(item["name"], is_dir, is_open)}
+                        style={{"width": "14px", "display": "inline-block", "fontSize": "14px", "opacity": "0.85"}}
                     />
                     <span>{item["name"]}</span>
                 </div>

@@ -216,3 +216,38 @@ def:pub list_children_by_path(parent_path: str) -> list[dict] {
         for c in ordered
     ];
 }
+
+"""Quick Open's (`docs/roadmap.md` Phase 3) data source -- a flat list of every file under the
+current workspace root, for client-side fuzzy filtering. Deliberately bypasses the
+`Workspace`/`Folder`/`File` graph entirely rather than reusing `list_children_by_path`'s lazy
+per-folder scan recursively: walking the whole tree into graph nodes just to list paths would pay
+exactly the ~3-second-at-real-scale node-creation cost `docs/architecture.md`'s workspace section
+already ruled out for the file tree itself (tracker entry
+`2026-08-24-workspace-graph-eager-traversal-too-slow-at-scale`). A plain `os.walk` has none of
+that overhead -- it's a filesystem read, not a graph write -- so this stays a stateless, ungraphed
+helper next to the graph-backed functions above, called fresh on every Quick Open, not cached.
+
+Prunes `DEFAULT_EXCLUDED_DIRS` from `os.walk`'s own traversal (mutating `dirnames` in place, the
+standard way to stop `os.walk` descending into a subtree) rather than filtering results
+afterward -- the excluded directories are exactly the ones that would be enormous to walk
+(`node_modules`), so skipping them during the walk, not after, is the difference between this
+being fast and not."""
+def:pub list_all_files -> list[dict[str, str]] {
+    key = jid(root);
+    if key not in _cached_workspace_jid {
+        return [];
+    }
+    ws = jobj(_cached_workspace_jid[key]) as Workspace;
+    if ws.root_path == "" or not os.path.isdir(ws.root_path) {
+        return [];
+    }
+
+    results = [];
+    for (dirpath, dirnames, filenames) in os.walk(ws.root_path) {
+        dirnames[:] = [d for d in dirnames if d not in DEFAULT_EXCLUDED_DIRS];
+        for name in sorted(filenames) {
+            results.append({"name": name, "path": os.path.join(dirpath, name)});
+        }
+    }
+    return results;
+}

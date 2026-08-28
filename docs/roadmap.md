@@ -140,9 +140,18 @@ serialization.
 - **Close the gap between what Phase 2 documented and what it actually shipped, plus what a
   2026-08-28 pass against the live `microsoft/vscode` source found missing entirely** (see
   `vscode-complete-triage.md` v3 and `docs/phases/phase-2-workbench-shell.md`'s "what's left"):
-  - **Quick Open (Ctrl+P fuzzy file switcher)** — explicitly scoped into Phase 2 as a second
-    `quickaccess` provider alongside the command palette, but never built; add now as the
-    documented-but-undelivered item it is, not new scope.
+  - **Quick Open (Ctrl+P fuzzy file switcher) — done (2026-08-28)**
+    (`src/workbench/quick_open/quick_open.jac`). Explicitly scoped into Phase 2 as a second
+    `quickaccess` provider alongside the command palette, but never built there — delivered now as
+    the documented-but-undelivered item it always was, not new scope. Reuses the same shadcn
+    `Command` primitives and cmdk's built-in fuzzy filter the command palette already relies on;
+    its file list comes from `workspace_service.jac`'s new `list_all_files` (a plain `os.walk`,
+    never touching the `Workspace`/`Folder`/`File` graph, so it doesn't pay the eager-graph-scan
+    cost `architecture.md`'s workspace section already ruled out). Registered in
+    `command_registry.jac`'s `BUILTIN_COMMANDS` (`workbench.action.quickOpen`, `ctrl+p`) and
+    dispatched through `workbench.jac`'s existing generic keybinding mechanism rather than a second
+    bespoke keydown listener — a deliberate departure from `command_palette.jac`'s own
+    self-contained `Ctrl+Shift+P` handling, which predates that mechanism.
   - **Minimap** — decided on (2026-08-28), matching VS Code's default: `monaco_editor.jac` now
     sets `"minimap": {"enabled": True}`. The diff editor deliberately does not get the same flip —
     see the diff-editor bullet above.

@@ -41,7 +41,7 @@ found during this triage pass, not previously mentioned anywhere in the docs.
 | markers | Scoped | Phase 3/4 — `Diagnostic` node type + Problems panel |
 | keybindings, keybindingsExport | Scoped | Phase 2/3 — context system + persisted keybindings |
 | preferences | Scoped | Phase 3 — settings as graph-attached objects (this *is* the settings UI contrib) |
-| quickaccess | Scoped | Phase 2 — folds into command palette; **New** clarification: Quick Open (Ctrl+P fuzzy file switcher) is a distinct provider under this same contrib, not automatically covered by "command palette" alone — same phase, same registry, just note it as a second provider, not a separate phase |
+| quickaccess | Done | Command palette shipped Phase 2. Quick Open (Ctrl+P fuzzy file switcher), the distinct second provider under this same contrib, slipped from Phase 2 (documented but never built — see `docs/phases/phase-2-workbench-shell.md`'s "what's left") and shipped in Phase 3 instead (`src/workbench/quick_open/quick_open.jac`, 2026-08-28) — see `roadmap.md`'s Phase 3 section |
 | search, searchEditor | Scoped | Phase 4 — search-in-files |
 | extensions | Scoped, **partially New** | Phases 4–6 cover the extension *runtime*/trust model; this specific contrib is the Extensions *view* (browse/install/manage) — not previously called out as its own UI surface. Add to Phase 5: once extensions are dynamically loadable, they need a UI to install/enable/disable/uninstall from. Cheap addition to that phase, not a new one. |
 | webview, webviewPanel, webviewView, customEditor | Tracked | Gap analysis Tier 2 — noted as architecturally easier for us than upstream (a jac-cl component in a panel vs. upstream's iframe sandbox) |

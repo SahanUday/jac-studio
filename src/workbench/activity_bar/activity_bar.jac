@@ -54,7 +54,8 @@ component its own stacking context above `z-index: 10`, without touching the ven
 
 glob VIEWS: list[dict[str, str]] = [
     {"id": "explorer", "title": "Explorer", "icon": "files"},
-    {"id": "search", "title": "Search", "icon": "search"}
+    {"id": "search", "title": "Search", "icon": "search"},
+    {"id": "scm", "title": "Source Control", "icon": "source-control"}
 ];
 
 def:pub app(activeViewId: str, onSelectView: any) -> JsxElement {

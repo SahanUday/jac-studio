@@ -59,7 +59,16 @@ practical upshot is that `list_children_by_path` (`workspace_service.jac`) now d
 **File-type icons (2026-08-28, `docs/roadmap.md` Phase 3's tab-affordances bullet)** -- each row now
 renders a second glyph (folder/folder-opened, or an extension-bucketed file glyph) alongside the
 existing expand chevron, via the shared `file_icons.jac` helper -- shared with `editor_tabs.jac`'s
-tab labels so both surfaces agree on which glyph a given file gets, rather than drifting apart."""
+tab labels so both surfaces agree on which glyph a given file gets, rather than drifting apart.
+
+**Git status decorations (2026-08-31, `docs/roadmap.md` Phase 4's SCM bullet)** -- the "tree
+decorations" half of that bullet (`monaco_editor.jac`'s gutter is the other half). `gitStatus`
+(`dict[path, statusLetter]`, forwarded unmodified through every `FileTreeNode` recursion the same
+way `expanded`/`selected_path` already are) is owned by `workbench.jac`, not fetched here --
+`scm.jac`'s own `refresh_status` reports it up via `onStatusChange` every time *that* view
+refreshes, so this component stays a pure consumer, same "leaf renders, parent owns cross-view
+state" shape already used for `dirty_paths`. A row with no entry in the map renders exactly as
+before (no badge, default color) -- this is additive, not a rewrite of the existing row shape."""
 
 import from src.workbench.workspace.workspace_service {
     open_workspace, list_children_by_path, get_current_workspace,
@@ -73,6 +82,14 @@ import from components.ui.sidebar {
 import from components.ui.scroll_area { ScrollArea }
 import from components.ui.context_menu {
     ContextMenu, ContextMenuTrigger, ContextMenuContent, ContextMenuItem, ContextMenuSeparator
+}
+
+def _git_status_color(letter: str) -> str {
+    if letter == "M" { return "#e2c08d"; }
+    if letter == "A" { return "#73c991"; }
+    if letter == "D" { return "#f48771"; }
+    if letter == "U" { return "#73c991"; }
+    return "#73c991";
 }
 
 glob ROW_BASE_STYLE: dict[str, str] = {
@@ -95,6 +112,7 @@ def:pub FileTreeNode(props: any) -> JsxElement {
     children_by_path = props["children_by_path"];
     selected_path = props["selected_path"];
     compare_pending_path = props["comparePendingPath"];
+    git_status = props["gitStatus"];
     on_toggle = props["onToggle"];
     on_select = props["onSelect"];
     on_compare_select = props["onCompareSelect"];
@@ -110,6 +128,7 @@ def:pub FileTreeNode(props: any) -> JsxElement {
     is_compare_pending = (not is_dir) and (path == compare_pending_path);
     has_compare_pending = compare_pending_path != "";
     indent = 8 + depth * 14;
+    git_status_letter = git_status[path] if (path in git_status) else "";
 
     <div role="none">
         <ContextMenu>
@@ -145,7 +164,17 @@ def:pub FileTreeNode(props: any) -> JsxElement {
                         className={"codicon " + file_icon_class(item["name"], is_dir, is_open)}
                         style={{"width": "14px", "display": "inline-block", "fontSize": "14px", "opacity": "0.85"}}
                     />
-                    <span>{item["name"]}</span>
+                    <span style={{"flex": "1", "color": _git_status_color(git_status_letter) if git_status_letter != "" else "inherit"}}>
+                        {item["name"]}
+                    </span>
+                    {(
+                        <span
+                            aria-hidden="true"
+                            style={{"fontSize": "11px", "fontWeight": "600", "flexShrink": "0", "color": _git_status_color(git_status_letter)}}
+                        >
+                            {git_status_letter}
+                        </span>
+                    ) if git_status_letter != "" else None}
                 </div>
             </ContextMenuTrigger>
             <ContextMenuContent>
@@ -174,6 +203,7 @@ def:pub FileTreeNode(props: any) -> JsxElement {
                         children_by_path={children_by_path}
                         selected_path={selected_path}
                         comparePendingPath={compare_pending_path}
+                        gitStatus={git_status}
                         onToggle={on_toggle}
                         onSelect={on_select}
                         onCompareSelect={on_compare_select}
@@ -201,6 +231,8 @@ def:pub app(props: any) -> JsxElement {
     has selected_path: str = "";
     has compare_pending_path: str = "";
     has compare_pending_name: str = "";
+
+    git_status = props["gitStatus"] if "gitStatus" in props else {};
 
     async def _open_path_into_tree(path: str) -> None;
     async def open_folder -> None;
@@ -267,6 +299,7 @@ def:pub app(props: any) -> JsxElement {
                                     children_by_path={children_by_path}
                                     selected_path={selected_path}
                                     comparePendingPath={compare_pending_path}
+                                    gitStatus={git_status}
                                     onToggle={toggle_folder}
                                     onSelect={select_file}
                                     onCompareSelect={compare_select}

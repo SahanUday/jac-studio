@@ -42,6 +42,15 @@ no `"kind"` key at all, so `t.get("kind") == "diff"` is the one branch point -- 
 this component's tab-bar rendering (the label, close button, and tab-row chrome are identical for a
 diff tab, matching real-editor convention of showing a diff view as just another tab).
 
+**Git diff tabs (2026-08-31, `docs/roadmap.md` Phase 4's SCM bullet)** -- a second, distinct `"kind":
+"gitdiff"` (alongside `"filePath"`/`"staged"`, from `workbench.impl.jac`'s `open_scm_diff`) renders
+`ScmDiffEditorApp` instead. Deliberately not folded into `"diff"`'s existing branch even though both
+render *a* Monaco diff editor: `"diff"` carries two real on-disk paths `MonacoDiffEditorApp` loads
+itself via `document_service`, while `"gitdiff"` carries a single file path plus a staged/unstaged
+flag that `ScmDiffEditorApp` resolves into content via `git_service.get_diff_content` -- different
+enough inputs that a shared branch would need to smuggle a discriminant through anyway. Both share
+the same fixed `codicon-diff` tab icon.
+
 **Icon set and colors (2026-08-28, Phase 3's visual-identity bullet)**: the split-editor icon moved
 from `@hugeicons/react` to a real `@vscode/codicons` glyph (`codicon-split-horizontal`), the same
 icon font VS Code itself ships, and the tab-close "x" moved from a literal `&times;` character to
@@ -96,6 +105,7 @@ two additions, both purely presentational like everything else in this file:
 
 import from src.editor.client.monaco_editor { app as MonacoEditorApp }
 import from src.editor.client.monaco_diff_editor { app as MonacoDiffEditorApp }
+import from src.workbench.scm.scm_diff_editor { app as ScmDiffEditorApp }
 import from components.ui.button { Button }
 import from src.workbench.file_icons.file_icons { file_icon_class }
 
@@ -154,7 +164,7 @@ def:pub app(props: any) -> JsxElement {
                         }}
                     >
                         <span
-                            className={"codicon " + ("codicon-diff" if t.get("kind") == "diff" else file_icon_class(t["name"], False, False))}
+                            className={"codicon " + ("codicon-diff" if t.get("kind") in ["diff", "gitdiff"] else file_icon_class(t["name"], False, False))}
                             style={{"fontSize": "14px", "opacity": "0.85"}}
                         />
                         <span>{t["name"]}</span>
@@ -198,6 +208,8 @@ def:pub app(props: any) -> JsxElement {
                         {(
                             <MonacoDiffEditorApp originalPath={t["originalPath"]} modifiedPath={t["modifiedPath"]} />
                         ) if t.get("kind") == "diff" else (
+                            <ScmDiffEditorApp filePath={t["filePath"]} staged={t["staged"]} />
+                        ) if t.get("kind") == "gitdiff" else (
                             <MonacoEditorApp
                                 path={t["path"]}
                                 onCursorChange={on_cursor_change}

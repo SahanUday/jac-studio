@@ -232,3 +232,27 @@
         @apply font-sans;
     }
 }
+
+/* Git gutter decorations (docs/roadmap.md Phase 4's SCM bullet) -- monaco_editor.jac's
+   linesDecorationsClassName targets, matching real VS Code's own green/blue/red convention for
+   added/modified/removed lines against HEAD. Monaco renders the line-decorations lane as a fixed
+   3px-wide column immediately left of the text; a colored left border on the full-height class is
+   the standard way to paint a bar into it. */
+.git-gutter-added {
+    border-left: 3px solid #487e02;
+}
+.git-gutter-modified {
+    border-left: 3px solid #0c7d9d;
+}
+.git-gutter-removed {
+    position: relative;
+}
+.git-gutter-removed::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: -2px;
+    width: 100%;
+    height: 4px;
+    background: #94151b;
+}

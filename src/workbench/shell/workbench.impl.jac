@@ -58,6 +58,21 @@ impl app.open_search_result(path: str, name: str, line: int, column: int) -> Non
     await _save_session();
 }
 
+"""Stores only `{filePath, staged}` -- never fetched diff content -- in the tab dict; see
+`scm_diff_editor.jac`'s docstring for why the tab itself re-fetches content on mount rather than
+this handler doing it once up front."""
+impl app.open_scm_diff(path: str, name: str, staged: bool) -> None {
+    suffix = "::staged" if staged else "::unstaged";
+    groups = _upsert_tab_in_active_group({
+        "path": "gitdiff::" + path + suffix,
+        "name": name + (" (Staged)" if staged else " (Working Tree)"),
+        "kind": "gitdiff",
+        "filePath": path,
+        "staged": staged
+    });
+    await _save_session();
+}
+
 impl app.open_diff_tab(path_a: str, name_a: str, path_b: str, name_b: str) -> None {
     diff_path = "diff::" + path_a + "::" + path_b;
     groups = _upsert_tab_in_active_group({
@@ -196,6 +211,10 @@ impl app.handle_command(command_id: str) -> None {
     }
     if command_id == "workbench.action.showSearch" {
         active_view_id = "search";
+        return;
+    }
+    if command_id == "workbench.action.showScm" {
+        active_view_id = "scm";
     }
 }
 
@@ -244,6 +263,10 @@ impl app.clear_notifications -> None {
 
 impl app.set_notification_panel_open(next_open: bool) -> None {
     notification_panel_open = next_open;
+}
+
+impl app.set_git_status(status_map: dict[str, str]) -> None {
+    git_status_by_path = status_map;
 }
 
 impl app.set_context(key: str, value: bool) -> None {

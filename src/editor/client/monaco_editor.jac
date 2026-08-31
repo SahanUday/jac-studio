@@ -65,17 +65,37 @@ needs no `Ref`-stashed instance to reach. Deliberately does **not** reintroduce 
 `has`-state churn the module docstring above already ruled out for content: `dirty` only ever
 transitions `False -> True` once per unsaved edit session (`handle_content_change` no-ops once
 already dirty) and `True -> False` once on save, not on every keystroke -- so this stays a rare
-state update, not a hot one, unlike a content mirror would be."""
+state update, not a hot one, unlike a content mirror would be.
+
+**Git gutter decorations (2026-08-31, `docs/roadmap.md` Phase 4's SCM bullet)** -- the "real
+first-class workbench part with gutter... decorations" the roadmap calls for, distinct from the
+sidebar tree decorations `file_tree.jac` doesn't yet carry (that's the SCM view's own file list,
+not this component). `git_service.get_line_changes(path)` is fetched once alongside `content` in
+`can with entry` (a no-op empty list for a file outside a repo, per that function's own docstring)
+and applied via `editor.createDecorationsCollection` in `handle_mount` -- `linesDecorationsClassName`
+paints a colored bar in the gutter's line-decorations lane for each added/modified/removed range,
+matching real VS Code's own green/blue/red convention (`styles/global.css`'s
+`.git-gutter-added/modified/removed` rules). Re-applied after every successful save
+(`handle_save`, via the shared `_apply_git_decorations` helper) so the gutter reflects the file's
+*new* diff against `HEAD` immediately, rather than staying stale until the tab is closed and
+reopened -- the same "the action that changes state re-fetches it" convention `scm.jac` uses for
+its own stage/unstage/discard/commit actions. `decorations_ref` (a `Ref`, same "survives re-renders
+without triggering one" idiom `editor_ref` already uses) holds the live
+`IEditorDecorationsCollection` returned by `createDecorationsCollection` so a later re-apply calls
+`.set(...)` on the same collection instead of accumulating a fresh one on top of the last."""
 
 import from "@monaco-editor/react" { Editor }
 import from src.editor.document_service { open_document, save_document }
 import from src.editor.client.jac_language { register_jac_language }
+import from src.workbench.scm.git_service { get_line_changes }
 
 def:pub app(path: str, onCursorChange: any, initialCursor: any, onDirtyChange: any) -> JsxElement {
     has content: str = "";
     has loaded: bool = False;
     has dirty: bool = False;
     has editor_ref: Ref[any] = Ref();
+    has monaco_ref: Ref[any] = Ref();
+    has decorations_ref: Ref[any] = Ref();
 
     async can with entry {
         result = await open_document(path);
@@ -87,6 +107,7 @@ def:pub app(path: str, onCursorChange: any, initialCursor: any, onDirtyChange: a
     async def handle_save -> None;
     def handle_cursor_change(e: any) -> None;
     def handle_content_change(e: any) -> None;
+    async def apply_git_decorations -> None;
 
     <div style={{"height": "100%", "width": "100%"}}>
         {(

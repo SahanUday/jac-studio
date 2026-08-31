@@ -78,6 +78,11 @@ directory = "src"
 # attribute. See tracker entry 2026-08-31-client-module-with-one-server-import-pulled-server-wholesale.
 "src.editor.client.jac_completion_provider" = "client"
 
+# Same finding, same fix, for the hover provider added right after: genuinely client-only (its
+# whole job is calling the browser `monaco` global), but imports lsp_client.get_hover for its one
+# RPC boundary, which the placement solver reads as reason to place the whole module server-side.
+"src.editor.client.jac_hover_provider" = "client"
+
 # Deny-by-default: the integrated terminal (src/workbench/terminal/terminal_service.jac) refuses to
 # run any command until this is explicitly flipped on, same posture docs/architecture.md scopes for
 # the desktop `shell` capability -- "same trust level as [the user] opening their own terminal."

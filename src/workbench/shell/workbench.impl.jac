@@ -44,6 +44,20 @@ impl app.open_tab(path: str, name: str) -> None {
     await _save_session();
 }
 
+"""Seeds `cursor_positions[path]` *before* inserting the tab -- see `workbench.jac`'s "Search, the
+second real sidebar view" docstring section for why this reuses the session-restore mount-time
+mechanism rather than a new imperative jump. `_save_session` persists `cursor_positions` the same
+way `handle_cursor_change`'s debounce eventually would; doing it synchronously here (via the shared
+`_upsert_tab_in_active_group` + `_save_session` path `open_tab` already uses) is fine since this is
+a real, low-frequency user action (clicking a search result), not a per-keystroke one."""
+impl app.open_search_result(path: str, name: str, line: int, column: int) -> None {
+    updated_cursor_positions = {**cursor_positions};
+    updated_cursor_positions[path] = {"line": line, "column": column};
+    cursor_positions = updated_cursor_positions;
+    groups = _upsert_tab_in_active_group({"path": path, "name": name});
+    await _save_session();
+}
+
 impl app.open_diff_tab(path_a: str, name_a: str, path_b: str, name_b: str) -> None {
     diff_path = "diff::" + path_a + "::" + path_b;
     groups = _upsert_tab_in_active_group({
@@ -178,6 +192,10 @@ impl app.handle_command(command_id: str) -> None {
     }
     if command_id == "workbench.action.showNotifications" {
         notification_panel_open = not notification_panel_open;
+        return;
+    }
+    if command_id == "workbench.action.showSearch" {
+        active_view_id = "search";
     }
 }
 

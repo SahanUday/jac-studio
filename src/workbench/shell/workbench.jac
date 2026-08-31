@@ -113,14 +113,25 @@ the same `open_diff_tab` directly.
 
 **Activity bar (2026-08-28, `docs/roadmap.md` Phase 3)** -- `active_view_id` names which sidebar
 view is showing; `ActivityBarApp` reports clicks via `select_view`, same "leaf reports, parent owns
-state" shape as everything else here. Only one real view exists this phase (`FileTreeApp` for
-`"explorer"`), so the sidebar content is a single-armed conditional today
-(`{(<FileTreeApp .../>) if active_view_id == "explorer" else None}`) -- deliberately a plain
-conditional *render*, not the mount-once-hide-via-CSS convention `editor_tabs.jac`'s
-`MonacoEditorApp` instances and the terminal panel use, since there's no second view yet for
-switching away to actually lose `FileTreeApp`'s state to. Once Phase 4 adds a second real view
-(Search/SCM per `roadmap.md`), that tradeoff becomes real and worth revisiting with the actual
-second view's requirements in hand, not speculatively now.
+state" shape as everything else here.
+
+**Search, the second real sidebar view (2026-08-31, `docs/roadmap.md` Phase 4)** -- resolves the
+tradeoff the paragraph above used to leave open: with a real second view now in hand, switching
+away from Search would lose an in-progress query/result set exactly the way switching bottom-panel
+tabs would lose terminal scrollback if it weren't for the same convention -- so both `FileTreeApp`
+and `SearchApp` now follow the mount-once-hide-via-CSS convention `editor_tabs.jac`'s
+`MonacoEditorApp` instances and the bottom panel already use, not the plain conditional *render*
+Phase 3 shipped when there was nothing yet to lose. `open_search_result` is `open_tab`'s sibling for
+the "jump to a specific line" case a search result (unlike a plain file-tree click) needs: it seeds
+`cursor_positions[path]` *before* the tab is inserted into `groups`, reusing the exact
+session-restore mechanism ("Restore ordering is load-bearing" above) that already makes a freshly-
+mounted `MonacoEditorApp` seek to a given line/column at mount via its `initialCursor` prop --  no
+new Monaco-side plumbing needed. **Known, deliberate limitation**: this only actually jumps the
+cursor when the tab wasn't already open (a fresh mount is what reads `initialCursor` at all,
+per `monaco_editor.jac`'s own docstring) -- clicking a search result for an already-open tab
+activates it but doesn't force a re-scroll. Not silently swept under the rug: a real gap, worth a
+follow-up (an imperative `revealLine` call against the mounted editor's own ref) once it's
+actually felt in practice, not invented speculatively now.
 
 **Title bar (2026-08-28, `docs/roadmap.md` Phase 3)** -- `command_palette_open` moved here from
 being `command_palette.jac`'s own private state, specifically so `TitleBarApp`'s Command Center
@@ -192,6 +203,7 @@ tracker entry `2026-08-31-fixed-sidebar-overlaps-and-intercepts-clicks-on-bottom
 import from "react" { useEffect }
 import from "sonner" { Toaster, toast }
 import from src.workbench.file_tree.file_tree { app as FileTreeApp }
+import from src.workbench.search.search { app as SearchApp }
 import from src.workbench.editor_tabs.editor_tabs { app as EditorTabsApp }
 import from src.workbench.activity_bar.activity_bar { app as ActivityBarApp }
 import from src.workbench.command_palette.command_palette { app as CommandPaletteApp }
@@ -226,6 +238,7 @@ def:pub app(onToggleTheme: any) -> JsxElement {
     async def _toggle_panel(panel_id: str) -> None;
     def _upsert_tab_in_active_group(tab: dict[str, any]) -> list[dict[str, any]];
     async def open_tab(path: str, name: str) -> None;
+    async def open_search_result(path: str, name: str, line: int, column: int) -> None;
     async def open_diff_tab(path_a: str, name_a: str, path_b: str, name_b: str) -> None;
     async def select_tab(group_id: str, path: str) -> None;
     async def close_tab(group_id: str, path: str) -> None;
@@ -303,8 +316,13 @@ def:pub app(onToggleTheme: any) -> JsxElement {
         <TitleBarApp onOpenCommandPalette={lambda (e: any) { handle_command("workbench.action.showCommands"); }} />
         <div style={{"display": "flex", "flex": "1", "overflow": "hidden"}}>
             <ActivityBarApp activeViewId={active_view_id} onSelectView={select_view} />
-            <div style={{"width": "260px", "flexShrink": "0", "borderRight": "1px solid #2A2B2C", "overflow": "hidden"}}>
-                {(<FileTreeApp onOpenFile={open_tab} onCompareFiles={open_diff_tab} />) if active_view_id == "explorer" else None}
+            <div style={{"width": "260px", "flexShrink": "0", "borderRight": "1px solid #2A2B2C", "overflow": "hidden", "position": "relative"}}>
+                <div style={{"display": "block" if active_view_id == "explorer" else "none", "height": "100%"}}>
+                    <FileTreeApp onOpenFile={open_tab} onCompareFiles={open_diff_tab} />
+                </div>
+                <div style={{"display": "block" if active_view_id == "search" else "none", "height": "100%"}}>
+                    <SearchApp onOpenResult={open_search_result} />
+                </div>
             </div>
             <div style={{"flex": "1", "overflow": "hidden"}}>
                 <ResizablePanelGroup direction="horizontal">

@@ -7,12 +7,13 @@ call already made for the file tree's row renderer (`SidebarMenuSub` doesn't fit
 either).
 
 **Built now so Phase 4's new views have somewhere to mount, not so it does much yet.** `VIEWS`
-below has exactly one real entry (Explorer) because that's the only view container that exists in
-Phase 3 -- Search and Source Control land in Phase 4 per `roadmap.md`. Rather than wait until
-Phase 4 to invent the switching mechanism under time pressure, the mechanism (a plain list of
+originally had exactly one real entry (Explorer) because that's the only view container that
+existed in Phase 3 -- Search and Source Control land in Phase 4 per `roadmap.md`. Rather than wait
+until Phase 4 to invent the switching mechanism under time pressure, the mechanism (a plain list of
 `{id, title, icon}` view-container specs, one `active_view_id` owned by `workbench.jac`, one
-`onSelectView` callback) is built and wired end-to-end now -- adding a second view later is a
-one-entry addition to `VIEWS` plus one more branch in `workbench.jac`'s sidebar-content render, not
+`onSelectView` callback) was built and wired end-to-end in Phase 3 -- **Search (2026-08-31,
+`docs/roadmap.md` Phase 4) is the first real proof of that bet**: a one-entry addition to `VIEWS`
+below plus one more branch in `workbench.jac`'s sidebar-content render, exactly as anticipated, no
 new plumbing. `VIEWS` is a plain module-level list, not a graph-backed contribution registry like
 `command_registry.jac`'s `Command`/`Contributes` -- there's no dynamic extension-loading system yet
 to register into (same reasoning `command_registry.jac`'s own docstring gives for
@@ -38,7 +39,8 @@ across all of these components together in one pass, not accidentally, piece by 
 """
 
 glob VIEWS: list[dict[str, str]] = [
-    {"id": "explorer", "title": "Explorer", "icon": "files"}
+    {"id": "explorer", "title": "Explorer", "icon": "files"},
+    {"id": "search", "title": "Search", "icon": "search"}
 ];
 
 def:pub app(activeViewId: str, onSelectView: any) -> JsxElement {

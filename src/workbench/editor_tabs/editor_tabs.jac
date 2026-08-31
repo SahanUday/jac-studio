@@ -88,6 +88,14 @@ two additions, both purely presentational like everything else in this file:
   show/hide-on-hover behavior is pure CSS and doesn't need a re-render to drive it. A clean tab's
   close button is unchanged -- always visible, exactly as before this bullet.
 
+**Go-to-definition (2026-08-31, `docs/roadmap.md` Phase 4's native LSP client bullet)** --
+`onOpenLocation` is forwarded to every mounted `MonacoEditorApp` unmodified, the same "leaf
+reports, parent owns identity" shape `onCursorChange`/`onDirtyChange` already use. It's really
+`workbench.jac`'s `open_search_result` (the same handler `problems.jac`/`search.jac` already reuse
+for "open or activate this file's tab and jump to a line/column"), which is what lets a definition
+in a file whose tab isn't currently open or active still navigate correctly -- see
+`jac_definition_provider.jac`'s own docstring for why Monaco needs this threaded in at all.
+
   **Opacity-based, not `display`-based -- caught live, not by reading either library's docs.**
   The first version used Tailwind's `hidden`/`group-hover:inline-flex` (toggling `display`), which
   compiled and rendered with no error but never actually hid anything: `@vscode/codicons`' own
@@ -143,6 +151,7 @@ def:pub app(props: any) -> JsxElement {
     initial_cursors = props["initialCursors"];
     dirty_paths = props["dirtyPaths"];
     on_dirty_change = props["onDirtyChange"];
+    on_open_location = props["onOpenLocation"];
 
     <div style={{"display": "flex", "flexDirection": "column", "height": "100%", "overflow": "hidden"}}>
         <div role="tablist" aria-label="Open editors" style={{"display": "flex", "alignItems": "center", "borderBottom": "1px solid #2A2B2C", "background": "#191A1B", "flexShrink": "0"}}>
@@ -215,6 +224,7 @@ def:pub app(props: any) -> JsxElement {
                                 onCursorChange={on_cursor_change}
                                 initialCursor={initial_cursors[t["path"]] if t["path"] in initial_cursors else None}
                                 onDirtyChange={on_dirty_change}
+                                onOpenLocation={on_open_location}
                             />
                         )}
                     </div>

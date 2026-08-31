@@ -133,6 +133,17 @@ activates it but doesn't force a re-scroll. Not silently swept under the rug: a 
 follow-up (an imperative `revealLine` call against the mounted editor's own ref) once it's
 actually felt in practice, not invented speculatively now.
 
+**Source control, the third real sidebar view (2026-08-31, `docs/roadmap.md` Phase 4)** -- `ScmApp`
+follows the same mount-once-hide-via-CSS convention `FileTreeApp`/`SearchApp` already use, for the
+same reason: switching away from Source Control mid-typed-commit-message shouldn't lose it.
+`open_scm_diff` is `open_search_result`'s sibling for "open a view-specific derived tab" rather than
+a plain file -- it upserts a `"kind": "gitdiff"` tab (`{"filePath", "staged"}`, no real second path
+the way `open_diff_tab`'s compare-two-files tabs have) into the active group; see
+`editor_tabs.jac`'s and `scm_diff_editor.jac`'s own docstrings for why a git diff's content is
+fetched by the tab itself rather than passed in. `ScmApp` reports staged/unstaged/untracked commits
+and errors up through the same `onNotify={add_notification}` prop `terminal.jac` already uses --
+one notification mechanism for every Phase 4 feature, not a second one invented for SCM.
+
 **Title bar (2026-08-28, `docs/roadmap.md` Phase 3)** -- `command_palette_open` moved here from
 being `command_palette.jac`'s own private state, specifically so `TitleBarApp`'s Command Center
 button has something to call: `onOpenCommandPalette` dispatches through `handle_command`'s
@@ -204,6 +215,7 @@ import from "react" { useEffect }
 import from "sonner" { Toaster, toast }
 import from src.workbench.file_tree.file_tree { app as FileTreeApp }
 import from src.workbench.search.search { app as SearchApp }
+import from src.workbench.scm.scm { app as ScmApp }
 import from src.workbench.editor_tabs.editor_tabs { app as EditorTabsApp }
 import from src.workbench.activity_bar.activity_bar { app as ActivityBarApp }
 import from src.workbench.command_palette.command_palette { app as CommandPaletteApp }
@@ -240,6 +252,7 @@ def:pub app(onToggleTheme: any) -> JsxElement {
     async def open_tab(path: str, name: str) -> None;
     async def open_search_result(path: str, name: str, line: int, column: int) -> None;
     async def open_diff_tab(path_a: str, name_a: str, path_b: str, name_b: str) -> None;
+    async def open_scm_diff(path: str, name: str, staged: bool) -> None;
     async def select_tab(group_id: str, path: str) -> None;
     async def close_tab(group_id: str, path: str) -> None;
     async def split_group(group_id: str) -> None;
@@ -322,6 +335,9 @@ def:pub app(onToggleTheme: any) -> JsxElement {
                 </div>
                 <div style={{"display": "block" if active_view_id == "search" else "none", "height": "100%"}}>
                     <SearchApp onOpenResult={open_search_result} />
+                </div>
+                <div style={{"display": "block" if active_view_id == "scm" else "none", "height": "100%"}}>
+                    <ScmApp active={active_view_id == "scm"} onOpenDiff={open_scm_diff} onNotify={add_notification} />
                 </div>
             </div>
             <div style={{"flex": "1", "overflow": "hidden"}}>

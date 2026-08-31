@@ -1,6 +1,7 @@
 impl app.handle_before_mount(monaco: any) -> None {
     register_jac_language(monaco);
     register_jac_completion_provider(monaco);
+    register_jac_hover_provider(monaco);
 }
 
 impl app.handle_mount(editor: any, monaco: any) -> None {

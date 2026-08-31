@@ -124,3 +124,28 @@ test "_read_message returns None when the stream closes with nothing left to rea
 
     assert asyncio.run(_wrap_read_message(stream)) is None;
 }
+
+"""`jac lsp`'s own `get_hover_info` always wraps its answer in `MarkupContent` (`{kind, value}`),
+but `Hover.contents`'s declared wire type is the broader LSP union (`MarkupContent | MarkedString
+| MarkedString[]`), and a plain string is exactly what a `MarkedString` looks like over JSON --
+covering both shapes here rather than assuming only the one this particular server sends today."""
+test "_extract_hover_text reads MarkupContent's value field" {
+    assert _extract_hover_text({"kind": "plaintext", "value": "def foo() -> int"}) == "def foo() -> int";
+}
+
+test "_extract_hover_text returns None for MarkupContent with an empty value" {
+    assert _extract_hover_text({"kind": "plaintext", "value": ""}) is None;
+}
+
+test "_extract_hover_text passes through a plain MarkedString" {
+    assert _extract_hover_text("def foo() -> int") == "def foo() -> int";
+}
+
+test "_extract_hover_text returns None for an empty string" {
+    assert _extract_hover_text("") is None;
+}
+
+test "_extract_hover_text returns None for an unrecognized shape" {
+    assert _extract_hover_text(None) is None;
+    assert _extract_hover_text(["def foo() -> int"]) is None;
+}

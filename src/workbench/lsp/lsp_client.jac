@@ -390,6 +390,47 @@ async def:pub notify_document_save(path: str, content: str) -> None {
     });
 }
 
+"""Pulled out of `get_hover` as its own pure, testable step -- `jac lsp`'s `get_hover_info` always
+wraps its answer in an LSP `MarkupContent` (`{kind, value}`), but the wire type it's declared as
+(`Hover.contents`) is the broader LSP union (`MarkupContent | MarkedString | MarkedString[]`), and a
+plain string is exactly what a `MarkedString` looks like over JSON -- handling both shapes here
+rather than assuming the one this particular server happens to always send today."""
+def:pub _extract_hover_text(contents: any) -> str | None {
+    if isinstance(contents, dict) {
+        value = contents.get("value", "");
+        return value if value else None;
+    }
+    if isinstance(contents, str) {
+        return contents if contents else None;
+    }
+    return None;
+}
+
+"""Syncs `content`, then asks `jac lsp` for hover info at `line`/`column` (same 1-based convention
+`get_completions` uses, converted to LSP's 0-based `line`/`character` at the boundary). Returns
+the hover text as a plain string (or `None` for "no hover info here," e.g. whitespace or a token
+`jac lsp` couldn't resolve a symbol for) -- `get_node_info`'s own output (confirmed against
+`engine.impl.jac`) is already a small, human-readable summary, not structured data worth a richer
+shape."""
+async def:pub get_hover(path: str, content: str, line: int, column: int) -> str | None {
+    if not _is_jac_file(path) {
+        return None;
+    }
+    handle = await _ensure_process();
+    if handle is None {
+        return None;
+    }
+    await _sync_content(handle, path, content);
+    result = await _send_request(handle, "textDocument/hover", {
+        "textDocument": {"uri": _path_to_uri(path)},
+        "position": {"line": line - 1, "character": column - 1}
+    });
+    if result is None or not isinstance(result, dict) {
+        return None;
+    }
+    return _extract_hover_text(result.get("contents"));
+}
+
 """Syncs `content`, then asks for completions at `line`/`column` (1-based, matching this project's
 own convention everywhere else -- `handle_cursor_change`, `get_line_changes`, ... -- converted to
 LSP's 0-based `line`/`character` at the boundary). Returns a small, client-friendly shape

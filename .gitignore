@@ -11,3 +11,11 @@ dist/
 
 # Client (web-app) build tooling.
 node_modules/
+
+# Local fixture workspace for manually/programmatically verifying jac-studio's own features
+# (Explorer, search, SCM, task runner, native LSP client, ...) end to end -- a testing aid, not a
+# product artifact, and never committed. See jac-studio-implementation's "Keeping testing-workspace
+# current" section for what it covers and when to update it. It's a real, separate git repo of its
+# own (nested inside this one on purpose, so SCM features have something real to point at) -- do
+# not run destructive git commands here without first `cd`-ing in and confirming you're inside it.
+testing-workspace/

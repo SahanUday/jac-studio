@@ -475,6 +475,39 @@ async def:pub get_definition(path: str, content: str, line: int, column: int) ->
     return _lsp_location_to_dict(result);
 }
 
+"""Syncs `content`, then asks `jac lsp` for every reference to the symbol at `line`/`column` --
+`get_references` (`engine.impl.jac`) always returns a plain `list[Location]`, never `None`, unlike
+`get_definition`'s `Optional[Location]` above -- this mirrors that with an empty list for "nothing
+found," not `None`. That list already includes the symbol's own declaration (`[*node_selected.sym.
+defn, *node_selected.sym.uses]`, confirmed against the server source), matching real "Find All
+References" convention, where the declaration itself is one of the listed references."""
+async def:pub get_references(path: str, content: str, line: int, column: int) -> list[dict[str, any]] {
+    if not _is_jac_file(path) {
+        return [];
+    }
+    handle = await _ensure_process();
+    if handle is None {
+        return [];
+    }
+    await _sync_content(handle, path, content);
+    result = await _send_request(handle, "textDocument/references", {
+        "textDocument": {"uri": _path_to_uri(path)},
+        "position": {"line": line - 1, "character": column - 1},
+        "context": {"includeDeclaration": True}
+    });
+    if not isinstance(result, list) {
+        return [];
+    }
+    locations = [];
+    for loc in result {
+        parsed = _lsp_location_to_dict(loc);
+        if parsed is not None {
+            locations.append(parsed);
+        }
+    }
+    return locations;
+}
+
 """Syncs `content`, then asks for completions at `line`/`column` (1-based, matching this project's
 own convention everywhere else -- `handle_cursor_change`, `get_line_changes`, ... -- converted to
 LSP's 0-based `line`/`character` at the boundary). Returns a small, client-friendly shape

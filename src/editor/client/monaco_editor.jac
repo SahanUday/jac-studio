@@ -89,15 +89,18 @@ without triggering one" idiom `editor_ref` already uses) holds the live
 real text to index, not an empty placeholder), and `notify_document_save` fires from `handle_save`
 alongside `save_document`, giving `jac lsp` a fresh full-content sync and triggering its own
 `type_check` (which pushes updated `publishDiagnostics` into the Problems panel) on every save, not
-just on completion requests. `handle_before_mount` now composes four registrations, not one --
+just on completion requests. `handle_before_mount` now composes five registrations, not one --
 `register_jac_language` (unchanged), `register_jac_completion_provider`
 (`jac_completion_provider.jac`), `register_jac_hover_provider` (`jac_hover_provider.jac`,
-2026-08-31), and `register_jac_definition_provider` (`jac_definition_provider.jac`, 2026-08-31,
-new in this PR) -- all idempotent-guarded internally, so calling all four on every tab's mount is
-safe. `onOpenLocation` is the same `open_search_result(path, name, line, column)` handler
+2026-08-31), `register_jac_definition_provider` (`jac_definition_provider.jac`, 2026-08-31), and
+`register_jac_reference_provider` (`jac_reference_provider.jac`, 2026-08-31, new in this PR) --
+all idempotent-guarded internally, so calling all five on every tab's mount is safe.
+`onOpenLocation` is the same `open_search_result(path, name, line, column)` handler
 `problems.jac`/`search.jac` already reuse, threaded down through `editor_tabs.jac` -- see
 `jac_definition_provider.jac`'s own docstring for why go-to-definition needs it at all (unlike
-hover/completion, it can jump to a file whose tab isn't the active one)."""
+hover/completion, it can jump to a file whose tab isn't the active one); `jac_reference_provider.jac`
+needs no separate wiring for the same reason -- see its own docstring for why it reuses that same
+registered editor opener rather than needing `onOpenLocation` passed to it directly."""
 
 import from "@monaco-editor/react" { Editor }
 import from src.editor.document_service { open_document, save_document }
@@ -105,6 +108,7 @@ import from src.editor.client.jac_language { register_jac_language }
 import from src.editor.client.jac_completion_provider { register_jac_completion_provider }
 import from src.editor.client.jac_hover_provider { register_jac_hover_provider }
 import from src.editor.client.jac_definition_provider { register_jac_definition_provider }
+import from src.editor.client.jac_reference_provider { register_jac_reference_provider }
 import from src.workbench.scm.git_service { get_line_changes }
 import from src.workbench.lsp.lsp_client { notify_document_open, notify_document_save }
 

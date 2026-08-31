@@ -29,7 +29,19 @@ LSP's `CompletionItemKind` and Monaco's own enum use *different* integer values 
 concept (LSP's `Function = 3`, Monaco's `Function = 1`) -- `_LSP_KIND_TO_MONACO_NAME` maps the LSP
 integer to the shared *name* (`"Function"`), then looks that name up against Monaco's real enum
 object, so a future Monaco upgrade that renumbers its own enum can't silently desync this mapping
-the way two independently-hardcoded integer tables could."""
+the way two independently-hardcoded integer tables could.
+
+**`sortText` preserves `jac lsp`'s own result ordering -- caught live, not assumed.** `jac lsp`
+already returns document-relevant symbols first (verified directly against the raw RPC response:
+completing `p.` on a `Person`-typed variable put `p`, `Person`, and `greet` -- the file's own
+symbols -- ahead of a long tail of Python-typeshed globals its completion engine also considers in
+scope). But Monaco's `provideCompletionItems` re-sorts by `label` when an item carries no
+`sortText` of its own, which alphabetizes dunder builtins (`__build_class__`, `__doc__`, ...) to
+the very top and buries the server's actual relevance ordering -- confirmed live by triggering a
+real completion and reading the rendered suggest-widget rows, not just the raw JSON. Each
+suggestion's `sortText` is a zero-padded index (`"00000"`, `"00001"`, ...) matching its position in
+`get_completions`'s own returned list, so Monaco's sort is stable with the server's intended order
+instead of silently overriding it."""
 
 import from src.workbench.lsp.lsp_client { get_completions }
 
@@ -57,14 +69,15 @@ async def _provide_completions(monaco: any, model: any, position: any) -> dict[s
     items = await get_completions(path, content, position.lineNumber, position.column);
 
     suggestions = [];
-    for item in items {
+    for (idx, item) in enumerate(items) {
         kind_name = _LSP_KIND_TO_MONACO_NAME.get(item["kind"], "Text");
         suggestions.append({
             "label": item["label"],
             "kind": monaco.languages.CompletionItemKind[kind_name],
             "detail": item["detail"],
             "insertText": item["insertText"],
-            "range": completion_range
+            "range": completion_range,
+            "sortText": str(idx).rjust(5, "0")
         });
     }
     return {"suggestions": suggestions};

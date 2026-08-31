@@ -62,6 +62,13 @@ duplicate them, and a purely graph-based `batch`-max filter is the only fix that
 multi-request repro for that class of bug (see that module's docstring for the two approaches that
 didn't).
 
+**`_handle_publish_diagnostics` ends with an explicit `Jac.acommit()` -- a third, genuinely new
+persistence finding, distinct from the two just mentioned.** Graph writes made from a background
+`asyncio.create_task` (this handler's own call context, reacting to an unsolicited server
+notification with no HTTP request/response cycle wrapping it) never go through jaseci's normal
+per-request auto-commit at all, not just unreliably -- see that function's own docstring for the
+full live repro and why an explicit commit call was the fix, not another read-side workaround.
+
 **`textDocument/didClose` is never sent -- a deliberate, small, accepted scope cut, not an
 oversight.** Closing an editor tab genuinely unmounts `MonacoEditorApp` (unlike a sidebar view's
 mount-once-hide-via-CSS), so a `can with exit` hook could call it -- but the only cost of not doing
@@ -74,6 +81,7 @@ import asyncio;
 import json;
 import os;
 import time;
+import from jaclang { JacRuntime as Jac }
 import from jaclang.project.config { JacConfig }
 import from src.workbench.workspace.workspace_service { get_current_workspace, ensure_path_reachable }
 import from src.workbench.diagnostics.diagnostics { add_diagnostic, clear_diagnostics }
@@ -94,6 +102,21 @@ def _lsp_enabled -> bool {
         return False;
     }
     return bool(section.get("enabled", False));
+}
+
+"""`jac lsp` is a language server for exactly one language -- every public entry point below checks
+this before doing anything, rather than trusting callers to remember. **Caught live, not designed
+in from the start**: `monaco_editor.jac` mounts for every open tab regardless of file type, so its
+first version synced *every* opened file (`.txt`, `.py`, anything) to the same shared `jac lsp`
+process. That's not just pointless work -- `jac lsp`'s own dispatcher processes one type-check task
+at a time (confirmed live via its own debug logging, each task taking 10-60+ seconds on a real,
+if small, workspace), so a backlog of type-check requests for files `jac lsp` was never going to
+usefully check starved out the requests that actually mattered, and real `.jac` diagnostics never
+surfaced within any reasonable wait. Guarding here, once, protects every current and future caller
+(`notify_document_open`, `notify_document_save`, `get_completions`) without relying on each call
+site to remember the same check."""
+def:pub _is_jac_file(path: str) -> bool {
+    return path.endswith(".jac");
 }
 
 def:pub _path_to_uri(path: str) -> str {
@@ -171,6 +194,29 @@ async def _drain_stderr(handle: LspProcess) -> None {
     }
 }
 
+"""**Ends with an explicit `Jac.acommit()` -- load-bearing, not defensive padding, caught live.**
+Every other graph write in this project (`add_diagnostic` from `task_service.jac`'s problem
+matchers, every `workspace_service.jac` mutation, ...) runs as the direct, synchronous body of a
+request that a real HTTP call is waiting on -- jaseci's dispatcher commits those durably in
+`_finalize_call_response`, *after* the function returns, as part of finishing that response. This
+function is different: it runs inside `_read_loop`'s background `asyncio.create_task`, reacting to
+an unsolicited notification from the `jac lsp` subprocess, with no HTTP request/response cycle
+wrapping it at all -- so that automatic per-request commit never fires. Confirmed live, not assumed:
+`add_diagnostic` genuinely returned `True` (its own in-process graph mutation succeeded) but a
+*separate*, later `list_all_diagnostics()` call kept coming back empty -- the identical symptom the
+"field mutation not committed" and "edge deletion not committed" findings elsewhere in this project
+describe, but for a fresh reason (no request boundary to hook a commit to at all, not an unreliable
+one) rather than either of those. `await Jac.acommit()` (`import from jaclang { JacRuntime as Jac }`
+-- **not** ambient the way `root`/`jid`/`jobj` are, caught live: an earlier version assumed it was,
+since a standalone repro script had it resolve with no import at all, but this project's own module
+context needs the explicit import or the call fails at runtime with `name 'Jac' is not defined`,
+silently killing the reader task the same way an uncaught exception here always would -- exactly
+why the `try`/`except` wrapping this call in `_read_loop` isn't optional either) forces the same
+durable commit `_finalize_call_response` performs internally, explicitly. `Jac` is checker-typed as
+`Unknown` (the same untyped-Python-interop boundary `jac-python-interop`'s guide describes for any
+object the
+checker can't fully type), hence the `as any` cast -- not a workaround for a real type error, just
+satisfying the checker about a boundary it was never going to resolve."""
 async def _handle_publish_diagnostics(params: dict[str, any]) -> None {
     path = _uri_to_path(params.get("uri", ""));
     if path == "" {
@@ -179,6 +225,7 @@ async def _handle_publish_diagnostics(params: dict[str, any]) -> None {
     diags = params.get("diagnostics", []);
     clear_diagnostics(path);
     if len(diags) == 0 {
+        await (Jac as any).acommit();
         return;
     }
     ensure_path_reachable(path);
@@ -191,6 +238,7 @@ async def _handle_publish_diagnostics(params: dict[str, any]) -> None {
         column = int(range_start.get("character", 0)) + 1;
         add_diagnostic(path, message, severity, line, column, "jac lsp", batch);
     }
+    await (Jac as any).acommit();
 }
 
 """The background task started once per process, alongside it -- reads every message `jac lsp`
@@ -218,7 +266,11 @@ async def _read_loop(handle: LspProcess) -> None {
             continue;
         }
         if method == "textDocument/publishDiagnostics" {
-            await _handle_publish_diagnostics(msg.get("params", {}));
+            try {
+                await _handle_publish_diagnostics(msg.get("params", {}));
+            } except Exception as e {
+                append_log(_LSP_LOG_CHANNEL, "[error] publishDiagnostics handling failed: " + str(e));
+            }
         } elif method is not None {
             append_log(_LSP_LOG_CHANNEL, "[notification] " + method);
         }
@@ -306,6 +358,9 @@ async def _sync_content(handle: LspProcess, path: str, content: str) -> None {
 }
 
 async def:pub notify_document_open(path: str, content: str) -> None {
+    if not _is_jac_file(path) {
+        return;
+    }
     handle = await _ensure_process();
     if handle is None {
         return;
@@ -322,6 +377,9 @@ notifies the server this document was saved -- `jac lsp`'s own `did_save` handle
 `type_check`, so this is also how a save-triggered diagnostics refresh happens, not just a completion
 request."""
 async def:pub notify_document_save(path: str, content: str) -> None {
+    if not _is_jac_file(path) {
+        return;
+    }
     handle = await _ensure_process();
     if handle is None {
         return;
@@ -340,6 +398,9 @@ client-side provider (`jac_completion_provider.jac`) maps `kind` onto Monaco's o
 numbered `CompletionItemKind` enum, so translating the LSP integer here would just move that mapping
 without simplifying anything."""
 async def:pub get_completions(path: str, content: str, line: int, column: int) -> list[dict[str, any]] {
+    if not _is_jac_file(path) {
+        return [];
+    }
     handle = await _ensure_process();
     if handle is None {
         return [];

@@ -67,6 +67,21 @@ async def _wrap_read_message(stream: any) -> dict[str, any] | None {
     return await _read_message(stream);
 }
 
+test "_is_jac_file accepts a real .jac path" {
+    assert _is_jac_file("/home/user/project/main.jac");
+}
+
+"""Regression test for a real, live-caught bug: `monaco_editor.jac` mounts for every open tab
+regardless of file type, so without this guard, opening a `.txt`/`.py`/anything-else tab would sync
+it to `jac lsp` too -- confirmed live to matter, not just theoretically wasteful: `jac lsp`'s own
+dispatcher processes one type-check task at a time, so a backlog of pointless non-`.jac` type-checks
+starved out the real `.jac` diagnostics this client exists to surface."""
+test "_is_jac_file rejects non-.jac paths" {
+    assert not _is_jac_file("/home/user/project/notes.txt");
+    assert not _is_jac_file("/home/user/project/app.py");
+    assert not _is_jac_file("/home/user/project/README");
+}
+
 test "_path_to_uri prefixes a real filesystem path with file://" {
     assert _path_to_uri("/home/user/project/main.jac") == "file:///home/user/project/main.jac";
 }

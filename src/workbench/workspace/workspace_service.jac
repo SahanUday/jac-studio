@@ -250,13 +250,35 @@ Prunes `DEFAULT_EXCLUDED_DIRS` from `os.walk`'s own traversal (mutating `dirname
 standard way to stop `os.walk` descending into a subtree) rather than filtering results
 afterward -- the excluded directories are exactly the ones that would be enormous to walk
 (`node_modules`), so skipping them during the walk, not after, is the difference between this
-being fast and not."""
+being fast and not.
+
+**Falls back to a graph query on a cache miss (2026-08-31, Phase 4's search-in-files bullet) --
+does not just return `[]`.** Found live, not assumed: `search_service.jac` calling this function
+via a cross-module import (`search_in_files` reusing this exact helper, per the "reuse existing
+infrastructure" principle) got back an empty `_cached_workspace_jid` even though `open_workspace`
+had genuinely just populated it moments earlier in the *same* request session, confirmed via
+`jid(root)` being byte-for-byte identical across both call paths -- the cache dict itself, not
+`root`, differs depending on whether this function is reached as its own directly-registered
+`/function/list_all_files` endpoint or as a nested call from another module's `def:pub`. Root cause
+not fully isolated (a real, open question -- see tracker entry
+`2026-08-31-cross-module-def-pub-call-sees-empty-glob-cache`), but the fix is the same one
+`get_or_create_workspace` above already needed for a different reason: **never trust a `glob`
+cache's absence as proof no workspace is open** -- fall back to the real graph query
+(`[root-->[?:Workspace]]`) the same way that function does, rather than an unconditional early
+`return []`. The perf cost of that fallback query only applies on an actual cache miss, same
+trade-off `get_or_create_workspace` already accepted."""
 def:pub list_all_files -> list[dict[str, str]] {
     key = jid(root);
-    if key not in _cached_workspace_jid {
-        return [];
+    if key in _cached_workspace_jid {
+        ws = jobj(_cached_workspace_jid[key]) as Workspace;
+    } else {
+        existing = [root-->[?:Workspace]];
+        if len(existing) == 0 {
+            return [];
+        }
+        ws = existing[0];
+        _cached_workspace_jid[key] = jid(ws);
     }
-    ws = jobj(_cached_workspace_jid[key]) as Workspace;
     if ws.root_path == "" or not os.path.isdir(ws.root_path) {
         return [];
     }

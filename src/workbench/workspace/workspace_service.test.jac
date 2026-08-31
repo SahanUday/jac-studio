@@ -241,6 +241,30 @@ test "list_all_files reflects files added after the workspace was opened (no sta
     assert "new_after_scan.txt" in [f["name"] for f in files];
 }
 
+"""Regression test for `2026-08-31-cross-module-def-pub-call-sees-empty-glob-cache`: a cross-module
+`def:pub` call (`search_service.jac`'s `search_in_files` calling this module's `list_all_files`)
+saw an empty `_cached_workspace_jid`, even though `open_workspace` had genuinely just populated it
+in the same request session and `jid(root)` was confirmed identical across both call paths. This
+test can't reproduce the cross-module call itself (that only manifests over a real HTTP round trip,
+not within one `jac test` process -- see the tracker entry), but it does directly exercise the fix:
+`list_all_files` must not go blind just because its own module-level cache dict happens to be
+empty, as long as the graph still has a real `Workspace` node to fall back to."""
+test "list_all_files falls back to a graph query and still works when its own cache is empty" {
+    _reset_workspace_cache_for_tests();
+    fixture = make_fixture();
+    open_workspace(fixture);
+    list_all_files();
+
+    # Simulate exactly the bug's observed symptom directly: jid(root) unchanged, but the
+    # module-level cache dict that list_all_files reads from is empty -- the Workspace node itself
+    # is untouched in the graph, only the cache is cleared.
+    _cached_workspace_jid.clear();
+
+    files = list_all_files();
+
+    assert len(files) == 3;
+}
+
 test "create_file makes a real empty file on disk and it appears in the listing" {
     _reset_workspace_cache_for_tests();
     fixture = make_fixture();

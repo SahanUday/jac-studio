@@ -22,6 +22,9 @@ impl app.handle_mount(editor: any, monaco: any) -> None {
     update_breadcrumb();
     decorations_ref.current = editor.createDecorationsCollection([]);
     apply_git_decorations();
+    breakpoints_ref.current = editor.createDecorationsCollection([]);
+    apply_breakpoint_decorations();
+    editor.onMouseDown(handle_gutter_click);
 }
 
 impl app.handle_save -> None {
@@ -103,6 +106,43 @@ impl app.apply_git_decorations -> None {
 
 impl app.handle_cursor_change(e: any) -> None {
     onCursorChange(path, e.position.lineNumber, e.position.column);
+}
+
+"""Paints a red dot into the glyph margin for every line in `breakpoint_lines` -- called once at
+mount (after the stored breakpoints load) and again after every toggle, the same "the action that
+changes state re-applies the decorations" convention `apply_git_decorations` already uses."""
+impl app.apply_breakpoint_decorations -> None {
+    if not breakpoints_ref.current or not monaco_ref.current {
+        return;
+    }
+    monaco = monaco_ref.current;
+    js_decorations = [
+        {
+            "range": new(monaco.Range, line, 1, line, 1),
+            "options": {"isWholeLine": True, "glyphMarginClassName": "breakpoint-glyph"}
+        }
+        for line in breakpoint_lines
+    ];
+    breakpoints_ref.current.set(js_decorations);
+}
+
+"""Toggles a breakpoint on the clicked line and persists it via `dap_client.jac`'s
+`set_breakpoints` -- only reacts to a click inside the glyph margin specifically
+(`MouseTargetType.GUTTER_GLYPH_MARGIN`), not the line-decorations lane the git gutter already owns
+or a click on the line's own text."""
+impl app.handle_gutter_click(e: any) -> None {
+    if not monaco_ref.current {
+        return;
+    }
+    monaco = monaco_ref.current;
+    if e.target.type != monaco.editor.MouseTargetType.GUTTER_GLYPH_MARGIN {
+        return;
+    }
+    line = e.target.position.lineNumber;
+    updated = [l for l in breakpoint_lines if l != line] if line in breakpoint_lines else breakpoint_lines + [line];
+    breakpoint_lines = updated;
+    apply_breakpoint_decorations();
+    await set_breakpoints(path, updated);
 }
 
 impl app.handle_content_change(e: any) -> None {

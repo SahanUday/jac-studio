@@ -256,3 +256,18 @@
     height: 4px;
     background: #94151b;
 }
+
+/* DAP breakpoint gutter (docs/roadmap.md Phase 4's DAP client bullet) --
+   monaco_editor.jac's glyphMarginClassName target, painted into Monaco's glyph-margin lane (a
+   separate lane from the git gutter's line-decorations lane above, so the two never collide on
+   the same line). A plain filled circle, matching real VS Code's own breakpoint dot convention. */
+.breakpoint-glyph::before {
+    content: "";
+    position: absolute;
+    left: 5px;
+    top: 5px;
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: #e51400;
+}

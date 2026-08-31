@@ -15,6 +15,7 @@ radius = "small"
 menuAccent = "subtle"
 menuColor = "default"
 [dependencies]
+debugpy = ">=1.8.0"
 [dependencies.npm]
 sonner = "^2.0.7"
 cmdk = "^1.1.1"

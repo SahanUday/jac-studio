@@ -255,6 +255,7 @@ import from src.workbench.status_bar.status_bar { app as StatusBarApp }
 import from src.workbench.terminal.terminal { app as TerminalApp }
 import from src.workbench.output.output { app as OutputApp }
 import from src.workbench.tasks.problems { app as ProblemsApp }
+import from src.workbench.debug.debug_console { app as DebugConsoleApp }
 import from src.workbench.tasks.task_picker { app as TaskPickerApp }
 import from src.workbench.tasks.task_service { run_task }
 import from src.workbench.commands.command_registry { list_commands }
@@ -446,6 +447,21 @@ def:pub app(onToggleTheme: any) -> JsxElement {
                     >
                         Problems
                     </button>
+                    <button
+                        role="tab"
+                        aria-selected={active_bottom_panel == "debug"}
+                        onClick={lambda (e: any) { _toggle_panel("debug"); }}
+                        style={{
+                            "background": "transparent",
+                            "border": "none",
+                            "borderBottom": "1px solid " + ("#bfbfbf" if active_bottom_panel == "debug" else "transparent"),
+                            "color": "#CCCCCC" if active_bottom_panel == "debug" else "#8C8C8C",
+                            "padding": "0.4rem 0",
+                            "cursor": "pointer"
+                        }}
+                    >
+                        Debug Console
+                    </button>
                 </div>
                 <span
                     aria-label="Close Panel"
@@ -466,6 +482,9 @@ def:pub app(onToggleTheme: any) -> JsxElement {
                 </div>
                 <div style={{"display": "block" if active_bottom_panel == "problems" else "none", "height": "100%"}}>
                     <ProblemsApp active={terminal_open and active_bottom_panel == "problems"} onOpenLocation={open_search_result} />
+                </div>
+                <div style={{"display": "block" if active_bottom_panel == "debug" else "none", "height": "100%"}}>
+                    <DebugConsoleApp active={terminal_open and active_bottom_panel == "debug"} path={active_tab_path} onOpenLocation={open_search_result} />
                 </div>
             </div>
         </div>

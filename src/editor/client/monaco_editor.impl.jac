@@ -1,3 +1,8 @@
+impl app.handle_before_mount(monaco: any) -> None {
+    register_jac_language(monaco);
+    register_jac_completion_provider(monaco);
+}
+
 impl app.handle_mount(editor: any, monaco: any) -> None {
     editor_ref.current = editor;
     monaco_ref.current = monaco;
@@ -18,12 +23,14 @@ impl app.handle_save -> None {
     if not editor_ref.current {
         return;
     }
-    await save_document(path, editor_ref.current.getValue());
+    saved_content = editor_ref.current.getValue();
+    await save_document(path, saved_content);
     if dirty {
         dirty = False;
         onDirtyChange(path, False);
     }
     await apply_git_decorations();
+    await notify_document_save(path, saved_content);
 }
 
 """Fetches the current `HEAD`-vs-working-tree line ranges and paints them into the gutter --

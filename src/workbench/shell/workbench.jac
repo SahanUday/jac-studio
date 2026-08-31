@@ -143,6 +143,10 @@ the way `open_diff_tab`'s compare-two-files tabs have) into the active group; se
 fetched by the tab itself rather than passed in. `ScmApp` reports staged/unstaged/untracked commits
 and errors up through the same `onNotify={add_notification}` prop `terminal.jac` already uses --
 one notification mechanism for every Phase 4 feature, not a second one invented for SCM.
+`git_status_by_path` is the other half of `ScmApp`'s output: a flattened `path -> status letter`
+map, reported via `onStatusChange={set_git_status}` every time the SCM view refreshes, forwarded
+unmodified to `FileTreeApp` as `gitStatus` for the Explorer's own decorations -- see
+`file_tree.jac`'s docstring for why that component stays a pure consumer of it.
 
 **Title bar (2026-08-28, `docs/roadmap.md` Phase 3)** -- `command_palette_open` moved here from
 being `command_palette.jac`'s own private state, specifically so `TitleBarApp`'s Command Center
@@ -245,6 +249,7 @@ def:pub app(onToggleTheme: any) -> JsxElement {
     has notifications: list[dict[str, any]] = [];
     has next_notification_id: int = 1;
     has notification_panel_open: bool = False;
+    has git_status_by_path: dict[str, str] = {};
 
     async def _save_session -> None;
     async def _toggle_panel(panel_id: str) -> None;
@@ -269,6 +274,7 @@ def:pub app(onToggleTheme: any) -> JsxElement {
     def dismiss_notification(notification_id: int) -> None;
     def clear_notifications -> None;
     def set_notification_panel_open(next_open: bool) -> None;
+    def set_git_status(status_map: dict[str, str]) -> None;
 
     async can with entry {
         commands = await list_commands();
@@ -331,13 +337,13 @@ def:pub app(onToggleTheme: any) -> JsxElement {
             <ActivityBarApp activeViewId={active_view_id} onSelectView={select_view} />
             <div style={{"width": "260px", "flexShrink": "0", "borderRight": "1px solid #2A2B2C", "overflow": "hidden", "position": "relative"}}>
                 <div style={{"display": "block" if active_view_id == "explorer" else "none", "height": "100%"}}>
-                    <FileTreeApp onOpenFile={open_tab} onCompareFiles={open_diff_tab} />
+                    <FileTreeApp onOpenFile={open_tab} onCompareFiles={open_diff_tab} gitStatus={git_status_by_path} />
                 </div>
                 <div style={{"display": "block" if active_view_id == "search" else "none", "height": "100%"}}>
                     <SearchApp onOpenResult={open_search_result} />
                 </div>
                 <div style={{"display": "block" if active_view_id == "scm" else "none", "height": "100%"}}>
-                    <ScmApp active={active_view_id == "scm"} onOpenDiff={open_scm_diff} onNotify={add_notification} />
+                    <ScmApp active={active_view_id == "scm"} onOpenDiff={open_scm_diff} onNotify={add_notification} onStatusChange={set_git_status} />
                 </div>
             </div>
             <div style={{"flex": "1", "overflow": "hidden"}}>

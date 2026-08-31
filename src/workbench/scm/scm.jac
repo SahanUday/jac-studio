@@ -32,6 +32,14 @@ purely this component never re-asking. Fixed the same way `output.jac` already s
 (`workbench.jac` passes `active_view_id == "scm"`) drives a `useEffect([active])` that refreshes
 once whenever this view becomes the visible one, not just at first mount.
 
+**Reports a flattened `path -> status letter` map up via `onStatusChange`, for `file_tree.jac`'s
+Explorer decorations** -- the roadmap's own "gutter/tree decorations" phrase names two distinct
+surfaces (`monaco_editor.jac`'s gutter, and the *Explorer* tree, not just this view's own flat
+list), and `workbench.jac` is the natural place to hold that map since it's what already owns both
+`ScmApp` and `FileTreeApp` as siblings. Sent every time `refresh_status` runs (mount-activation,
+after any mutating action, or a manual refresh) -- an Explorer decoration is only ever as fresh as
+this view's own last fetch, the same "no live file-watcher" limitation already scoped above.
+
 **Clicking a file row opens a diff, not the plain file** -- the entire point of the SCM view is
 "what changed," so `onOpenDiff(path, name, staged)` (not a plain `onOpenFile`) is the one click
 action every row shares, whether staged or unstaged. See `scm_diff_editor.jac`'s own docstring for
@@ -154,7 +162,7 @@ def:pub ScmFileRow(props: any) -> JsxElement {
     </div>
 }
 
-def:pub app(active: bool, onOpenDiff: any, onNotify: any) -> JsxElement {
+def:pub app(active: bool, onOpenDiff: any, onNotify: any, onStatusChange: any) -> JsxElement {
     has status: dict[str, any] = _EMPTY_STATUS;
     has commit_message: str = "";
     has committing: bool = False;

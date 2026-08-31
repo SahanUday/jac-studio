@@ -1,5 +1,16 @@
 impl app.refresh_status -> None {
     status = await get_scm_status();
+    status_map = {};
+    for item in status["staged"] {
+        status_map[item["path"]] = item["status"];
+    }
+    for item in status["unstaged"] {
+        status_map[item["path"]] = item["status"];
+    }
+    for item in status["untracked"] {
+        status_map[item["path"]] = "U";
+    }
+    onStatusChange(status_map);
 }
 
 impl app.handle_stage(path: str) -> None {

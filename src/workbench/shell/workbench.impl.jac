@@ -265,6 +265,10 @@ impl app.set_notification_panel_open(next_open: bool) -> None {
     notification_panel_open = next_open;
 }
 
+impl app.set_git_status(status_map: dict[str, str]) -> None {
+    git_status_by_path = status_map;
+}
+
 impl app.set_context(key: str, value: bool) -> None {
     updated_context = {**context};
     updated_context[key] = value;

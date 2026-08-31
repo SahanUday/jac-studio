@@ -66,6 +66,18 @@ directory = "src"
 [placement.pins]
 "src.workbench.output.output_service" = "server"
 
+# jac_completion_provider.jac is genuinely client-only (its whole job is calling into the real
+# browser `monaco` global), but it also imports a server def:pub function
+# (lsp_client.get_completions) for the one RPC boundary it needs -- the placement solver's evidence
+# rules apparently read that server-side import as reason to place the *whole module* server-side
+# instead of just lowering that one call into an RPC boundary, the inverse of the output_service.jac
+# finding above (there: no server evidence at all, wrongly placed client; here: server evidence from
+# one import, wrongly placed server despite genuinely client-only code everywhere else in the file).
+# Confirmed live: without this pin, `register_jac_completion_provider(monaco)` itself gets called as
+# a server RPC, and `monaco` arrives server-side as an opaque placeholder with no `.languages`
+# attribute. See tracker entry 2026-08-31-client-module-with-one-server-import-pulled-server-wholesale.
+"src.editor.client.jac_completion_provider" = "client"
+
 # Deny-by-default: the integrated terminal (src/workbench/terminal/terminal_service.jac) refuses to
 # run any command until this is explicitly flipped on, same posture docs/architecture.md scopes for
 # the desktop `shell` capability -- "same trust level as [the user] opening their own terminal."

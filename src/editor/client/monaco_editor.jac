@@ -82,12 +82,24 @@ reopened -- the same "the action that changes state re-fetches it" convention `s
 its own stage/unstage/discard/commit actions. `decorations_ref` (a `Ref`, same "survives re-renders
 without triggering one" idiom `editor_ref` already uses) holds the live
 `IEditorDecorationsCollection` returned by `createDecorationsCollection` so a later re-apply calls
-`.set(...)` on the same collection instead of accumulating a fresh one on top of the last."""
+`.set(...)` on the same collection instead of accumulating a fresh one on top of the last.
+
+**LSP document sync (2026-08-31, `docs/roadmap.md` Phase 4's native LSP client bullet)** --
+`notify_document_open` fires once, right after the file's own content loads (the LSP server needs
+real text to index, not an empty placeholder), and `notify_document_save` fires from `handle_save`
+alongside `save_document`, giving `jac lsp` a fresh full-content sync and triggering its own
+`type_check` (which pushes updated `publishDiagnostics` into the Problems panel) on every save, not
+just on completion requests. `handle_before_mount` now composes two registrations, not one --
+`register_jac_language` (unchanged) and `register_jac_completion_provider`
+(`jac_completion_provider.jac`) -- both idempotent-guarded internally, so calling both on every
+tab's mount is safe."""
 
 import from "@monaco-editor/react" { Editor }
 import from src.editor.document_service { open_document, save_document }
 import from src.editor.client.jac_language { register_jac_language }
+import from src.editor.client.jac_completion_provider { register_jac_completion_provider }
 import from src.workbench.scm.git_service { get_line_changes }
+import from src.workbench.lsp.lsp_client { notify_document_open, notify_document_save }
 
 def:pub app(path: str, onCursorChange: any, initialCursor: any, onDirtyChange: any) -> JsxElement {
     has content: str = "";
@@ -99,10 +111,13 @@ def:pub app(path: str, onCursorChange: any, initialCursor: any, onDirtyChange: a
 
     async can with entry {
         result = await open_document(path);
-        content = result["content"];
+        loaded_content = result["content"];
+        content = loaded_content;
         loaded = True;
+        await notify_document_open(path, loaded_content);
     }
 
+    def handle_before_mount(monaco: any) -> None;
     def handle_mount(editor: any, monaco: any) -> None;
     async def handle_save -> None;
     def handle_cursor_change(e: any) -> None;
@@ -115,7 +130,7 @@ def:pub app(path: str, onCursorChange: any, initialCursor: any, onDirtyChange: a
                 path={path}
                 defaultValue={content}
                 theme="vs-dark"
-                beforeMount={register_jac_language}
+                beforeMount={handle_before_mount}
                 onMount={handle_mount}
                 onChange={handle_content_change}
                 keepCurrentModel={True}

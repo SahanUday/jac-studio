@@ -101,7 +101,42 @@ reuse, threaded down through `editor_tabs.jac` -- see `jac_definition_provider.j
 for why go-to-definition needs it at all (unlike hover/completion, it can jump to a file whose tab
 isn't the active one); `jac_reference_provider.jac`/`jac_rename_provider.jac` need no separate
 wiring for the same reason -- see their own docstrings for why they reuse that same registered
-editor opener (references) or apply edits directly rather than navigating at all (rename)."""
+editor opener (references) or apply edits directly rather than navigating at all (rename).
+
+**Breadcrumb bar (2026-08-31, `docs/roadmap.md` Phase 4's native LSP client bullet, closing out its
+originally-scoped "outline/breadcrumbs" pair)** -- a thin strip above `<Editor>` showing the file
+name plus the chain of symbols (`breadcrumb_symbols.jac`'s `symbol_path_at_position`, walked over
+`get_document_symbols`' own tree) containing the cursor, e.g. `main.jac  ›  Person  ›  greet`.
+Unlike `outline.jac`'s sidebar view, this component already has everything it needs locally --
+`editor_ref` for the live cursor position, `symbols` fetched once alongside `content` and refreshed
+after every save (`refresh_symbols`, the same "the action that changes state re-fetches it"
+convention `apply_git_decorations` already uses) -- so no cross-component RPC or prop threading was
+needed the way go-to-definition's cross-tab navigation required. `update_breadcrumb` recomputes the
+chain from the live `editor_ref` position, called from `handle_mount` (once, mirroring
+`onCursorChange`'s own "fire once at mount, not just on the live listener" convention),
+`handle_cursor_change` (every cursor move), and after `refresh_symbols` in `handle_save` (a save can
+shift symbol ranges, e.g. adding a line before the current one, so the chain is recomputed against
+the fresh tree, not just re-evaluated against the stale one). Clicking a segment calls
+`editor_ref.current.setPosition`/`revealPositionInCenter` directly -- no `open_search_result`
+needed, since every breadcrumb segment is always within the *current* file's own already-open tab.
+
+**One bounded retry if the very first fetch comes back empty -- a real mitigation for a real,
+measured problem, not speculative.** `jac lsp`'s own type-check dispatcher (confirmed live, on a
+freshly restarted server with an otherwise-empty queue, not an artifact of a backlogged test
+session) took over 30 seconds to check a single 7-line file in this dev-mode environment (the same
+"single-threaded, 10-60+ second tasks" characteristic PR #52 already documented, seen here at the
+higher end even for a trivial file) -- and `textDocument/documentSymbol` answers from whatever
+`jac lsp`'s internal program hub currently holds, empty if the file's very first check hasn't
+finished yet, not a wait-for-it request. Since nothing else re-triggers a fetch before the user's
+first save, a freshly opened file would otherwise show an empty breadcrumb bar indefinitely, however
+long that first check takes. `retry_refresh_symbols`, scheduled once via `setTimeout` (the same
+fire-and-forget scheduling `workbench.jac`'s own `cursor_save_timer` already uses) 4 seconds after
+the first empty result, catches the common case (many observed check times were well under 10
+seconds) without adding a polling loop. **Explicitly not a full fix** -- a check that's still running
+past 4 seconds (also observed, well past a minute in the worst case) leaves the breadcrumb empty
+until the next save, same as before this retry existed; a real fix would need `jac lsp` itself to
+push a "this file's outline changed" notification the way it already pushes `publishDiagnostics`,
+which doesn't exist today and is out of scope here."""
 
 import from "@monaco-editor/react" { Editor }
 import from src.editor.document_service { open_document, save_document }
@@ -112,7 +147,9 @@ import from src.editor.client.jac_definition_provider { register_jac_definition_
 import from src.editor.client.jac_reference_provider { register_jac_reference_provider }
 import from src.editor.client.jac_rename_provider { register_jac_rename_provider }
 import from src.workbench.scm.git_service { get_line_changes }
-import from src.workbench.lsp.lsp_client { notify_document_open, notify_document_save }
+import from src.workbench.lsp.lsp_client { notify_document_open, notify_document_save, get_document_symbols }
+import from src.workbench.symbol_icons.symbol_icons { symbol_icon_class }
+import from src.editor.client.breadcrumb_symbols { symbol_path_at_position }
 
 def:pub app(path: str, onCursorChange: any, initialCursor: any, onDirtyChange: any, onOpenLocation: any) -> JsxElement {
     has content: str = "";
@@ -121,6 +158,8 @@ def:pub app(path: str, onCursorChange: any, initialCursor: any, onDirtyChange: a
     has editor_ref: Ref[any] = Ref();
     has monaco_ref: Ref[any] = Ref();
     has decorations_ref: Ref[any] = Ref();
+    has symbols: list[dict[str, any]] = [];
+    has breadcrumb_path: list[dict[str, any]] = [];
 
     async can with entry {
         result = await open_document(path);
@@ -128,6 +167,10 @@ def:pub app(path: str, onCursorChange: any, initialCursor: any, onDirtyChange: a
         content = loaded_content;
         loaded = True;
         await notify_document_open(path, loaded_content);
+        await refresh_symbols(loaded_content);
+        if len(symbols) == 0 {
+            setTimeout(lambda { retry_refresh_symbols(loaded_content); }, 4000);
+        }
     }
 
     def handle_before_mount(monaco: any) -> None;
@@ -136,23 +179,67 @@ def:pub app(path: str, onCursorChange: any, initialCursor: any, onDirtyChange: a
     def handle_cursor_change(e: any) -> None;
     def handle_content_change(e: any) -> None;
     async def apply_git_decorations -> None;
+    async def refresh_symbols(current_content: str) -> None;
+    async def retry_refresh_symbols(current_content: str) -> None;
+    def update_breadcrumb -> None;
+    def handle_breadcrumb_click(target_line: int, target_column: int) -> None;
 
-    <div style={{"height": "100%", "width": "100%"}}>
+    <div style={{"height": "100%", "width": "100%", "display": "flex", "flexDirection": "column"}}>
         {(
-            <Editor
-                path={path}
-                defaultValue={content}
-                theme="vs-dark"
-                beforeMount={handle_before_mount}
-                onMount={handle_mount}
-                onChange={handle_content_change}
-                keepCurrentModel={True}
-                options={{"automaticLayout": True, "minimap": {"enabled": True}}}
-            />
-        ) if loaded else (
-            <div style={{"padding": "1rem", "fontSize": "12px", "color": "#8C8C8C", "fontFamily": "system-ui, sans-serif"}}>
-                Loading...
+            <div
+                style={{
+                    "display": "flex",
+                    "alignItems": "center",
+                    "gap": "0.3rem",
+                    "padding": "0.25rem 0.6rem",
+                    "borderBottom": "1px solid #2A2B2C",
+                    "background": "#191A1B",
+                    "fontSize": "12px",
+                    "fontFamily": "system-ui, sans-serif",
+                    "color": "#8C8C8C",
+                    "flexShrink": "0",
+                    "overflow": "auto",
+                    "whiteSpace": "nowrap"
+                }}
+            >
+                <span style={{"display": "flex", "alignItems": "center", "gap": "0.25rem"}}>
+                    <span className="codicon codicon-file" style={{"fontSize": "13px", "opacity": "0.8"}} />
+                    <span>{path.split("/")[-1]}</span>
+                </span>
+                {[
+                    <span key={sym["name"] + ":" + str(sym["line"])} style={{"display": "flex", "alignItems": "center", "gap": "0.25rem"}}>
+                        <span className="codicon codicon-chevron-right" style={{"fontSize": "11px", "opacity": "0.5"}} />
+                        <span
+                            role="button"
+                            tabIndex={0}
+                            onClick={lambda (e: any) { handle_breadcrumb_click(sym["line"], sym["column"]); }}
+                            style={{"display": "flex", "alignItems": "center", "gap": "0.25rem", "cursor": "pointer"}}
+                        >
+                            <span className={"codicon " + symbol_icon_class(sym["kind"])} style={{"fontSize": "13px", "opacity": "0.8"}} />
+                            <span>{sym["name"]}</span>
+                        </span>
+                    </span>
+                    for sym in breadcrumb_path
+                ]}
             </div>
-        )}
+        ) if loaded else None}
+        <div style={{"flex": "1", "overflow": "hidden"}}>
+            {(
+                <Editor
+                    path={path}
+                    defaultValue={content}
+                    theme="vs-dark"
+                    beforeMount={handle_before_mount}
+                    onMount={handle_mount}
+                    onChange={handle_content_change}
+                    keepCurrentModel={True}
+                    options={{"automaticLayout": True, "minimap": {"enabled": True}}}
+                />
+            ) if loaded else (
+                <div style={{"padding": "1rem", "fontSize": "12px", "color": "#8C8C8C", "fontFamily": "system-ui, sans-serif"}}>
+                    Loading...
+                </div>
+            )}
+        </div>
     </div>
 }

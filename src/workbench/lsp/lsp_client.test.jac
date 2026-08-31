@@ -247,9 +247,10 @@ test "_apply_text_edits with no edits returns the content unchanged" {
 }
 
 """`_lsp_document_symbols_to_list` converts `jac lsp`'s hierarchical `DocumentSymbol[]` into this
-project's own nested `{name, kind, line, column, children}` shape -- these cases confirm the
-1-based conversion, that `selectionRange` (not the broader `range`) drives `line`/`column`, and
-that nested `children` recurse through the same conversion rather than being left as raw dicts."""
+project's own nested shape -- these cases confirm the 1-based conversion, that `selectionRange`
+(not the broader `range`) drives `line`/`column` while `range` drives `startLine`/`startColumn`/
+`endLine`/`endColumn`, and that nested `children` recurse through the same conversion rather than
+being left as raw dicts."""
 test "_lsp_document_symbols_to_list converts a flat, single-symbol list" {
     symbols = [
         {
@@ -260,7 +261,11 @@ test "_lsp_document_symbols_to_list converts a flat, single-symbol list" {
         }
     ];
     assert _lsp_document_symbols_to_list(symbols) == [
-        {"name": "greet", "kind": 12, "line": 5, "column": 5, "children": []}
+        {
+            "name": "greet", "kind": 12, "line": 5, "column": 5,
+            "startLine": 5, "startColumn": 1, "endLine": 7, "endColumn": 2,
+            "children": []
+        }
     ];
 }
 
@@ -285,7 +290,17 @@ test "_lsp_document_symbols_to_list recurses into nested children" {
     assert converted[0]["name"] == "Person";
     assert converted[0]["line"] == 1;
     assert converted[0]["column"] == 6;
-    assert converted[0]["children"] == [{"name": "name", "kind": 13, "line": 2, "column": 9, "children": []}];
+    assert converted[0]["startLine"] == 1;
+    assert converted[0]["startColumn"] == 1;
+    assert converted[0]["endLine"] == 4;
+    assert converted[0]["endColumn"] == 2;
+    assert converted[0]["children"] == [
+        {
+            "name": "name", "kind": 13, "line": 2, "column": 9,
+            "startLine": 2, "startColumn": 5, "endLine": 2, "endColumn": 18,
+            "children": []
+        }
+    ];
 }
 
 test "_lsp_document_symbols_to_list returns an empty list for a None response" {

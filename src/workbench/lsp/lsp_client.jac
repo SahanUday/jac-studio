@@ -623,12 +623,15 @@ async def:pub get_rename_edits(path: str, content: str, line: int, column: int, 
 
 """Recursively converts `jac lsp`'s hierarchical `DocumentSymbol[]` (`{name, kind, range,
 selectionRange, children}`, confirmed against `utils.impl.jac`'s `get_symbols_for_outline`) into
-this project's own nested `{name, kind, line, column, children}` shape, 1-based. Uses
-`selectionRange` (the symbol's own name-token span), not the broader `range` (the symbol's whole
-body) -- `outline.jac`'s click-to-jump wants "put the cursor on this symbol's name," the same thing
-`_lsp_location_to_dict` already does for go-to-definition, not "select this symbol's entire body."
-`children` recurses through the identical conversion rather than being left as raw LSP dicts, so a
-consumer never has to know the wire shape past this one boundary function."""
+this project's own nested shape, 1-based, carrying *both* ranges rather than picking one: `line`/
+`column` come from `selectionRange` (the symbol's own name-token span -- `outline.jac`'s
+click-to-jump wants "put the cursor on this symbol's name," the same thing `_lsp_location_to_dict`
+already does for go-to-definition, not "select this symbol's entire body"), while `startLine`/
+`startColumn`/`endLine`/`endColumn` come from the broader `range` (the symbol's whole body) --
+`symbol_path_at_position` below needs that wider span to test whether a cursor position falls
+*inside* a symbol, which its name token alone can't answer. `children` recurses through the
+identical conversion rather than being left as raw LSP dicts, so a consumer never has to know the
+wire shape past this one boundary function."""
 def:pub _lsp_document_symbols_to_list(symbols: any) -> list[dict[str, any]] {
     if not isinstance(symbols, list) {
         return [];
@@ -638,6 +641,9 @@ def:pub _lsp_document_symbols_to_list(symbols: any) -> list[dict[str, any]] {
         if not isinstance(sym, dict) {
             continue;
         }
+        body_range = sym.get("range", {});
+        body_start = body_range.get("start", {});
+        body_end = body_range.get("end", {});
         selection_range = sym.get("selectionRange", {});
         sel_start = selection_range.get("start", {});
         result.append({
@@ -645,6 +651,10 @@ def:pub _lsp_document_symbols_to_list(symbols: any) -> list[dict[str, any]] {
             "kind": sym.get("kind", 0),
             "line": int(sel_start.get("line", 0)) + 1,
             "column": int(sel_start.get("character", 0)) + 1,
+            "startLine": int(body_start.get("line", 0)) + 1,
+            "startColumn": int(body_start.get("character", 0)) + 1,
+            "endLine": int(body_end.get("line", 0)) + 1,
+            "endColumn": int(body_end.get("character", 0)) + 1,
             "children": _lsp_document_symbols_to_list(sym.get("children") or [])
         });
     }
@@ -652,12 +662,10 @@ def:pub _lsp_document_symbols_to_list(symbols: any) -> list[dict[str, any]] {
 }
 
 """Syncs `content`, then asks `jac lsp` for `path`'s symbol outline -- the data source for both
-`outline.jac` (this PR) and, as a deliberate follow-up, breadcrumbs (a second consumer of the same
-tree, tracking which symbol contains the current cursor -- not built in this PR, since it needs
-live cursor position layered on top, a genuinely different piece of plumbing than a sidebar view
-needs). `get_outline` (`engine.impl.jac`) always returns a plain list, never `None`, so this mirrors
-that with an empty list rather than `None` for "no symbols" (an empty file, or one `jac lsp` hasn't
-type-checked)."""
+`outline.jac` and `monaco_editor.jac`'s breadcrumb bar (`symbol_path_at_position` above tracks
+which symbol currently contains the cursor from this same tree). `get_outline` (`engine.impl.jac`)
+always returns a plain list, never `None`, so this mirrors that with an empty list rather than
+`None` for "no symbols" (an empty file, or one `jac lsp` hasn't type-checked)."""
 async def:pub get_document_symbols(path: str, content: str) -> list[dict[str, any]] {
     if not _is_jac_file(path) {
         return [];

@@ -59,18 +59,7 @@ annex" pattern -- see `jac-studio-code-organization`."""
 import from "react" { useEffect }
 import from src.workbench.lsp.lsp_client { get_document_symbols }
 import from src.editor.document_service { open_document }
-
-glob _SYMBOL_KIND_ICON: dict[int, str] = {
-    2: "codicon-symbol-module",
-    5: "codicon-symbol-class",
-    10: "codicon-symbol-enum",
-    12: "codicon-symbol-method",
-    13: "codicon-symbol-variable"
-};
-
-def _symbol_icon(kind: int) -> str {
-    return _SYMBOL_KIND_ICON.get(kind, "codicon-symbol-misc");
-}
+import from src.workbench.symbol_icons.symbol_icons { symbol_icon_class }
 
 def:pub OutlineNode(props: any) -> JsxElement {
     item = props["node"];
@@ -98,7 +87,7 @@ def:pub OutlineNode(props: any) -> JsxElement {
             }}
         >
             <span
-                className={"codicon " + _symbol_icon(item["kind"])}
+                className={"codicon " + symbol_icon_class(item["kind"])}
                 style={{"fontSize": "14px", "opacity": "0.85", "flexShrink": "0"}}
             />
             <span style={{"overflow": "hidden", "textOverflow": "ellipsis"}}>{item["name"]}</span>

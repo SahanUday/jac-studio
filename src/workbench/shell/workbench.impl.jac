@@ -12,6 +12,19 @@ impl app._save_session -> None {
     await save_session(groups, active_group_id, next_group_id, terminal_open, cursor_positions);
 }
 
+"""Re-selecting the already-active tab closes the panel; selecting the other tab (or opening from
+closed) switches to it and opens -- see `workbench.jac`'s "Output panel + a real bottom-panel tab
+strip" docstring section for why this replaced two separate hardcoded toggles."""
+impl app._toggle_panel(panel_id: str) -> None {
+    if terminal_open and active_bottom_panel == panel_id {
+        terminal_open = False;
+    } else {
+        terminal_open = True;
+        active_bottom_panel = panel_id;
+    }
+    await _save_session();
+}
+
 impl app._upsert_tab_in_active_group(tab: dict[str, any]) -> list[dict[str, any]] {
     updated_groups = [];
     for g in groups {
@@ -144,8 +157,11 @@ impl app.handle_command(command_id: str) -> None {
         return;
     }
     if command_id == "workbench.action.terminal.toggle" {
-        terminal_open = not terminal_open;
-        await _save_session();
+        await _toggle_panel("terminal");
+        return;
+    }
+    if command_id == "workbench.action.output.toggle" {
+        await _toggle_panel("output");
         return;
     }
     if command_id == "workbench.action.toggleColorTheme" {

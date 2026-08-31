@@ -79,6 +79,11 @@ glob BUILTIN_COMMANDS: list[dict[str, any]] = [
             {"key": "escape", "when": "terminalFocus"}
         ]
     },
+    {
+        "id": "workbench.action.output.toggle",
+        "title": "View: Toggle Output",
+        "keybindings": [{"key": "ctrl+shift+u", "when": ""}]
+    },
     {"id": "workbench.action.toggleColorTheme", "title": "Preferences: Toggle Color Theme", "keybindings": []},
     {"id": "workbench.action.quickOpen", "title": "Go to File...", "keybindings": [{"key": "ctrl+p", "when": ""}]},
     {"id": "workbench.action.showCommands", "title": "Show All Commands", "keybindings": [{"key": "ctrl+shift+p", "when": ""}]},

@@ -86,6 +86,7 @@ import from jaclang.project.config { JacConfig }
 import from src.workbench.workspace.workspace_service { get_current_workspace, ensure_path_reachable }
 import from src.workbench.diagnostics.diagnostics { add_diagnostic, clear_diagnostics }
 import from src.workbench.output.output_service { append_log }
+import from src.editor.document_service { open_document, save_document }
 
 glob _LSP_LOG_CHANNEL: str = "Jac Language Server";
 glob _LSP_REQUEST_TIMEOUT_SECONDS: float = 10.0;
@@ -506,6 +507,118 @@ async def:pub get_references(path: str, content: str, line: int, column: int) ->
         }
     }
     return locations;
+}
+
+"""A third pure, testable conversion step, alongside `_extract_hover_text` and
+`_lsp_location_to_dict` -- converts one raw LSP `WorkspaceEdit` (`{changes: {uri: [TextEdit]}}`)
+into a flat list of `{path, startLine, startColumn, endLine, endColumn, newText}` dicts (1-based,
+`_uri_to_path` applied per-file). Flat rather than the LSP shape's own per-file grouping because
+every real caller (`jac_rename_provider.jac`) wants to re-group by *Monaco model existence*, not by
+file -- a flat list is the more useful intermediate shape, not a lossy simplification."""
+def:pub _lsp_workspace_edit_to_list(workspace_edit: any) -> list[dict[str, any]] {
+    if not isinstance(workspace_edit, dict) {
+        return [];
+    }
+    changes = workspace_edit.get("changes", {});
+    if not isinstance(changes, dict) {
+        return [];
+    }
+    edits = [];
+    for (uri, text_edits) in changes.items() {
+        if not isinstance(text_edits, list) {
+            continue;
+        }
+        path = _uri_to_path(uri);
+        for text_edit in text_edits {
+            range_ = text_edit.get("range", {});
+            start = range_.get("start", {});
+            end = range_.get("end", {});
+            edits.append({
+                "path": path,
+                "startLine": int(start.get("line", 0)) + 1,
+                "startColumn": int(start.get("character", 0)) + 1,
+                "endLine": int(end.get("line", 0)) + 1,
+                "endColumn": int(end.get("character", 0)) + 1,
+                "newText": text_edit.get("newText", "")
+            });
+        }
+    }
+    return edits;
+}
+
+"""Converts a 1-based `(line, column)` position into an absolute character offset into `content` --
+the shared unit `_apply_text_edits` below applies every edit in, rather than working line-by-line
+directly (line-by-line application has to reason about which edits share a line and in what order;
+offset-based splicing sidesteps that once every edit is expressed the same way)."""
+def _line_col_to_offset(content: str, line: int, column: int) -> int {
+    lines = content.split("\n");
+    offset = 0;
+    for i in range(line - 1) {
+        offset += len(lines[i]) + 1;
+    }
+    return offset + column - 1;
+}
+
+"""Applies a group of this module's own `(startLine, startColumn, endLine, endColumn, newText)`
+edits (all for the same file) to that file's raw content, purely as string manipulation -- the
+counterpart to Monaco's own `model.pushEditOperations` for a rename target with no live Monaco
+model (see `jac_rename_provider.jac`'s docstring for why that split exists at all). Every edit's
+position is computed by `jac lsp` against the *original*, pre-rename document, so edits are
+resolved to absolute offsets and applied back-to-front (descending by start offset) -- applying
+them in document order would let an earlier edit's splice shift a later edit's still-unprocessed
+offset out from under it, the identical reason Monaco's own bulk-edit service always computes a
+model's edits as one batch against its pre-edit state rather than replaying them one at a time."""
+def:pub _apply_text_edits(content: str, edits: list[dict[str, any]]) -> str {
+    resolved = [
+        {
+            "start": _line_col_to_offset(content, e["startLine"], e["startColumn"]),
+            "end": _line_col_to_offset(content, e["endLine"], e["endColumn"]),
+            "newText": e["newText"]
+        }
+        for e in edits
+    ];
+    resolved = sorted(resolved, key=lambda (r: dict[str, any]) { r["start"]; }, reverse=True);
+    result = content;
+    for r in resolved {
+        start = r["start"] as int;
+        end = r["end"] as int;
+        result = result[:start] + (r["newText"] as str) + result[end:];
+    }
+    return result;
+}
+
+"""Applies `edits` (this module's own shape, all for `path`) directly to `path` on disk -- for a
+rename target `jac_rename_provider.jac` found has no open tab (no live Monaco model to mutate), so
+there is no in-memory buffer to apply against or dirty-mark; this re-reads whatever's currently on
+disk, applies the edits, and writes the result straight back with `save_document`. Trusts the
+caller already confirmed no open model holds this path -- checking that is the client's job (it can
+query `monaco.editor.getModel` directly), not this function's."""
+async def:pub apply_disk_rename_edits(path: str, edits: list[dict[str, any]]) -> None {
+    loaded = open_document(path);
+    new_content = _apply_text_edits(loaded["content"], edits);
+    save_document(path, new_content);
+}
+
+"""Syncs `content`, then asks `jac lsp` to rename the symbol at `line`/`column` to `new_name` --
+`rename_symbol` (`engine.impl.jac`) returns `Optional[WorkspaceEdit]`, `None` when nothing at that
+position resolves to a renameable symbol; this mirrors that with an empty edit list rather than
+`None`; every caller in this project already treats "no edits" and "nothing renameable" the same
+way (a no-op), so there's no information lost collapsing the two."""
+async def:pub get_rename_edits(path: str, content: str, line: int, column: int, new_name: str) -> list[dict[str, any]] {
+    if not _is_jac_file(path) {
+        return [];
+    }
+    handle = await _ensure_process();
+    if handle is None {
+        return [];
+    }
+    await _sync_content(handle, path, content);
+    result = await _send_request(handle, "textDocument/rename", {
+        "textDocument": {"uri": _path_to_uri(path)},
+        "position": {"line": line - 1, "character": column - 1},
+        "newName": new_name
+    });
+    return _lsp_workspace_edit_to_list(result);
 }
 
 """Syncs `content`, then asks for completions at `line`/`column` (1-based, matching this project's

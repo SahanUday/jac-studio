@@ -149,3 +149,32 @@ test "_extract_hover_text returns None for an unrecognized shape" {
     assert _extract_hover_text(None) is None;
     assert _extract_hover_text(["def foo() -> int"]) is None;
 }
+
+"""`_lsp_location_to_dict` converts a raw LSP `Location` into `(path, line, column)`, applying the
+same 0-based-to-1-based conversion at this boundary that every other public entry point in this
+module applies at its own -- these two cases confirm both halves: the `file://` prefix strip and
+the `+1` on both `line`/`character`."""
+test "_lsp_location_to_dict converts a real Location to a 1-based (path, line, column)" {
+    location = {
+        "uri": "file:///home/user/project/main.jac",
+        "range": {"start": {"line": 5, "character": 10}, "end": {"line": 5, "character": 16}}
+    };
+    assert _lsp_location_to_dict(location) == {"path": "/home/user/project/main.jac", "line": 6, "column": 11};
+}
+
+test "_lsp_location_to_dict converts a Location at the file's very first character" {
+    location = {
+        "uri": "file:///home/user/project/main.jac",
+        "range": {"start": {"line": 0, "character": 0}, "end": {"line": 0, "character": 4}}
+    };
+    assert _lsp_location_to_dict(location) == {"path": "/home/user/project/main.jac", "line": 1, "column": 1};
+}
+
+test "_lsp_location_to_dict returns None for a Location with no uri" {
+    assert _lsp_location_to_dict({"uri": "", "range": {}}) is None;
+}
+
+test "_lsp_location_to_dict returns None for a non-dict input" {
+    assert _lsp_location_to_dict(None) is None;
+    assert _lsp_location_to_dict("not a location") is None;
+}

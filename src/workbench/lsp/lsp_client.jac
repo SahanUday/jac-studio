@@ -431,6 +431,50 @@ async def:pub get_hover(path: str, content: str, line: int, column: int) -> str 
     return _extract_hover_text(result.get("contents"));
 }
 
+"""A second pure, testable step, the `get_definition`/`get_references` counterpart to
+`_extract_hover_text` above -- converts one raw LSP `Location` (`{uri, range}`) into this project's
+own `(path, line, column)` shape (`_uri_to_path`, plus the 0-based-to-1-based conversion every other
+public entry point in this module already does at its own boundary), or `None` for a malformed/empty
+`Location` (defensive against a genuinely absent `uri`, not a case `jac lsp` is known to send)."""
+def:pub _lsp_location_to_dict(location: any) -> dict[str, any] | None {
+    if not isinstance(location, dict) {
+        return None;
+    }
+    uri = location.get("uri", "");
+    if uri == "" {
+        return None;
+    }
+    range_start = location.get("range", {}).get("start", {});
+    return {
+        "path": _uri_to_path(uri),
+        "line": int(range_start.get("line", 0)) + 1,
+        "column": int(range_start.get("character", 0)) + 1
+    };
+}
+
+"""Syncs `content`, then asks `jac lsp` where `line`/`column`'s symbol is defined -- `get_definition`
+(`engine.impl.jac`) returns at most one `Location` (never a list, unlike `get_references` below), so
+this mirrors that shape: one `{path, line, column}` dict, or `None` for "nothing resolvable here"
+(whitespace, a token with no symbol, `jac lsp` couldn't determine a definition)."""
+async def:pub get_definition(path: str, content: str, line: int, column: int) -> dict[str, any] | None {
+    if not _is_jac_file(path) {
+        return None;
+    }
+    handle = await _ensure_process();
+    if handle is None {
+        return None;
+    }
+    await _sync_content(handle, path, content);
+    result = await _send_request(handle, "textDocument/definition", {
+        "textDocument": {"uri": _path_to_uri(path)},
+        "position": {"line": line - 1, "character": column - 1}
+    });
+    if result is None {
+        return None;
+    }
+    return _lsp_location_to_dict(result);
+}
+
 """Syncs `content`, then asks for completions at `line`/`column` (1-based, matching this project's
 own convention everywhere else -- `handle_cursor_change`, `get_line_changes`, ... -- converted to
 LSP's 0-based `line`/`character` at the boundary). Returns a small, client-friendly shape

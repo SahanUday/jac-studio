@@ -159,6 +159,14 @@ background action uses -- a task's own errors already land in the Problems panel
 `task_service.jac`'s problem-matcher integration, so the toast here is about the *run itself*
 (did it complete, and with what exit code), not a duplicate of each individual diagnostic.
 
+**Go-to-definition (2026-08-31, `docs/roadmap.md` Phase 4's native LSP client bullet)** --
+`EditorTabsApp`'s new `onOpenLocation` prop is `open_search_result` itself, not a fourth handler --
+`jac_definition_provider.jac`'s Monaco editor-opener needs the exact same "open or activate this
+file's tab and jump to a line/column" behavior `problems.jac`/`search.jac` already get from it, so
+this is the third reuse of that one method, not a new one. Same known limitation as those two:
+jumping to a definition in an already-open-but-inactive tab activates it without forcing a
+re-scroll (see the `open_search_result` bullet above).
+
 **Title bar (2026-08-28, `docs/roadmap.md` Phase 3)** -- `command_palette_open` moved here from
 being `command_palette.jac`'s own private state, specifically so `TitleBarApp`'s Command Center
 button has something to call: `onOpenCommandPalette` dispatches through `handle_command`'s
@@ -337,6 +345,7 @@ def:pub app(onToggleTheme: any) -> JsxElement {
                     initialCursors={cursor_positions}
                     dirtyPaths={dirty_paths}
                     onDirtyChange={handle_dirty_change}
+                    onOpenLocation={open_search_result}
                 />
             </ResizablePanel>
         );

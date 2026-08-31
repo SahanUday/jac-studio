@@ -245,3 +245,53 @@ test "_apply_text_edits with no edits returns the content unchanged" {
     content = "unchanged\n";
     assert _apply_text_edits(content, []) == content;
 }
+
+"""`_lsp_document_symbols_to_list` converts `jac lsp`'s hierarchical `DocumentSymbol[]` into this
+project's own nested `{name, kind, line, column, children}` shape -- these cases confirm the
+1-based conversion, that `selectionRange` (not the broader `range`) drives `line`/`column`, and
+that nested `children` recurse through the same conversion rather than being left as raw dicts."""
+test "_lsp_document_symbols_to_list converts a flat, single-symbol list" {
+    symbols = [
+        {
+            "name": "greet", "kind": 12,
+            "range": {"start": {"line": 4, "character": 0}, "end": {"line": 6, "character": 1}},
+            "selectionRange": {"start": {"line": 4, "character": 4}, "end": {"line": 4, "character": 9}},
+            "children": []
+        }
+    ];
+    assert _lsp_document_symbols_to_list(symbols) == [
+        {"name": "greet", "kind": 12, "line": 5, "column": 5, "children": []}
+    ];
+}
+
+test "_lsp_document_symbols_to_list recurses into nested children" {
+    symbols = [
+        {
+            "name": "Person", "kind": 5,
+            "range": {"start": {"line": 0, "character": 0}, "end": {"line": 3, "character": 1}},
+            "selectionRange": {"start": {"line": 0, "character": 5}, "end": {"line": 0, "character": 11}},
+            "children": [
+                {
+                    "name": "name", "kind": 13,
+                    "range": {"start": {"line": 1, "character": 4}, "end": {"line": 1, "character": 17}},
+                    "selectionRange": {"start": {"line": 1, "character": 8}, "end": {"line": 1, "character": 12}},
+                    "children": []
+                }
+            ]
+        }
+    ];
+    converted = _lsp_document_symbols_to_list(symbols);
+    assert len(converted) == 1;
+    assert converted[0]["name"] == "Person";
+    assert converted[0]["line"] == 1;
+    assert converted[0]["column"] == 6;
+    assert converted[0]["children"] == [{"name": "name", "kind": 13, "line": 2, "column": 9, "children": []}];
+}
+
+test "_lsp_document_symbols_to_list returns an empty list for a None response" {
+    assert _lsp_document_symbols_to_list(None) == [];
+}
+
+test "_lsp_document_symbols_to_list skips a non-dict entry rather than raising" {
+    assert _lsp_document_symbols_to_list(["not a symbol"]) == [];
+}

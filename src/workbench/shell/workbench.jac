@@ -167,6 +167,12 @@ this is the third reuse of that one method, not a new one. Same known limitation
 jumping to a definition in an already-open-but-inactive tab activates it without forcing a
 re-scroll (see the `open_search_result` bullet above).
 
+**Outline, the fourth real sidebar view (2026-08-31, `docs/roadmap.md` Phase 4's native LSP client
+bullet)** -- `OutlineApp` follows `ScmApp`'s exact `active`-prop-refreshes-on-activation shape, plus
+`active_tab_path` (already computed above, for the status bar) as a second effect dependency so it
+also refreshes when the active editor tab changes while already visible. Clicking a symbol is the
+fourth reuse of `open_search_result`.
+
 **Title bar (2026-08-28, `docs/roadmap.md` Phase 3)** -- `command_palette_open` moved here from
 being `command_palette.jac`'s own private state, specifically so `TitleBarApp`'s Command Center
 button has something to call: `onOpenCommandPalette` dispatches through `handle_command`'s
@@ -239,6 +245,7 @@ import from "sonner" { Toaster, toast }
 import from src.workbench.file_tree.file_tree { app as FileTreeApp }
 import from src.workbench.search.search { app as SearchApp }
 import from src.workbench.scm.scm { app as ScmApp }
+import from src.workbench.outline.outline { app as OutlineApp }
 import from src.workbench.editor_tabs.editor_tabs { app as EditorTabsApp }
 import from src.workbench.activity_bar.activity_bar { app as ActivityBarApp }
 import from src.workbench.command_palette.command_palette { app as CommandPaletteApp }
@@ -371,6 +378,9 @@ def:pub app(onToggleTheme: any) -> JsxElement {
                 </div>
                 <div style={{"display": "block" if active_view_id == "scm" else "none", "height": "100%"}}>
                     <ScmApp active={active_view_id == "scm"} onOpenDiff={open_scm_diff} onNotify={add_notification} onStatusChange={set_git_status} />
+                </div>
+                <div style={{"display": "block" if active_view_id == "outline" else "none", "height": "100%"}}>
+                    <OutlineApp active={active_view_id == "outline"} path={active_tab_path} onOpenLocation={open_search_result} />
                 </div>
             </div>
             <div style={{"flex": "1", "overflow": "hidden"}}>

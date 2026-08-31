@@ -45,8 +45,18 @@ channel, just nothing is parsed into diagnostics.
 directly** -- a problem matcher can name any file in the project, not just ones already expanded in
 the Explorer tree; see that function's own docstring for why `diagnostics.jac`'s existing
 "attach only to an already-reachable File" contract needed a real fix here, not a workaround.
-Diagnostics for every file the *previous* run touched are cleared before the new run's matches are
-attached, so a fixed error doesn't linger in the Problems panel after a re-run.
+
+**Every diagnostic from one run shares a single `batch` marker (`time.time()`, generated once per
+`run_task` call), and every path this same task label previously reported on -- not just the ones
+this run's matches still touch -- gets `clear_diagnostics` called on it first.** Both halves are
+needed for "re-running a task shows exactly the current state, nothing stale": the shared `batch`
+is what lets `diagnostics.jac`'s `list_diagnostics` tell a fresh run's diagnostics apart from an
+older run's on a file that's *still* broken (see that module's own docstring for the two failed
+attempts before landing on this -- an unreliable `Reports` edge deletion, then an in-memory index
+that turned out no more reliable across separate requests); clearing every *previously*-reported
+path (via `list_all_diagnostics()`, filtered to `source == label`) is what makes a file that *used*
+to have errors from this task but doesn't anymore actually go quiet, since nothing new would ever
+be attached to supersede its stale batch otherwise.
 """
 
 import os;
@@ -54,9 +64,10 @@ import json;
 import re;
 import subprocess;
 import from jaclang.project.config { JacConfig }
+import time;
 import from src.workbench.workspace.workspace_service { get_current_workspace, ensure_path_reachable }
 import from src.workbench.output.output_service { append_log, clear_channel }
-import from src.workbench.diagnostics.diagnostics { add_diagnostic, clear_diagnostics }
+import from src.workbench.diagnostics.diagnostics { add_diagnostic, clear_diagnostics, list_all_diagnostics }
 
 glob _TASK_TIMEOUT_SECONDS: int = 300;
 
@@ -237,16 +248,26 @@ def:pub run_task(label: str) -> dict[str, any] {
         abs_path = hit["file"] if os.path.isabs(hit["file"]) else os.path.join(ws["root_path"], hit["file"]);
         touched_paths.add(os.path.normpath(abs_path));
     }
-    for touched_path in touched_paths {
+    # Also clear every path this same task previously reported on, even if this run's matches no
+    # longer touch it -- otherwise a file that HAD errors on the last run but is now clean would
+    # keep showing its stale diagnostics forever (they'd never be superseded by a fresher batch,
+    # since nothing new is being attached to them this run). See this function's own docstring.
+    previously_reported_paths = set([
+        d["path"] for d in list_all_diagnostics() if d["source"] == label
+    ]);
+    for touched_path in (touched_paths | previously_reported_paths) {
         clear_diagnostics(touched_path);
+    }
+    for touched_path in touched_paths {
         ensure_path_reachable(touched_path);
     }
 
+    run_batch = time.time();
     diagnostic_count = 0;
     for hit in matches {
         abs_path = hit["file"] if os.path.isabs(hit["file"]) else os.path.join(ws["root_path"], hit["file"]);
         abs_path = os.path.normpath(abs_path);
-        attached = add_diagnostic(abs_path, hit["message"], hit["severity"], hit["line"], hit["column"], label);
+        attached = add_diagnostic(abs_path, hit["message"], hit["severity"], hit["line"], hit["column"], label, run_batch);
         if attached {
             diagnostic_count += 1;
         }

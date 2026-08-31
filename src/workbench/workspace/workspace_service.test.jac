@@ -464,3 +464,26 @@ test "ensure_path_reachable returns None when no workspace is open" {
 
     assert ensure_path_reachable("/tmp/whatever.txt") is None;
 }
+
+"""Regression test for the cross-module `def:pub` cache-miss bug
+(`2026-08-31-cross-module-def-pub-call-sees-empty-glob-cache`), which the tracker entry's own "what
+to check next" note predicted would hit the task runner -- confirmed live, then fixed here the same
+way `list_all_files` already was. Directly clears `_cached_workspace_jid` after a real
+`open_workspace` call to simulate what a cross-module caller apparently observes, without needing an
+actual second module or a real HTTP round trip to reproduce; confirmed this test fails against the
+pre-fix version (the unconditional `if key not in _cached_workspace_jid { return None; }` early
+return) by temporarily reverting the fix and re-running it."""
+test "ensure_path_reachable falls back to a graph query and still works when its own cache is empty" {
+    _reset_workspace_cache_for_tests();
+    fixture = make_fixture();
+    open_workspace(fixture);
+
+    # Simulate the bug's observed symptom directly: jid(root) unchanged, but the module-level
+    # cache dict this function reads from is empty -- the Workspace node itself is untouched.
+    _cached_workspace_jid.clear();
+
+    found = ensure_path_reachable(os.path.join(fixture, "sub", "b.txt"));
+
+    assert found is not None;
+    assert found.name == "b.txt";
+}

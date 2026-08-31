@@ -433,15 +433,38 @@ the newly-scanned children existed as graph nodes but were never indexed, so the
 back empty. Fixed by querying `[current->:Contains:->]` directly at each level (mirroring
 `list_children_by_path`'s own edge-read, not its index-read) and populating `_path_index` as a
 side effect, the same way that function does -- so a later ordinary lazy-scan click on the same
-folder doesn't re-do the work."""
+folder doesn't re-do the work.
+
+**Falls back to a graph query on a cache miss, exactly like `list_all_files` -- caught live against
+a real server, not by inspection.** The first version returned `None` immediately whenever
+`jid(root)` wasn't already a key in `_cached_workspace_jid`, the same unconditional-early-return
+shape `list_all_files` originally had before its own documented fix
+(`2026-08-31-cross-module-def-pub-call-sees-empty-glob-cache`). That tracker entry's own "what to
+check before the next cross-module reuse" note named the task runner as the next likely candidate
+to hit this -- confirmed live: `task_service.jac`'s `run_task` (a cross-module caller, exactly the
+shape that entry describes) got a real `jac check` failure's output parsed correctly, but every
+`add_diagnostic` call silently failed because this function returned `None` for a workspace that
+had, moments earlier in the same request session, been confirmed open (`get_current_workspace`
+returned correct data from the very same call). Fixed with the identical fallback
+`get_or_create_workspace`/`list_all_files` already use: never trust the cache dict's absence as
+proof no workspace is open."""
 def:pub ensure_path_reachable(path: str) -> File | None {
     key = jid(root);
-    if key not in _cached_workspace_jid {
-        return None;
+    if key in _cached_workspace_jid {
+        ws = jobj(_cached_workspace_jid[key]) as Workspace;
+    } else {
+        existing = [root-->[?:Workspace]];
+        if len(existing) == 0 {
+            return None;
+        }
+        ws = existing[0];
+        _cached_workspace_jid[key] = jid(ws);
     }
-    ws = jobj(_cached_workspace_jid[key]) as Workspace;
     if ws.root_path == "" or not os.path.isdir(ws.root_path) {
         return None;
+    }
+    if key not in _path_index {
+        _path_index[key] = {};
     }
     norm_path = os.path.normpath(path);
     root_norm = os.path.normpath(ws.root_path);

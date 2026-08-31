@@ -9,6 +9,11 @@ import from src.workbench.workspace.workspace_service {
     _reset_workspace_cache_for_tests, open_workspace, list_children_by_path
 }
 
+def reset_diagnostics_state {
+    _reset_workspace_cache_for_tests();
+    _reset_diagnostic_tracking_for_tests();
+}
+
 def make_scanned_file -> str {
     fixture_root = tempfile.mkdtemp();
     file_path = os.path.join(fixture_root, "a.txt");
@@ -93,4 +98,45 @@ test "diagnostics on one file don't leak onto another in the same workspace" {
 
     assert len(list_diagnostics(first_path)) == 1;
     assert list_diagnostics(second_path) == [];
+}
+
+test "list_all_diagnostics starts empty with nothing attached" {
+    reset_diagnostics_state();
+
+    assert list_all_diagnostics() == [];
+}
+
+test "list_all_diagnostics reports every diagnostic across every touched file, each carrying its own path" {
+    reset_diagnostics_state();
+    fixture_root = tempfile.mkdtemp();
+    first_path = os.path.join(fixture_root, "first.txt");
+    second_path = os.path.join(fixture_root, "second.txt");
+    with open(first_path, "w") as f {
+        f.write("1");
+    }
+    with open(second_path, "w") as f {
+        f.write("2");
+    }
+    open_workspace(fixture_root);
+    list_children_by_path(fixture_root);
+
+    add_diagnostic(first_path, "error on first", "error", 1, 1, "test");
+    add_diagnostic(second_path, "warning on second", "warning", 2, 3, "test");
+
+    all_diags = list_all_diagnostics();
+    assert len(all_diags) == 2;
+    by_path = {d["path"]: d for d in all_diags};
+    assert by_path[first_path]["message"] == "error on first";
+    assert by_path[second_path]["severity"] == "warning";
+}
+
+test "list_all_diagnostics stops reporting a file once its diagnostics are cleared" {
+    file_path = make_scanned_file();
+    _reset_diagnostic_tracking_for_tests();
+    add_diagnostic(file_path, "will be cleared", "error", 1, 1, "test");
+    assert len(list_all_diagnostics()) == 1;
+
+    clear_diagnostics(file_path);
+
+    assert list_all_diagnostics() == [];
 }

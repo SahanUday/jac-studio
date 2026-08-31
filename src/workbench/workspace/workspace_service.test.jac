@@ -415,3 +415,52 @@ test "delete_path on an unscanned path is a safe no-op" {
 
     delete_path(os.path.join(fixture, "never-scanned.txt"));
 }
+
+test "ensure_path_reachable scans every ancestor and resolves a never-clicked nested file" {
+    _reset_workspace_cache_for_tests();
+    fixture = make_fixture();
+    open_workspace(fixture);
+
+    target = os.path.join(fixture, "sub", "nested", "c.txt");
+    found = ensure_path_reachable(target);
+
+    assert found is not None;
+    assert found.name == "c.txt";
+    assert found.path == target;
+    # now reachable without any further scan, via the ordinary lazy-scan path
+    assert [c["name"] for c in list_children_by_path(os.path.join(fixture, "sub", "nested"))] == ["c.txt"];
+}
+
+test "ensure_path_reachable returns None for a path outside the open workspace" {
+    _reset_workspace_cache_for_tests();
+    fixture = make_fixture();
+    open_workspace(fixture);
+    outside = tempfile.mkdtemp();
+    with open(os.path.join(outside, "unrelated.txt"), "w") as f {
+        f.write("x");
+    }
+
+    assert ensure_path_reachable(os.path.join(outside, "unrelated.txt")) is None;
+}
+
+test "ensure_path_reachable returns None for the workspace root itself" {
+    _reset_workspace_cache_for_tests();
+    fixture = make_fixture();
+    open_workspace(fixture);
+
+    assert ensure_path_reachable(fixture) is None;
+}
+
+test "ensure_path_reachable returns None for a path that doesn't exist on disk" {
+    _reset_workspace_cache_for_tests();
+    fixture = make_fixture();
+    open_workspace(fixture);
+
+    assert ensure_path_reachable(os.path.join(fixture, "does-not-exist.txt")) is None;
+}
+
+test "ensure_path_reachable returns None when no workspace is open" {
+    _reset_workspace_cache_for_tests();
+
+    assert ensure_path_reachable("/tmp/whatever.txt") is None;
+}

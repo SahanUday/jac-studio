@@ -142,9 +142,24 @@ key -- `dict` key deletion has no client-codegen lowering yet, see tracker entry
 `2026-08-28-client-dict-del-unsupported-by-jac2js`; overwriting with `False` is functionally
 identical for a value this component only ever reads via `.get(path, False)`), so reopening the
 same file later starts clean rather than showing a stale dot left over from before the close.
+
+**Toast + notification center (2026-08-31, `docs/roadmap.md` Phase 4's first bullet)** --
+`notifications`/`next_notification_id`/`notification_panel_open` are the single source of truth
+`notifications.jac`'s docstring describes; `add_notification` is the one call site that both
+appends to the persistent history list and pops the ephemeral `sonner` toast, so every future
+Phase 4 feature (search, SCM, the task runner, the LSP/DAP clients) that needs to report a
+background success/failure gets `onNotify={add_notification}` threaded to it the same way
+`FileTreeApp` already receives `onOpenFile`, not a second notification mechanism. Deliberately
+**not** persisted across a restart, matching `dirty_paths` above and real VS Code's own behavior
+(a fresh session starts with an empty notification history, not yesterday's). The terminal is the
+first real producer, wired below: a non-zero process exit code surfaces as an error toast, the
+same "background task completion surfaces as a toast" behavior Phase 4's own exit criteria names
+for the task runner -- proving the mechanism end-to-end now rather than shipping it with no
+caller, unlike the Phase 3 `Diagnostic` node type's deliberate data-model-only landing.
 """
 
 import from "react" { useEffect }
+import from "sonner" { Toaster, toast }
 import from src.workbench.file_tree.file_tree { app as FileTreeApp }
 import from src.workbench.editor_tabs.editor_tabs { app as EditorTabsApp }
 import from src.workbench.activity_bar.activity_bar { app as ActivityBarApp }
@@ -170,6 +185,9 @@ def:pub app(onToggleTheme: any) -> JsxElement {
     has commands: list[dict[str, any]] = [];
     has context: dict[str, bool] = {};
     has cursor_save_timer: Ref[any] = Ref();
+    has notifications: list[dict[str, any]] = [];
+    has next_notification_id: int = 1;
+    has notification_panel_open: bool = False;
 
     async def _save_session -> None;
     def _upsert_tab_in_active_group(tab: dict[str, any]) -> list[dict[str, any]];
@@ -187,6 +205,10 @@ def:pub app(onToggleTheme: any) -> JsxElement {
     def set_quick_open_open(next_open: bool) -> None;
     def set_command_palette_open(next_open: bool) -> None;
     def select_view(view_id: str) -> None;
+    def add_notification(message: str, severity: str, source: str) -> None;
+    def dismiss_notification(notification_id: int) -> None;
+    def clear_notifications -> None;
+    def set_notification_panel_open(next_open: bool) -> None;
 
     async can with entry {
         commands = await list_commands();
@@ -241,6 +263,7 @@ def:pub app(onToggleTheme: any) -> JsxElement {
     }
 
     <div style={{"display": "flex", "flexDirection": "column", "height": "100vh"}}>
+        <Toaster theme="dark" position="bottom-right" />
         <CommandPaletteApp open={command_palette_open} onOpenChange={set_command_palette_open} onRunCommand={handle_command} />
         <QuickOpenApp open={quick_open_open} onOpenChange={set_quick_open_open} onOpenFile={open_tab} />
         <TitleBarApp onOpenCommandPalette={lambda (e: any) { handle_command("workbench.action.showCommands"); }} />
@@ -272,9 +295,21 @@ def:pub app(onToggleTheme: any) -> JsxElement {
                 />
             </div>
             <div style={{"flex": "1", "overflow": "hidden"}}>
-                <TerminalApp onFocusChange={lambda (focused: bool) { set_context("terminalFocus", focused); }} />
+                <TerminalApp
+                    onFocusChange={lambda (focused: bool) { set_context("terminalFocus", focused); }}
+                    onNotify={add_notification}
+                />
             </div>
         </div>
-        <StatusBarApp line={active_cursor["line"]} column={active_cursor["column"]} path={active_tab_path} />
+        <StatusBarApp
+            line={active_cursor["line"]}
+            column={active_cursor["column"]}
+            path={active_tab_path}
+            notifications={notifications}
+            notificationPanelOpen={notification_panel_open}
+            onNotificationPanelChange={set_notification_panel_open}
+            onDismissNotification={dismiss_notification}
+            onClearNotifications={clear_notifications}
+        />
     </div>
 }

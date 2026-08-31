@@ -36,13 +36,24 @@ find-references, rename-symbol, quick-fixes, signature help. In real VS Code thi
 
 **This needs the same treatment we gave the Debug Adapter Protocol**: its own architecture
 section and roadmap placement, not an assumption that it falls out of the general extension
-model. Recommended placement: introduce alongside Phase 4/5 (extensions), since real language
-intelligence is extension-contributed in upstream VS Code too — but scope the *editor-side*
-consumption layer (rendering a completion popup, a hover card) as Phase 1/2 editor-core work,
-since the UI needs to exist before any provider can be plugged into it. First research task before
-committing to an approach: is there a usable Python (or npm) LSP *client* library reachable via
-interop, the same question already open for the DAP client — these are naturally the same piece of
-groundwork, worth researching together.
+model.
+
+**Resolved 2026-08-31 — the framing above ("real language intelligence is extension-contributed in
+upstream VS Code too") led this document to file the work behind the extension system by analogy,
+which turned out to be the wrong call for jac-studio specifically.** Checking jaclang's own source
+directly (not just upstream's) found that a real LSP server already ships in jaclang core: `jac lsp`
+(`jaclang/cli/commands/tools.jac`) starts `jaclang.lsp.server.server.run_lang_server()`, a genuine
+server already implementing completion, hover, definition, references, rename, document-symbols,
+semantic tokens, and formatting. The "first research task" this section used to pose — is there a
+usable LSP client library reachable via interop — was aimed at the wrong half of the problem: the
+*server* is already solved and Jac-native; what's left is an ordinary generic client speaking
+stdio JSON-RPC to it, ontologically the same "spawn a subprocess, speak a wire format" pattern
+already scoped for the terminal. This removes the dependency on the general extension system
+entirely for the Jac case — see `architecture.md`'s "Language intelligence" section and
+`roadmap.md`'s Phase 4 (promoted from "groundwork" to a flagship deliverable, alongside the DAP
+client for the same reason). The *editor-side* consumption layer (completion popup, hover card,
+go-to-definition, rename, bulk-edit apply) lands in the same phase now that there's a real backend
+to build it against immediately, rather than waiting on a hypothetical future provider.
 
 ### Source control (SCM) + diff editor
 
@@ -94,8 +105,9 @@ added, so it's cheap to add now and expensive to retrofit later.
   `roadmap.md` — this tier-2 entry is really just "make sure that example becomes a real scoped
   item, not just an example").
 - **Testing framework** (`workbench/contrib/testing`, 24,094 lines): Test Explorer UI, inline
-  run/debug-test affordances. Genuinely a Phase 5+ concern — needs both the extension manifest
-  system and the DAP client to be useful. No action needed now beyond noting it exists.
+  run/debug-test affordances. Genuinely a Phase 6+ concern — needs the extension manifest system
+  (the DAP client itself now lands earlier, Phase 4, per the 2026-08-31 re-prioritization). No
+  action needed now beyond noting it exists.
 - **Webviews + custom editors** (`webview` 3,258 + `customEditor` 2,493 lines): lets an extension
   render arbitrary HTML UI inside a panel or as a file's editor (Markdown preview, image/hex
   viewers). Needed for a real extension ecosystem eventually; not needed for Phases 1–3. Worth
@@ -126,6 +138,17 @@ upstream's bolted-on chat panel (which exists because TypeScript has no native L
 build on). Flagging this now so it's a deliberate future design decision — "what does AI
 assistance look like when the host language has LLM calls built in" — rather than something
 rediscovered late and defaulted into a copy of upstream's approach.
+
+**Sharpened 2026-08-31, per explicit project-sponsor direction**: rather than leaving this as an
+indefinitely-deferred design question, a small, explicitly-named set of native integrations with
+*existing* external AI coding tools (GitHub Copilot, OpenCode, Claude Code) is now a scoped
+roadmap deliverable — `roadmap.md`'s Phase 5, `architecture.md`'s "AI coding tool integrations"
+section. The port-upstream's-chat-subsystem non-goal above is unchanged; what's new is that
+jac-studio no longer treats "wait for a general extension system to make arbitrary chat extensions
+pluggable" as the implicit path to AI assistance either — these three tools get direct,
+subprocess/SDK-driven integrations (the same shape already used for the terminal and, now, the LSP
+and DAP clients), while `by llm()`/`sem` remain the native, first-class path for anything
+jac-studio builds itself.
 
 ## Tier 3 — confirmed, deliberate non-goals (not forgotten, just out of scope)
 

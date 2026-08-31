@@ -260,6 +260,12 @@ silently dropped either:
 Per `roadmap.md`, Phase 4 (extension system, Part A: trusted, in-process) starts next — porting
 search-in-files, an SCM shell with a git provider, and a task runner with problem matchers as the
 first real "extensions" against the contribution-registry model, plus an Output panel, a
-merge-conflict UI, toast notifications, and the extension-API-compatibility research spike against
-the real `jaseci-labs.jaclang-extension`. See the roadmap for the full bullet list and exit
+merge-conflict UI, and toast notifications. **Correction (2026-08-31, per project-sponsor
+re-prioritization — see `roadmap.md`'s top-of-document note and `architecture.md`'s Extension
+System section): the `jaseci-labs.jaclang-extension` compatibility spike named here is no longer
+part of Phase 4** — it's deferred, non-blocking research now sequenced into Phase 6. Phase 4
+instead gained a bigger, more concrete replacement for the value that spike was chasing: a native
+LSP client built directly against `jac lsp` (a real language server already shipped in jaclang
+core), plus a DAP client, both promoted into this phase. See the roadmap for the current full
+bullet list and exit
 criteria.

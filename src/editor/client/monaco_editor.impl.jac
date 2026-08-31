@@ -19,6 +19,7 @@ impl app.handle_mount(editor: any, monaco: any) -> None {
     }
     position = editor.getPosition();
     onCursorChange(path, position.lineNumber, position.column);
+    update_breadcrumb();
     decorations_ref.current = editor.createDecorationsCollection([]);
     apply_git_decorations();
 }
@@ -35,6 +36,49 @@ impl app.handle_save -> None {
     }
     await apply_git_decorations();
     await notify_document_save(path, saved_content);
+    await refresh_symbols(saved_content);
+    update_breadcrumb();
+}
+
+"""Fetches `path`'s current symbol outline (`lsp_client.jac`'s `get_document_symbols`) -- called
+once alongside content load and again after every save, the same freshness policy
+`apply_git_decorations` already uses for the gutter, and for the same reason: a live keystroke-by-
+keystroke refresh would mean a `jac lsp` round trip on every edit, the exact cost this project's
+Monaco integration already refuses to pay for its own content sync."""
+impl app.refresh_symbols(current_content: str) -> None {
+    fetched = await get_document_symbols(path, current_content);
+    symbols = fetched;
+}
+
+"""The scheduled retry `can with entry` fires once if the first `refresh_symbols` came back empty
+-- see this module's own docstring for why. `update_breadcrumb` runs afterward so the visible
+breadcrumb actually picks up newly-arrived symbols without needing another cursor move."""
+impl app.retry_refresh_symbols(current_content: str) -> None {
+    await refresh_symbols(current_content);
+    update_breadcrumb();
+}
+
+"""Recomputes `breadcrumb_path` from the live editor's current cursor position against whatever
+`symbols` currently holds -- called at mount, on every cursor move, and after a save's fresh
+`refresh_symbols` (a save can shift symbol ranges out from under the previously-computed chain, not
+just leave it stale in content)."""
+impl app.update_breadcrumb -> None {
+    if not editor_ref.current {
+        breadcrumb_path = [];
+        return;
+    }
+    position = editor_ref.current.getPosition();
+    breadcrumb_path = symbol_path_at_position(symbols, position.lineNumber, position.column);
+}
+
+impl app.handle_breadcrumb_click(target_line: int, target_column: int) -> None {
+    if not editor_ref.current {
+        return;
+    }
+    target_position = {"lineNumber": target_line, "column": target_column};
+    editor_ref.current.setPosition(target_position);
+    editor_ref.current.revealPositionInCenter(target_position);
+    editor_ref.current.focus();
 }
 
 """Fetches the current `HEAD`-vs-working-tree line ranges and paints them into the gutter --

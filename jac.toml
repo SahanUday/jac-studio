@@ -99,6 +99,13 @@ directory = "src"
 # the placement solver reads as reason to place the whole module server-side.
 "src.editor.client.jac_rename_provider" = "client"
 
+# breadcrumb_symbols.jac has zero server evidence of its own (no root/jid, no server imports) and
+# is only ever imported by monaco_editor.jac (client), so the placement solver should place it
+# client-side by default -- pinned explicitly anyway as insurance, since this module exists
+# specifically to avoid a per-keystroke RPC round trip (see its own docstring), and a wrong
+# placement default here would silently reintroduce exactly that bug.
+"src.editor.client.breadcrumb_symbols" = "client"
+
 # Deny-by-default: the integrated terminal (src/workbench/terminal/terminal_service.jac) refuses to
 # run any command until this is explicitly flipped on, same posture docs/architecture.md scopes for
 # the desktop `shell` capability -- "same trust level as [the user] opening their own terminal."

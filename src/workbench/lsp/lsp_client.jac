@@ -621,6 +621,58 @@ async def:pub get_rename_edits(path: str, content: str, line: int, column: int, 
     return _lsp_workspace_edit_to_list(result);
 }
 
+"""Recursively converts `jac lsp`'s hierarchical `DocumentSymbol[]` (`{name, kind, range,
+selectionRange, children}`, confirmed against `utils.impl.jac`'s `get_symbols_for_outline`) into
+this project's own nested `{name, kind, line, column, children}` shape, 1-based. Uses
+`selectionRange` (the symbol's own name-token span), not the broader `range` (the symbol's whole
+body) -- `outline.jac`'s click-to-jump wants "put the cursor on this symbol's name," the same thing
+`_lsp_location_to_dict` already does for go-to-definition, not "select this symbol's entire body."
+`children` recurses through the identical conversion rather than being left as raw LSP dicts, so a
+consumer never has to know the wire shape past this one boundary function."""
+def:pub _lsp_document_symbols_to_list(symbols: any) -> list[dict[str, any]] {
+    if not isinstance(symbols, list) {
+        return [];
+    }
+    result = [];
+    for sym in symbols {
+        if not isinstance(sym, dict) {
+            continue;
+        }
+        selection_range = sym.get("selectionRange", {});
+        sel_start = selection_range.get("start", {});
+        result.append({
+            "name": sym.get("name", ""),
+            "kind": sym.get("kind", 0),
+            "line": int(sel_start.get("line", 0)) + 1,
+            "column": int(sel_start.get("character", 0)) + 1,
+            "children": _lsp_document_symbols_to_list(sym.get("children") or [])
+        });
+    }
+    return result;
+}
+
+"""Syncs `content`, then asks `jac lsp` for `path`'s symbol outline -- the data source for both
+`outline.jac` (this PR) and, as a deliberate follow-up, breadcrumbs (a second consumer of the same
+tree, tracking which symbol contains the current cursor -- not built in this PR, since it needs
+live cursor position layered on top, a genuinely different piece of plumbing than a sidebar view
+needs). `get_outline` (`engine.impl.jac`) always returns a plain list, never `None`, so this mirrors
+that with an empty list rather than `None` for "no symbols" (an empty file, or one `jac lsp` hasn't
+type-checked)."""
+async def:pub get_document_symbols(path: str, content: str) -> list[dict[str, any]] {
+    if not _is_jac_file(path) {
+        return [];
+    }
+    handle = await _ensure_process();
+    if handle is None {
+        return [];
+    }
+    await _sync_content(handle, path, content);
+    result = await _send_request(handle, "textDocument/documentSymbol", {
+        "textDocument": {"uri": _path_to_uri(path)}
+    });
+    return _lsp_document_symbols_to_list(result);
+}
+
 """Syncs `content`, then asks for completions at `line`/`column` (1-based, matching this project's
 own convention everywhere else -- `handle_cursor_change`, `get_line_changes`, ... -- converted to
 LSP's 0-based `line`/`character` at the boundary). Returns a small, client-friendly shape

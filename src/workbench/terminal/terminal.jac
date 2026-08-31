@@ -30,6 +30,15 @@ here regardless of how that descendant was inserted into the DOM. `workbench.jac
 populate a `terminalFocus` context key its keybinding dispatcher checks -- see its docstring for
 why a keybinding like Escape-closes-the-terminal needs to know this and not fire everywhere.
 
+**Notify on non-zero exit (2026-08-31, `docs/roadmap.md` Phase 4's toast-notifications bullet)** --
+`onNotify` fires once per submitted command, read straight out of the server's own trailing
+`[process exited with code N]` line (`terminal_service.jac`'s `run_in_terminal`) rather than a
+second signal invented here; a `0` exit stays silent (matching VS Code's own "only surface
+failures" posture for shell commands), anything else pops an error toast so a command that failed
+in a terminal the user isn't currently looking at doesn't go unnoticed. This is the one real
+producer the whole notification mechanism ships wired through -- see `workbench.jac`'s own
+docstring on why this shipped with a caller rather than landing data-model-only.
+
 **Re-fitting on resize, and deferring the welcome banner (2026-08-25, caught via real browser
 verification, not compiled-bundle inspection -- neither gap showed up in any compiled-JS reading,
 only in an actual rendered screenshot)** -- `fit.fit()` at mount time alone sized the terminal to a
@@ -65,7 +74,7 @@ import from "react" { useEffect }
 import from "@xterm/xterm" { Terminal }
 import from "@xterm/addon-fit" { FitAddon }
 
-def:pub app(onFocusChange: any) -> JsxElement {
+def:pub app(onFocusChange: any, onNotify: any) -> JsxElement {
     has container_ref: Ref[any] = Ref();
     has term_ref: Ref[any] = Ref();
     has fit_ref: Ref[any] = Ref();

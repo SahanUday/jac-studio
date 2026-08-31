@@ -174,6 +174,10 @@ impl app.handle_command(command_id: str) -> None {
     }
     if command_id == "workbench.action.showCommands" {
         command_palette_open = not command_palette_open;
+        return;
+    }
+    if command_id == "workbench.action.showNotifications" {
+        notification_panel_open = not notification_panel_open;
     }
 }
 
@@ -187,6 +191,41 @@ impl app.set_command_palette_open(next_open: bool) -> None {
 
 impl app.select_view(view_id: str) -> None {
     active_view_id = view_id;
+}
+
+"""Maps `severity` onto `sonner`'s own per-severity call (`toast.error`/`toast.warning`/plain
+`toast` for info) rather than always calling the bare `toast(message)` form -- `sonner` uses that
+to pick the toast's icon/accent color, the same severity vocabulary `diagnostics.jac` already
+established (`"error" | "warning" | "info"`)."""
+impl app.add_notification(message: str, severity: str, source: str) -> None {
+    updated = notifications + [{
+        "id": next_notification_id,
+        "message": message,
+        "severity": severity,
+        "source": source
+    }];
+    notifications = updated;
+    next_notification_id = next_notification_id + 1;
+
+    if severity == "error" {
+        toast.error(message);
+    } elif severity == "warning" {
+        toast.warning(message);
+    } else {
+        toast(message);
+    }
+}
+
+impl app.dismiss_notification(notification_id: int) -> None {
+    notifications = [n for n in notifications if n["id"] != notification_id];
+}
+
+impl app.clear_notifications -> None {
+    notifications = [];
+}
+
+impl app.set_notification_panel_open(next_open: bool) -> None {
+    notification_panel_open = next_open;
 }
 
 impl app.set_context(key: str, value: bool) -> None {

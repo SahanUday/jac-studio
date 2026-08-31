@@ -36,6 +36,20 @@ them actually react to `main.jac`'s theme toggle -- only the shadcn-primitive-dr
 consistency rather than being the one piece that silently diverges, but the underlying gap (a
 theme toggle that doesn't reach most of the visible chrome) is real and unresolved -- worth fixing
 across all of these components together in one pass, not accidentally, piece by piece.
+
+**`position: relative; zIndex: 20` on the root, found live while verifying Search's own test
+plan (2026-08-31).** Same root cause as `workbench.jac`'s bottom-panel finding
+(`2026-08-31-fixed-sidebar-overlaps-and-intercepts-clicks-on-bottom-panel`): the vendored
+`components/ui/sidebar.jac` desktop wrapper is `position: fixed; inset-y-0; z-index: 10`, spanning
+the *entire* viewport height at the left edge -- it was already known to intercept clicks below it
+in the same horizontal column, but this is a second, distinct instance: it also sits *above* this
+activity bar (also in that same 0-48px column, just higher up the page) with no z-index of its own
+to contest it. Confirmed live via `jac browse`: `elementFromPoint` at both the Explorer *and*
+Search tab's real screen coordinates resolved to a file-tree `treeitem` from that other layer, not
+the tab button itself -- and this predates Search entirely (Explorer's own icon had the identical
+bug, just never exposed until this verification pass actually tried clicking it at its real
+coordinates instead of via an accessibility-tree ref). Same fix as the bottom panel: give this
+component its own stacking context above `z-index: 10`, without touching the vendored primitive.
 """
 
 glob VIEWS: list[dict[str, str]] = [
@@ -54,7 +68,9 @@ def:pub app(activeViewId: str, onSelectView: any) -> JsxElement {
             "width": "48px",
             "flexShrink": "0",
             "background": "#191A1B",
-            "borderRight": "1px solid #2A2B2C"
+            "borderRight": "1px solid #2A2B2C",
+            "position": "relative",
+            "zIndex": "20"
         }}
     >
         {[

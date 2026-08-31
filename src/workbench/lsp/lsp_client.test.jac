@@ -178,3 +178,70 @@ test "_lsp_location_to_dict returns None for a non-dict input" {
     assert _lsp_location_to_dict(None) is None;
     assert _lsp_location_to_dict("not a location") is None;
 }
+
+"""`_lsp_workspace_edit_to_list` flattens a `WorkspaceEdit`'s per-file `changes` map into a single
+list of `{path, startLine, startColumn, endLine, endColumn, newText}` dicts -- covering the same
+1-based conversion `_lsp_location_to_dict` applies, plus the multi-file, multi-edit-per-file case a
+single `Location` never has to."""
+test "_lsp_workspace_edit_to_list flattens a multi-file WorkspaceEdit into one list, 1-based" {
+    workspace_edit = {
+        "changes": {
+            "file:///home/user/project/main.jac": [
+                {"range": {"start": {"line": 0, "character": 5}, "end": {"line": 0, "character": 11}}, "newText": "Human"}
+            ],
+            "file:///home/user/project/helper.jac": [
+                {"range": {"start": {"line": 2, "character": 20}, "end": {"line": 2, "character": 26}}, "newText": "Human"},
+                {"range": {"start": {"line": 3, "character": 11}, "end": {"line": 3, "character": 17}}, "newText": "Human"}
+            ]
+        }
+    };
+    edits = _lsp_workspace_edit_to_list(workspace_edit);
+    assert len(edits) == 3;
+    assert {"path": "/home/user/project/main.jac", "startLine": 1, "startColumn": 6, "endLine": 1, "endColumn": 12, "newText": "Human"} in edits;
+    assert {"path": "/home/user/project/helper.jac", "startLine": 3, "startColumn": 21, "endLine": 3, "endColumn": 27, "newText": "Human"} in edits;
+    assert {"path": "/home/user/project/helper.jac", "startLine": 4, "startColumn": 12, "endLine": 4, "endColumn": 18, "newText": "Human"} in edits;
+}
+
+test "_lsp_workspace_edit_to_list returns an empty list for a None WorkspaceEdit" {
+    assert _lsp_workspace_edit_to_list(None) == [];
+}
+
+test "_lsp_workspace_edit_to_list returns an empty list when changes is missing" {
+    assert _lsp_workspace_edit_to_list({}) == [];
+}
+
+"""`_apply_text_edits` is what `apply_disk_rename_edits` uses to rename a symbol in a file with no
+open Monaco model -- pure string splicing, no I/O, so it's tested directly against real multi-edit,
+same-line and cross-line cases rather than only through a live subprocess round-trip."""
+test "_apply_text_edits applies a single single-line edit" {
+    content = "node Person {\n    has name: str;\n}\n";
+    edits = [{"startLine": 1, "startColumn": 6, "endLine": 1, "endColumn": 12, "newText": "Human"}];
+    assert _apply_text_edits(content, edits) == "node Human {\n    has name: str;\n}\n";
+}
+
+"""Two edits on the same line, applied together -- if these were applied in document order against
+a mutating string instead of back-to-front, the second edit's column would land in the wrong place
+once the first edit's replacement text (a different length than the original) shifted everything
+after it."""
+test "_apply_text_edits applies two edits on the same line without shifting the second's position" {
+    content = "greet(p, p)\n";
+    edits = [
+        {"startLine": 1, "startColumn": 1, "endLine": 1, "endColumn": 6, "newText": "welcome"},
+        {"startLine": 1, "startColumn": 10, "endLine": 1, "endColumn": 11, "newText": "person"}
+    ];
+    assert _apply_text_edits(content, edits) == "welcome(p, person)\n";
+}
+
+test "_apply_text_edits applies edits spanning multiple lines" {
+    content = "def greet(p: Person) -> str {\n    return p\n}\n";
+    edits = [
+        {"startLine": 1, "startColumn": 14, "endLine": 1, "endColumn": 20, "newText": "Human"},
+        {"startLine": 2, "startColumn": 12, "endLine": 2, "endColumn": 13, "newText": "person"}
+    ];
+    assert _apply_text_edits(content, edits) == "def greet(p: Human) -> str {\n    return person\n}\n";
+}
+
+test "_apply_text_edits with no edits returns the content unchanged" {
+    content = "unchanged\n";
+    assert _apply_text_edits(content, []) == content;
+}

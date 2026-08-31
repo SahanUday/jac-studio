@@ -56,6 +56,14 @@ rather than scattered individual calls:
 - **Chat/AI assistance**: `by llm()` and `sem` as the starting point (Tier 2.5 in the gap
   analysis, tracked as `2026-08-22-chat-subsystem-scale.md`), instead of porting upstream's
   442,661-line bolted-on chat subsystem — inline completions are tracked in the same family.
+  **Sharpened 2026-08-31**: a small, named set of native tool integrations (GitHub Copilot,
+  OpenCode, Claude Code) is now explicitly in scope alongside `by llm()`, not a substitute for it
+  — see the new "AI coding tool integrations" section below.
+- **Language intelligence (completion, hover, go-to-definition, rename, ...)**: a native LSP
+  *client* built as core workbench infrastructure, talking to `jac lsp` — a real language server
+  already shipped in jaclang core — over stdio, instead of waiting on a general third-party
+  extension host to make a language extension pluggable. Decided 2026-08-31, see "Language
+  intelligence" section below.
 
 **This does not conflict with the [TS→Jac translator](translator-strategy.md) — the two apply to
 different kinds of problem, and it's worth being precise about the boundary.** Everything above is
@@ -484,6 +492,39 @@ Do not attempt Phase C before Phases A and B have validated the contribution-reg
 extension-API-surface design against real usage — sandboxing a design that later turns out wrong
 would waste the hardest work in the project.
 
+**Re-prioritized 2026-08-31, per explicit project-sponsor direction — this reorders the milestone
+target, not the technical phasing above, which stays correct as written.** The near-term goal is a
+**complete, VS-Code-feature-equivalent editor built on native/built-in Jac functionality alone**
+("jac-coder" as a full-featured product in its own right) — not a marketplace, and not compatibility
+with the arbitrary third-party `.vsix` ecosystem. Concretely, this changes what counts as "done" for
+the next several phases, without changing the phased trust model itself:
+
+- **Phase A is the whole near-term target, not a stepping stone to rush past.** Every "built-in
+  VS Code feature" this document scopes — search, SCM/git, tasks/problems, language intelligence,
+  a debugger, notifications, output — should be built as trusted, in-process, build-time-loaded Jac
+  modules (Phase A's own definition), reaching real VS-Code feature parity **without ever needing
+  Phase B or C to ship.** This was already implicit in Phase A's own description; stating it
+  explicitly here because earlier roadmap drafts filed some of these features under "needs the
+  extension system" by analogy to how upstream happens to package them, not because they actually
+  require dynamic loading or a trust boundary — see "Language intelligence" below for the clearest
+  case of this correction.
+- **Phase B (dynamic loading) and Phase C (sandboxing) are explicitly a *later*, separate track,
+  pursued once the Phase-A-built full-featured editor exists** — not abandoned, not "maybe never,"
+  just deliberately sequenced after the native-feature-parity milestone rather than interleaved
+  with it. A user should be able to get a complete VS-Code-equivalent experience before jac-studio
+  can load a single third-party extension.
+- **The "investigate loading the real published `jaseci-labs.jaclang-extension` `.vsix`
+  unmodified" research question (below, under Open questions) is downgraded from a Phase-4
+  planning item to explicitly deferred, non-blocking research.** It's still worth eventually
+  answering — it's the concrete test case for how much `vscode`-API compatibility to target once
+  Phase B design starts — but nothing in the native-feature-parity milestone depends on its answer,
+  because the same extension's actual value (real Jac language intelligence) is reachable directly
+  today: see "Language intelligence" below.
+- **A small, explicitly-named set of native AI coding-tool integrations is in scope now**, as its
+  own deliverable distinct from both "port upstream's chat subsystem" (still excluded) and "wait
+  for a general extension system to make arbitrary chat extensions pluggable" (no longer the
+  gating assumption). See "AI coding tool integrations" below.
+
 ## IPC / cross-boundary calls
 
 VS Code's extension-host/main-thread RPC split, and its general `IChannel`/`IServerChannel`
@@ -533,9 +574,9 @@ Proposed Jac equivalent:
 and stays that way here — but the two halves of it are very different sizes of problem:
 
 - *Run without debugging* is nearly free once the terminal above exists: a language extension
-  (Phase 4/5) contributes a command that knows how to construct the right shell invocation for a
-  file type (`python foo.py`, `cargo run`, ...) and hands it to the same `RunInTerminal` walker.
-  No new mechanism needed.
+  (Phase 4, or Phase 6 for a third-party one) contributes a command that knows how to construct
+  the right shell invocation for a file type (`python foo.py`, `cargo run`, ...) and hands it to
+  the same `RunInTerminal` walker. No new mechanism needed.
 - *Real debugging* — breakpoints, stepping, call stack, variable inspection — is a gap this
   document had not previously scoped. VS Code's generic Debug Adapter Protocol (DAP) client, and
   the convention of extensions plugging in a per-language debug adapter process that speaks DAP,
@@ -567,25 +608,77 @@ well-defined provider API (`registerCompletionItemProvider`, `registerHoverProvi
 more in `vscode.d.ts`) that extensions implement — usually by bridging to a real **Language Server
 Protocol** server process, not by the workbench having built-in per-language knowledge.
 
-Proposed shape for jac-studio, deliberately mirroring the Debug Adapter Protocol treatment above
-since it's the same category of problem:
+**Resolved 2026-08-31 — the "shared open question with the DAP client" below used to read "is
+there a usable LSP client library reachable via Jac's interop, or does this need building from the
+wire protocol up?" That question undersold what's already available and doesn't need answering by
+research: jaclang itself ships a real, working LSP server.** `jac lsp` is a first-party CLI command
+(`jaclang/cli/commands/tools.jac`, `handler_name=ct_name(lsp)`) that starts
+`jaclang.lsp.server.server.run_lang_server()` — a genuine LSP server built on jaclang's own vendored
+`pygls`/`lsprotocol`, already implementing `completion`, `hover`, `definition`, `references`,
+`rename`, `document_symbol`, `semantic_tokens_full`, and `formatting` against real Jac source (not a
+stub). This is the same server the published `jaseci-labs.jaclang-extension` VS Code extension
+already wraps — the extension is just a thin VS Code-side LSP client plus a bundled TextMate
+grammar; the actual language intelligence lives in `jac lsp` itself, independent of VS Code
+entirely.
 
-- The **editor-side consumption layer** (rendering a completion popup, a hover card, a peek view)
-  is workbench-core UI work, independent of any specific language — build it once, Phase 4-or-later,
-  against a generic provider interface.
-- **Providers themselves are extension-contributed**, same as upstream — a language extension
-  either implements the interface directly or bridges to a real LSP server subprocess (the same
-  `shell`-capability process-spawn mechanism already scoped for the terminal handles launching
-  one).
-- **Shared open question with the DAP client**: is there a usable Python (or npm) LSP client
-  library reachable via Jac's interop, or does this need building from the wire protocol up?
-  Worth researching once, since both DAP and LSP are JSON-RPC-shaped protocols with a similar
-  "spawn a subprocess, speak a wire format" integration story.
+This changes the proposed shape materially — it's no longer "wait for the extension system,
+because upstream implements this via extensions":
+
+- **A native LSP client is core workbench infrastructure, built directly, not extension-contributed
+  — the single highest-value "VS Code full-featured" capability for jac-studio's own dominant file
+  type.** Spawn `jac lsp` as a subprocess the same way the terminal work already spawns any other
+  process (`root spawn`, gated by the same `shell`-capability mechanism already scoped for Phase 2),
+  and speak LSP's JSON-RPC-over-stdio wire format to it from a generic client module. No `vscode`-API
+  shim, no `.vsix` loading, no extension host needed to get real Jac completion/hover/definition/
+  references/rename working end to end. The `jaseci-labs.jaclang-extension` `.vsix` was previously
+  scoped in Phase 4 as a compatibility-research question — that question is now explicitly
+  **deferred, non-blocking** (see the Extension System section above); getting the underlying
+  language intelligence into jac-studio does not wait on it.
+- **The editor-side consumption layer** (rendering a completion popup, a hover card, a peek view,
+  applying a rename) is workbench-core UI work against a generic provider interface, same as before
+  — but now it has one concrete, already-working backend (`jac lsp`) to build and verify against
+  immediately, rather than being blocked on "some future extension registers a provider." Design the
+  interface generically enough that a second language server (e.g. `pyright` for Python files opened
+  in a Jac project) is a second client instance, not a rewrite — but ship the Jac case first, since
+  it's the dominant file type and the server already exists.
 - This cluster isn't just "show the results" — a rename provider is useless without something to
   actually *apply* a multi-file edit, and a call-hierarchy/outline panel is just workbench UI over
   the same provider data as the completion popup and hover card. Bulk-edit application and the
   outline/call-hierarchy/breadcrumbs views belong in this same effort, not as separate features
   discovered later (see [`vscode-complete-triage.md`](vscode-complete-triage.md)).
+- The Debug Adapter Protocol client is the same category of problem for the same reason: a debug
+  adapter is just another subprocess speaking a JSON wire protocol, not something that needs a
+  general extension host either. See Process Execution above and `roadmap.md` for both landing in
+  the same native-infrastructure phase as the LSP client, ahead of Phase B/C extension work.
+
+## AI coding tool integrations
+
+**Added 2026-08-31, per explicit project-sponsor direction.** Upstream's chat/agent subsystem
+(`workbench/contrib/chat`, 442,661 lines — see the gap analysis's Tier 2.5) stays excluded as a
+port target; that call doesn't change. What's now explicitly in scope, as its own deliverable, is a
+**small, named set of native integrations with existing external coding-assistant tools**, decided
+deliberately rather than left as an indefinitely-deferred "revisit with `by llm()`" note:
+
+- **GitHub Copilot** — real-world precedent for the mechanism: even inside VS Code, Copilot's own
+  inline-completion path runs a bundled `copilot-language-server` as a subprocess speaking a
+  JSON-RPC protocol closely related to LSP, not primarily through the proposed chat-extension APIs.
+  The realistic integration shape for jac-studio is therefore the same subprocess/JSON-RPC pattern
+  already used for `jac lsp` and the terminal, not a `vscode`-chat-API shim.
+- **OpenCode** and **Claude Code** — both are CLI-first agentic coding tools with a documented
+  SDK/subprocess-driven integration story (the same shape this very project's own tooling uses).
+  Realistic integration shape: drive the tool's CLI/SDK as a spawned, capability-gated process
+  (again, the terminal's own mechanism), streaming output back via the SSE/`Generator` pattern
+  already used for LLM-token streaming (`jac-sv-streaming.md`).
+- **`by llm()`/`sem` stay the native fallback and first-class citizen**, not superseded by these —
+  for anything jac-studio wants to build itself (inline suggestions, a native chat panel) without
+  depending on an external tool's availability or licensing.
+- **Not in scope now**: a generic mechanism for *arbitrary* third-party chat/agent extensions to
+  plug in — that would require the same extension-host trust-boundary work as Phase B/C, deferred
+  for the same reason. This is a short, named list of integrations, not a platform.
+- No architecture spike has been done yet on any of the three integrations individually — each
+  needs its own small scoping pass (auth/licensing model, exact subprocess/SDK surface, what UI
+  surface it needs) before implementation starts. Track that scoping as its own doc once the
+  relevant phase begins, the same discipline already applied to the DAP client.
 
 See [`vscode-feature-gap-analysis.md`](vscode-feature-gap-analysis.md) for the full inventory this
 was drawn from, including several Tier 2/3 items (source control, tasks/problem-matchers, the
@@ -615,11 +708,15 @@ into every section of this document.
   own design doc once Phase A ships. **A concrete test case identified (2026-08-28)**: the real,
   published `jaseci-labs.jaclang-extension` VS Code extension ships a complete
   `jac.tmLanguage.json` TextMate grammar (4,937 lines) far more thorough than the hand-rolled
-  Monarch tokenizer Phase 3 shipped as a stopgap (`src/editor/client/jac_language.jac`) — whether
-  jac-studio can load that extension (fully, or at least its grammar via a narrower
-  `vscode-textmate`/`vscode-oniguruma` bridge if full compatibility isn't feasible) is now scoped
-  into Phase 4's plan (see `roadmap.md`), and answering it also resolves this bullet, not just the
-  syntax-highlighting stopgap.
+  Monarch tokenizer Phase 3 shipped as a stopgap (`src/editor/client/jac_language.jac`), plus a
+  real language server. **Re-scoped 2026-08-28→2026-08-31**: whether jac-studio can load that
+  extension's `.vsix` unmodified is downgraded from a Phase-4 planning item to deferred,
+  non-blocking research (see the Extension System section's 2026-08-31 re-prioritization above) —
+  the language-server half of the value this test case represents is already reachable directly,
+  since `jac lsp` (the same server that extension wraps) is a first-party jaclang CLI command, not
+  something reachable only by loading that `.vsix` — see "Language intelligence" above. The grammar
+  half (richer than the Phase 3 Monarch stopgap) remains a legitimate reason to eventually answer
+  this bullet, just not on the critical path to a feature-complete native editor.
 - ~~Color/icon theming: match VS Code's default visual identity, or keep shadcn's own default
   look?~~ **Decided (2026-08-28), implemented (2026-08-28)**: match VS Code's default identity —
   actually "Dark 2026"/"Light 2026"-derived OKLCH tokens via `jac retheme` plus hand-edited exact
@@ -631,8 +728,17 @@ into every section of this document.
   still open — ecosystem-compatible support is real extra work (parsing VS Code's theme JSON
   format, mapping it onto `jac retheme` tokens at runtime) versus themes only ever being authored
   as native `jac retheme` configs. Not decided — see
-  [`vscode-complete-triage.md`](vscode-complete-triage.md)'s `themes` row. Decide once Phase 4/5
+  [`vscode-complete-triage.md`](vscode-complete-triage.md)'s `themes` row. Decide once Phase 6
   extensions exist to actually contribute a theme.
 - Debug Adapter Protocol client: is a Jac/Python DAP client library reachable via Python interop
   (there's a real ecosystem of DAP libraries in Python), or does this need building from the wire
-  protocol up? Not researched yet — first task if Phase 4/5 picks up debugging support.
+  protocol up? Not researched yet — first task once the native-infrastructure phase (LSP client +
+  DAP client, per the 2026-08-31 re-prioritization above) picks up debugging support.
+- ~~LSP client: is there a usable Python (or npm) LSP client library reachable via Jac's interop,
+  or does this need building from the wire protocol up?~~ **Resolved 2026-08-31**: the question was
+  aimed at the wrong half of the problem — the server side is already solved (`jac lsp`, a real
+  first-party jaclang command), so the remaining work is a generic client speaking stdio JSON-RPC
+  to it, the same shape as the still-open DAP question above. See "Language intelligence" above.
+- Which native AI coding-tool integrations (Copilot / OpenCode / Claude Code) get built, in what
+  order, and with what auth/licensing model each requires — added 2026-08-31, see "AI coding tool
+  integrations" above. Not decided; needs its own scoping pass per tool before implementation.

@@ -6,6 +6,28 @@ see the maturity gaps in [`research/jac-capabilities.md`](research/jac-capabilit
 phase ends with a working, demoable artifact, per the MVP-first principle in
 [`architecture.md`](architecture.md).
 
+**Re-prioritized 2026-08-31, per explicit project-sponsor direction** (see `architecture.md`'s
+Extension System section for the full reasoning): the milestone this roadmap is driving toward
+next is **a complete, VS-Code-feature-equivalent editor — "jac-coder" — built entirely on
+native/built-in Jac functionality, without depending on a general third-party extension ecosystem.**
+That's the actual end goal, not a scaled-down substitute for it — full `.vsix`/marketplace
+compatibility is still on this roadmap, just deliberately sequenced *after* that native milestone
+(Phase 6 below), not interleaved with it. Concretely, this reorders Phases 4–8 below relative to
+earlier drafts:
+
+- Phase 4 now folds in **native language intelligence (a real Jac LSP client) and a Debug Adapter
+  Protocol client** as flagship deliverables, promoted out of "future research" — both turn out to
+  need nothing beyond the process-spawn mechanism Phase 2's terminal already established, and Jac's
+  own `jac lsp` command already provides a real, working language server to build the LSP half
+  against immediately (see `architecture.md`'s "Language intelligence" section).
+- A new Phase 5 scopes **native integrations with a small, named set of external AI coding tools**
+  (GitHub Copilot, OpenCode, Claude Code) as their own deliverable, distinct from both "port
+  upstream's chat subsystem" (still excluded) and "wait for a general extension system" (no longer
+  the assumption).
+- What were Phases 5–7 (extension system Phase B, sandboxing, desktop packaging) shift to Phases
+  6–8, explicitly framed as *later*, non-blocking to the native-feature-parity milestone above —
+  not abandoned, just no longer gating "is jac-studio full-featured yet."
+
 ## Phase 0 — Foundations
 
 Goal: de-risk the two biggest architectural bets before building anything on top of them.
@@ -207,10 +229,14 @@ persist across restarts; opened files show syntax highlighting for at least a fe
 two versions of a file can be diffed; the workbench chrome matches VS Code's default look and feel,
 including the activity bar, title bar, minimap, and Quick Open.
 
-## Phase 4 — Extension system, Phase A (trusted, in-process)
+## Phase 4 — Native built-in features + language intelligence (extension system Phase A)
 
-Goal: prove the contribution-registry design end to end without solving sandboxing first (see
-`architecture.md`'s phased extension trust model).
+Goal: reach real VS-Code feature parity for the features that make an editor useful day to day —
+search, source control, tasks/diagnostics, and genuine language intelligence — using only trusted,
+in-process, build-time-loaded Jac modules (extension-system "Phase A" per `architecture.md`'s
+phased trust model), with **zero dependency on dynamic loading, a manifest format, or any
+`.vsix`/`vscode`-API compatibility work.** This is the flagship phase of the native-feature-parity
+milestone described at the top of this document.
 
 - "Extensions" are Jac modules loaded at build time, contributing commands/views/menus to the
   same registry the built-in workbench features use.
@@ -225,57 +251,96 @@ Goal: prove the contribution-registry design end to end without solving sandboxi
   3. **A task runner with problem matchers** — writes into the `Diagnostic` node type staged in
      Phase 3, feeding a Problems panel. Proves the contribution model handles a feature with its
      own persistent config format (a task-definitions equivalent to `tasks.json`), not just UI.
-- **Language-intelligence groundwork**: research whether a Python (or npm) LSP *client* library is
-  usable via interop — the same open question as the DAP client in Phase 5, worth answering once
-  for both. Build the editor-side consumption UI (completion popup, hover card) as a Phase
-  4-or-later increment once that research lands; don't block this phase's exit on it.
-- **Investigate real VS-Code-extension-API compatibility, using the actual published Jac extension
-  as the test case** (decided 2026-08-28, prompted by Phase 3's syntax-highlighting work) — the
-  real `jaseci-labs.jaclang-extension` (on the VS Code Marketplace, source at
-  `jaseci/jac/support/vscode_ext/jac`) ships a genuinely complete `jac.tmLanguage.json` TextMate
-  grammar (4,937 lines, 224 repository entries) plus a real language server, both far more complete
-  than the hand-rolled Monarch tokenizer `src/editor/client/jac_language.jac` shipped as a Phase 3
-  stopgap. Answer, in order: (1) can jac-studio load this `.vsix` largely unmodified (full
-  `vscode` module shim, activation events, contribution loading)? If yes, this single effort also
-  resolves `architecture.md`'s still-open "how much vscode-API compatibility to target" question
-  and replaces the Phase 3 stopgap tokenizer with the authoritative, jaseci-team-maintained grammar
-  in one move. (2) If full compatibility isn't feasible, investigate the narrower fallback:
-  reusing just the bundled TextMate grammar via a `vscode-textmate` + `vscode-oniguruma` bridge
-  into Monaco's token provider (the same technique vscode.dev/StackBlitz use), decoupled from the
-  extension-API question entirely — unverified whether this project's Vite/jac-cl toolchain handles
-  the WASM grammar-engine asset cleanly, so spike it rather than assume. Either outcome replaces
-  `jac_language.jac`; until this lands, the Phase 3 tokenizer stays as the working baseline.
+- **A native Jac LSP client — promoted from "groundwork research" to a flagship deliverable
+  (re-scoped 2026-08-31)**: jaclang already ships a real, working language server, started via the
+  first-party `jac lsp` CLI command (`jaclang/cli/commands/tools.jac`,
+  `jaclang.lsp.server.server.run_lang_server()`), implementing completion, hover, go-to-definition,
+  find-references, rename, document-symbols, semantic tokens, and formatting against real Jac
+  source. There is no "is a usable LSP client library reachable via interop" research question left
+  to answer — the server already exists. The actual work is: (1) spawn `jac lsp` as a subprocess
+  the same way the terminal spawns any other process (`root spawn`, the same `shell`-capability
+  gate), (2) build a generic client speaking LSP's JSON-RPC-over-stdio wire format, (3) build the
+  editor-side consumption UI (completion popup, hover card, go-to-definition, rename, a peek view)
+  against a provider interface generic enough that a second language server is a second client
+  instance later, not a rewrite. Ship the Jac case first — it's this project's own dominant file
+  type. **Bulk-edit application** (applying a multi-file rename/refactor result) and the
+  **outline/call-hierarchy/breadcrumbs views** are required parts of this same effort, not separate
+  features discovered later (per `vscode-complete-triage.md`'s `bulkEdit`/`callHierarchy`/`outline`
+  rows) — a rename provider that can't apply its own result isn't done.
+- **A Debug Adapter Protocol client — moved here from the old Phase 5 (re-scoped 2026-08-31)**:
+  the same category of problem as the LSP client for the same reason (a debug adapter is just
+  another subprocess speaking a JSON wire protocol), so it belongs in the same native-infrastructure
+  phase rather than waiting on the extension system. First step: check whether a Python DAP client
+  library is usable via Python interop before building one from the wire protocol up (still
+  unresearched — see `architecture.md`'s open questions).
+- **The real published `jaseci-labs.jaclang-extension` `.vsix` compatibility question is explicitly
+  deferred, non-blocking research, not a phase deliverable (downgraded 2026-08-31 from its
+  2026-08-28 Phase-4 placement)** — the language-server half of that extension's value is already
+  captured by the `jac lsp` client above, without needing to load the `.vsix` at all. What's left
+  (whether jac-studio could eventually load the extension's richer TextMate grammar, or the whole
+  `.vsix` unmodified) is real but stays a "someday, once Phase 6 investigates `.vsix` compatibility
+  generally" question — the Phase 3 Monarch tokenizer stays the working baseline until then.
 - **An Output panel with a log-channel abstraction** — moved earlier than its upstream scale would
   suggest, because it's needed to debug the extensions being written *in this phase*, not just as
   a later user-facing feature (per [`vscode-complete-triage.md`](vscode-complete-triage.md)'s
-  `output`/`logs` row).
+  `output`/`logs` row). Also the natural place to surface `jac lsp`'s and the DAP client's own
+  logs.
 - **A merge-conflict UI** alongside the SCM work above — real conflicts only exist once real git
   integration does, so this is the natural phase for it, distinct from the two-way diff editor
   already shipped in Phase 3.
 - **Toast notifications + a notification center** (`workbench/browser/parts/notifications`, found
   2026-08-28 — see `vscode-complete-triage.md`'s "workbench/browser/parts" section, previously
-  undocumented as a UI surface). Genuine prerequisite here, not polish deferred further: both the
-  task runner and SCM operations above need a way to report background success/failure to the
-  user, and there's currently no UI surface for that at all.
+  undocumented as a UI surface). Genuine prerequisite here, not polish deferred further: the task
+  runner, SCM operations, and language server above all need a way to report background
+  success/failure to the user, and there's currently no UI surface for that at all.
 
 Exit criteria: a fourth built-in feature can be added purely by writing a new contributing module,
 with zero changes to existing workbench code — the actual test of whether the contribution model
 is real; SCM shows real git status/diffs and can resolve a merge conflict; a build task's errors
 show up in a Problems panel; extension output is visible in a log channel; a background task's
-completion surfaces as a toast notification.
+completion surfaces as a toast notification; **opening a `.jac` file gets real completion, hover,
+go-to-definition, find-references, and rename against `jac lsp` — not just syntax highlighting**;
+a debug session can set a breakpoint and step through at least one language's code via a real DAP
+adapter.
 
-## Phase 5 — Extension system, Phase B (dynamic, still trusted)
+## Phase 5 — Native AI coding-tool integrations
 
-Goal: extensions become separate packages with a manifest, loaded at runtime.
+Goal: a small, explicitly-named set of external AI coding tools work natively inside jac-studio,
+without building a generic mechanism for arbitrary third-party chat/agent extensions to plug in
+(that remains deferred to the extension-system Phase B/C track below). See `architecture.md`'s "AI
+coding tool integrations" section for the full reasoning — this phase turns that design into a
+scoped deliverable.
 
-- Design the manifest format (deliberately deferred in `architecture.md` — resolve the
-  vscode-API-compatibility question here, before this phase, since it changes the manifest shape
-  significantly).
+- **GitHub Copilot** — realistic shape: the same subprocess/JSON-RPC pattern as the LSP/DAP clients
+  above, since Copilot's own inline-completion path runs a bundled `copilot-language-server`
+  subprocess in real VS Code too, not primarily through chat-extension APIs. Needs its own scoping
+  pass first (auth/licensing model, exact protocol surface).
+- **OpenCode** and **Claude Code** — both CLI-first, SDK/subprocess-drivable agentic tools; the
+  realistic integration shape is a spawned, capability-gated process (the terminal's own mechanism)
+  with output streamed back via the SSE/`Generator` pattern already used for LLM-token streaming.
+  Each needs its own scoping pass before implementation, same as Copilot.
+- **`by llm()`/`sem`-based native features** (inline suggestions, a native chat panel jac-studio
+  owns outright) are a legitimate parallel track here too, not superseded by the external
+  integrations above — build whichever gives the fastest real signal first.
+
+Exit criteria: at least one of the three named tools is usable end to end inside jac-studio for a
+real coding task (not a mock/demo), with its own auth flow and output surfaced through the
+Output/notification infra Phase 4 already built.
+
+## Phase 6 — Extension system, Phase B (dynamic, still trusted)
+
+Goal: extensions become separate packages with a manifest, loaded at runtime — the first phase of
+the *later*, non-blocking third-party-extension track (see the 2026-08-31 re-prioritization at the
+top of this document). Nothing in Phases 1–5's native-feature-parity milestone depends on this
+phase shipping.
+
+- Design the manifest format (deliberately deferred in `architecture.md`) — this is also where the
+  vscode-API-compatibility question (how much of VS Code's actual `vscode` module to shim, using
+  the real `jaseci-labs.jaclang-extension` `.vsix` as the concrete test case per `architecture.md`'s
+  open questions) finally needs answering, since it changes the manifest shape significantly. Not
+  needed any earlier — Phase 4's language intelligence got the useful part of that extension's
+  value already, without this.
 - Dynamic loading at runtime, still fully trusted — no isolation yet.
-- **Debug Adapter Protocol client** (per `architecture.md`'s Process Execution section) — a
-  from-scratch scoped design effort, not something that falls out of the general contribution
-  model. First step: check whether a Python DAP client library is usable via Python interop
-  before building one from the wire protocol up.
 - **Extensions view** (browse/install/enable/disable/uninstall) — now that extensions load
   dynamically, they need a management UI; not previously called out as distinct from the trust
   model itself (per [`vscode-complete-triage.md`](vscode-complete-triage.md)'s `extensions` row).
@@ -283,7 +348,9 @@ Goal: extensions become separate packages with a manifest, loaded at runtime.
   external service (git hosting, a language server needing a license token, anything) needs
   somewhere to request/share OAuth tokens and store credentials safely rather than each extension
   reinventing it in plaintext settings. Small (upstream's `encryption` contrib is 48 lines, a thin
-  OS-keychain wrapper) but a real dependency once any auth-requiring extension is written.
+  OS-keychain wrapper) but a real dependency once any auth-requiring extension is written — and by
+  this phase, Phase 5's Copilot/OpenCode/Claude Code integrations already need something like it,
+  worth checking whether their auth needs can reuse this broker rather than each rolling its own.
 - **Auxiliary bar** (`workbench/browser/parts/auxiliarybar`, found 2026-08-28 — see
   `vscode-complete-triage.md`) — the secondary/right-side dockable panel. Upstream uses it for
   Chat (excluded here, see `chat`'s Tier 2.5 disposition) but it's generic dockable-panel infra
@@ -294,19 +361,18 @@ Goal: extensions become separate packages with a manifest, loaded at runtime.
   pairing with that broker and with `userDataSync`/`userDataProfile` (already Tracked); include if
   time allows, not exit-blocking.
 
-Exit criteria: an extension can be installed/removed without a rebuild of the app itself, and a
-language extension can register a debug adapter that gets real breakpoint/step/inspect support.
+Exit criteria: an extension can be installed/removed without a rebuild of the app itself.
 
-## Phase 6 — Extension sandboxing (Phase C) — treat as its own research track
+## Phase 7 — Extension sandboxing (Phase C) — treat as its own research track
 
 Goal: untrusted third-party extension code, safely isolated.
 
 This is explicitly R&D, not integration work (see `architecture.md`). Do not start this before
-Phase 4/5 have validated the extension-API surface against real usage. Likely built on Jac's
+Phase 6 has validated the extension-API surface against real usage. Likely built on Jac's
 native+WASM compilation path; expect this phase to produce the largest volume of tracker entries
 in the whole project, since there's no existing Jac precedent to lean on at all.
 
-## Phase 7 — Desktop packaging
+## Phase 8 — Desktop packaging
 
 Goal: a real, installable, cross-platform binary — deliberately last, per `architecture.md`
 principle 4 (no cost to deferring it, since the desktop shell is a thin wrapper over the same
@@ -328,7 +394,7 @@ pipeline (not a manual `jac nacompile` on a developer's machine).
 ## Explicitly out of scope for now (revisit later, not decided against)
 
 - Remote/server development (VS Code's remote-SSH-style architecture) — no research done yet.
-- A public extension marketplace/registry — depends entirely on Phase 5/6 outcomes.
+- A public extension marketplace/registry — depends entirely on Phase 6/7 outcomes.
 - Collaborative real-time editing — the multi-user access-control primitives exist in Jac
   (`root.shared`, `grant`/`revoke`) and would make this more tractable than in a from-scratch
   stack, but it's not on the critical path to a usable single-user MVP.

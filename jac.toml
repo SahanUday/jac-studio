@@ -56,6 +56,15 @@ lib_imports = ["import tailwindcss from '@tailwindcss/vite'"]
 [test]
 directory = "src"
 
+# output_service.jac uses `root`/`jid()` (server-only concepts) but has no Python import or graph
+# archetype to anchor it server per the placement solver's own evidence rules -- without this pin
+# the whole module, jid(root) included, gets pulled wholesale into the client bundle the moment a
+# client component (src/workbench/output/output.jac) imports one of its def:pub functions, and
+# jid() then throws a confusing runtime error instead of dispatching over RPC. See tracker entry
+# 2026-08-31-anchor-free-root-using-module-pulled-client-wholesale.
+[placement.pins]
+"src.workbench.output.output_service" = "server"
+
 # Deny-by-default: the integrated terminal (src/workbench/terminal/terminal_service.jac) refuses to
 # run any command until this is explicitly flipped on, same posture docs/architecture.md scopes for
 # the desktop `shell` capability -- "same trust level as [the user] opening their own terminal."

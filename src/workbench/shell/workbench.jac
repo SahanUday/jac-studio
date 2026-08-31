@@ -142,6 +142,37 @@ key -- `dict` key deletion has no client-codegen lowering yet, see tracker entry
 `2026-08-28-client-dict-del-unsupported-by-jac2js`; overwriting with `False` is functionally
 identical for a value this component only ever reads via `.get(path, False)`), so reopening the
 same file later starts clean rather than showing a stale dot left over from before the close.
+
+**Output panel + a real bottom-panel tab strip (2026-08-31, `docs/roadmap.md` Phase 4)** --
+`terminal_open` (already persisted via `session_service.jac`) is reinterpreted, not renamed, to
+mean "is the bottom panel area open" rather than "is the terminal specifically open" -- an old
+saved session's `terminal_open=True` still means exactly what it used to (the panel shows,
+defaulting to the Terminal tab), so this doesn't touch the persisted schema at all.
+`active_bottom_panel` (`"terminal" | "output"`) is new, deliberately **not** persisted -- same call
+already made for `dirty_paths` above, an ephemeral UI-focus detail a fresh session doesn't need to
+remember. `_toggle_panel` is the one place both `workbench.action.terminal.toggle` and the new
+`workbench.action.output.toggle` route through: re-selecting the already-active tab closes the
+panel, selecting the other tab (or opening from closed) switches to it and opens -- avoids writing
+the same open/close/switch logic twice for what was, until this bullet, a single hardcoded panel.
+`OutputApp` mounts unconditionally alongside `TerminalApp`, same "mount once, hide via CSS"
+convention (never conditionally rendered, so `terminal.jac`'s own scrollback-preserving mount-once
+concern isn't reintroduced for the new tab) -- its `active` prop (only true while it's both the
+selected tab *and* the panel is open) is what lets it poll for new content without a background
+timer running for a panel nobody's looking at, see its own docstring.
+
+**`position: relative; zIndex: 20` on the panel container is load-bearing, found live, not
+decorative** -- `components/ui/sidebar.jac`'s vendored desktop wrapper is `position: fixed;
+inset-y-0; height: 100svh; z-index: 10` (matches VS Code's own always-full-height sidebar, but
+means it paints, and intercepts *clicks*, above any later-DOM sibling within its horizontal width
+that has no stacking context of its own -- confirmed live via `jac browse`, both visually (the tab
+labels were fully invisible, painted under the sidebar) and functionally (a synthetic click on the
+Terminal tab's real coordinates landed on the sidebar's scroll-area viewport instead). This
+predates this bullet -- the single old "Terminal" label had the identical bug, just never a second
+real interactive element in that column to make a user-visible click failure obvious. Giving this
+container its own positioned stacking context above `z-index: 10` fixes it without touching the
+vendored `Sidebar` primitive (which `jac install --shadcn sidebar` would silently regenerate over
+any hand-patch anyway, the same regeneration pitfall Phase 3's icon-set migration already hit). See
+tracker entry `2026-08-31-fixed-sidebar-overlaps-and-intercepts-clicks-on-bottom-panel`.
 """
 
 import from "react" { useEffect }
@@ -153,6 +184,7 @@ import from src.workbench.quick_open.quick_open { app as QuickOpenApp }
 import from src.workbench.title_bar.title_bar { app as TitleBarApp }
 import from src.workbench.status_bar.status_bar { app as StatusBarApp }
 import from src.workbench.terminal.terminal { app as TerminalApp }
+import from src.workbench.output.output { app as OutputApp }
 import from src.workbench.commands.command_registry { list_commands }
 import from src.workbench.session.session_service { load_session, save_session }
 import from components.ui.resizable { ResizablePanelGroup, ResizablePanel, ResizableHandle }
@@ -164,6 +196,7 @@ def:pub app(onToggleTheme: any) -> JsxElement {
     has cursor_positions: dict[str, dict[str, int]] = {};
     has dirty_paths: dict[str, bool] = {};
     has terminal_open: bool = False;
+    has active_bottom_panel: str = "terminal";
     has quick_open_open: bool = False;
     has command_palette_open: bool = False;
     has active_view_id: str = "explorer";
@@ -172,6 +205,7 @@ def:pub app(onToggleTheme: any) -> JsxElement {
     has cursor_save_timer: Ref[any] = Ref();
 
     async def _save_session -> None;
+    async def _toggle_panel(panel_id: str) -> None;
     def _upsert_tab_in_active_group(tab: dict[str, any]) -> list[dict[str, any]];
     async def open_tab(path: str, name: str) -> None;
     async def open_diff_tab(path_a: str, name_a: str, path_b: str, name_b: str) -> None;
@@ -261,18 +295,57 @@ def:pub app(onToggleTheme: any) -> JsxElement {
             "height": "220px",
             "flexShrink": "0",
             "borderTop": "1px solid #2A2B2C",
-            "background": "#191A1B"
+            "background": "#191A1B",
+            "position": "relative",
+            "zIndex": "20"
         }}>
-            <div style={{"display": "flex", "alignItems": "center", "justifyContent": "space-between", "padding": "0.25rem 0.5rem", "borderBottom": "1px solid #2A2B2C", "fontSize": "12px", "color": "#8C8C8C", "fontFamily": "system-ui, sans-serif", "flexShrink": "0"}}>
-                <span>Terminal</span>
+            <div role="tablist" aria-label="Panel" style={{"display": "flex", "alignItems": "center", "justifyContent": "space-between", "padding": "0 0.5rem", "borderBottom": "1px solid #2A2B2C", "fontSize": "12px", "fontFamily": "system-ui, sans-serif", "flexShrink": "0"}}>
+                <div style={{"display": "flex", "gap": "1rem"}}>
+                    <button
+                        role="tab"
+                        aria-selected={active_bottom_panel == "terminal"}
+                        onClick={lambda (e: any) { _toggle_panel("terminal"); }}
+                        style={{
+                            "background": "transparent",
+                            "border": "none",
+                            "borderBottom": "1px solid " + ("#bfbfbf" if active_bottom_panel == "terminal" else "transparent"),
+                            "color": "#CCCCCC" if active_bottom_panel == "terminal" else "#8C8C8C",
+                            "padding": "0.4rem 0",
+                            "cursor": "pointer"
+                        }}
+                    >
+                        Terminal
+                    </button>
+                    <button
+                        role="tab"
+                        aria-selected={active_bottom_panel == "output"}
+                        onClick={lambda (e: any) { _toggle_panel("output"); }}
+                        style={{
+                            "background": "transparent",
+                            "border": "none",
+                            "borderBottom": "1px solid " + ("#bfbfbf" if active_bottom_panel == "output" else "transparent"),
+                            "color": "#CCCCCC" if active_bottom_panel == "output" else "#8C8C8C",
+                            "padding": "0.4rem 0",
+                            "cursor": "pointer"
+                        }}
+                    >
+                        Output
+                    </button>
+                </div>
                 <span
+                    aria-label="Close Panel"
                     onClick={lambda (e: any) { handle_command("workbench.action.terminal.toggle"); }}
                     className="codicon codicon-close"
-                    style={{"cursor": "pointer", "opacity": "0.7", "fontSize": "14px", "lineHeight": "1"}}
+                    style={{"cursor": "pointer", "opacity": "0.7", "fontSize": "14px", "lineHeight": "1", "color": "#8C8C8C"}}
                 />
             </div>
-            <div style={{"flex": "1", "overflow": "hidden"}}>
-                <TerminalApp onFocusChange={lambda (focused: bool) { set_context("terminalFocus", focused); }} />
+            <div style={{"flex": "1", "overflow": "hidden", "position": "relative"}}>
+                <div style={{"display": "block" if active_bottom_panel == "terminal" else "none", "height": "100%"}}>
+                    <TerminalApp onFocusChange={lambda (focused: bool) { set_context("terminalFocus", focused); }} />
+                </div>
+                <div style={{"display": "block" if active_bottom_panel == "output" else "none", "height": "100%"}}>
+                    <OutputApp active={terminal_open and active_bottom_panel == "output"} />
+                </div>
             </div>
         </div>
         <StatusBarApp line={active_cursor["line"]} column={active_cursor["column"]} path={active_tab_path} />

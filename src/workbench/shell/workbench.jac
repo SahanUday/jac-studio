@@ -148,6 +148,17 @@ map, reported via `onStatusChange={set_git_status}` every time the SCM view refr
 unmodified to `FileTreeApp` as `gitStatus` for the Explorer's own decorations -- see
 `file_tree.jac`'s docstring for why that component stays a pure consumer of it.
 
+**The task runner + Problems panel, a third bottom-panel tab (2026-08-31, `docs/roadmap.md`
+Phase 4)** -- `ProblemsApp` slots into the exact `_toggle_panel`/`active_bottom_panel` mechanism the
+Output bullet above already generalized for this; no new panel plumbing needed, matching that
+bullet's own stated bet. `ProblemsApp` reuses `open_search_result` (not a new handler) for
+click-to-jump, since a diagnostic's `(path, line, column)` is the identical shape a search result
+already reports. `run_selected_task` is `TaskPickerApp`'s `onRunTask`: runs the task, then reports
+success/failure through the same `onNotify={add_notification}` mechanism every other Phase 4
+background action uses -- a task's own errors already land in the Problems panel via
+`task_service.jac`'s problem-matcher integration, so the toast here is about the *run itself*
+(did it complete, and with what exit code), not a duplicate of each individual diagnostic.
+
 **Title bar (2026-08-28, `docs/roadmap.md` Phase 3)** -- `command_palette_open` moved here from
 being `command_palette.jac`'s own private state, specifically so `TitleBarApp`'s Command Center
 button has something to call: `onOpenCommandPalette` dispatches through `handle_command`'s
@@ -228,6 +239,9 @@ import from src.workbench.title_bar.title_bar { app as TitleBarApp }
 import from src.workbench.status_bar.status_bar { app as StatusBarApp }
 import from src.workbench.terminal.terminal { app as TerminalApp }
 import from src.workbench.output.output { app as OutputApp }
+import from src.workbench.tasks.problems { app as ProblemsApp }
+import from src.workbench.tasks.task_picker { app as TaskPickerApp }
+import from src.workbench.tasks.task_service { run_task }
 import from src.workbench.commands.command_registry { list_commands }
 import from src.workbench.session.session_service { load_session, save_session }
 import from components.ui.resizable { ResizablePanelGroup, ResizablePanel, ResizableHandle }
@@ -250,6 +264,7 @@ def:pub app(onToggleTheme: any) -> JsxElement {
     has next_notification_id: int = 1;
     has notification_panel_open: bool = False;
     has git_status_by_path: dict[str, str] = {};
+    has task_picker_open: bool = False;
 
     async def _save_session -> None;
     async def _toggle_panel(panel_id: str) -> None;
@@ -275,6 +290,8 @@ def:pub app(onToggleTheme: any) -> JsxElement {
     def clear_notifications -> None;
     def set_notification_panel_open(next_open: bool) -> None;
     def set_git_status(status_map: dict[str, str]) -> None;
+    def set_task_picker_open(next_open: bool) -> None;
+    async def run_selected_task(label: str) -> None;
 
     async can with entry {
         commands = await list_commands();
@@ -332,6 +349,7 @@ def:pub app(onToggleTheme: any) -> JsxElement {
         <Toaster theme="dark" position="bottom-right" />
         <CommandPaletteApp open={command_palette_open} onOpenChange={set_command_palette_open} onRunCommand={handle_command} />
         <QuickOpenApp open={quick_open_open} onOpenChange={set_quick_open_open} onOpenFile={open_tab} />
+        <TaskPickerApp open={task_picker_open} onOpenChange={set_task_picker_open} onRunTask={run_selected_task} />
         <TitleBarApp onOpenCommandPalette={lambda (e: any) { handle_command("workbench.action.showCommands"); }} />
         <div style={{"display": "flex", "flex": "1", "overflow": "hidden"}}>
             <ActivityBarApp activeViewId={active_view_id} onSelectView={select_view} />
@@ -394,6 +412,21 @@ def:pub app(onToggleTheme: any) -> JsxElement {
                     >
                         Output
                     </button>
+                    <button
+                        role="tab"
+                        aria-selected={active_bottom_panel == "problems"}
+                        onClick={lambda (e: any) { _toggle_panel("problems"); }}
+                        style={{
+                            "background": "transparent",
+                            "border": "none",
+                            "borderBottom": "1px solid " + ("#bfbfbf" if active_bottom_panel == "problems" else "transparent"),
+                            "color": "#CCCCCC" if active_bottom_panel == "problems" else "#8C8C8C",
+                            "padding": "0.4rem 0",
+                            "cursor": "pointer"
+                        }}
+                    >
+                        Problems
+                    </button>
                 </div>
                 <span
                     aria-label="Close Panel"
@@ -411,6 +444,9 @@ def:pub app(onToggleTheme: any) -> JsxElement {
                 </div>
                 <div style={{"display": "block" if active_bottom_panel == "output" else "none", "height": "100%"}}>
                     <OutputApp active={terminal_open and active_bottom_panel == "output"} />
+                </div>
+                <div style={{"display": "block" if active_bottom_panel == "problems" else "none", "height": "100%"}}>
+                    <ProblemsApp active={terminal_open and active_bottom_panel == "problems"} onOpenLocation={open_search_result} />
                 </div>
             </div>
         </div>

@@ -215,6 +215,10 @@ impl app.handle_command(command_id: str) -> None {
     }
     if command_id == "workbench.action.showScm" {
         active_view_id = "scm";
+        return;
+    }
+    if command_id == "workbench.action.tasks.runTask" {
+        task_picker_open = True;
     }
 }
 
@@ -267,6 +271,20 @@ impl app.set_notification_panel_open(next_open: bool) -> None {
 
 impl app.set_git_status(status_map: dict[str, str]) -> None {
     git_status_by_path = status_map;
+}
+
+impl app.set_task_picker_open(next_open: bool) -> None {
+    task_picker_open = next_open;
+}
+
+impl app.run_selected_task(label: str) -> None {
+    result = await run_task(label);
+    if result["success"] {
+        add_notification("Task \"" + label + "\" completed.", "info", "Tasks");
+    } else {
+        message = result["error"] if result["error"] else ("Task \"" + label + "\" failed (exit code " + str(result["exitCode"]) + ").");
+        add_notification(message, "error", "Tasks");
+    }
 }
 
 impl app.set_context(key: str, value: bool) -> None {

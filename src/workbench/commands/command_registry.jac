@@ -94,6 +94,7 @@ glob BUILTIN_COMMANDS: list[dict[str, any]] = [
         "title": "View: Show Source Control",
         "keybindings": [{"key": "ctrl+shift+g", "when": ""}]
     },
+    {"id": "workbench.action.tasks.runTask", "title": "Tasks: Run Task", "keybindings": []},
     {"id": "workbench.action.toggleColorTheme", "title": "Preferences: Toggle Color Theme", "keybindings": []},
     {"id": "workbench.action.quickOpen", "title": "Go to File...", "keybindings": [{"key": "ctrl+p", "when": ""}]},
     {"id": "workbench.action.showCommands", "title": "Show All Commands", "keybindings": [{"key": "ctrl+shift+p", "when": ""}]},

@@ -411,6 +411,92 @@ def:pub rename_path(old_path: str, new_name: str) -> dict[str, any] {
     return {"name": new_name, "path": new_path, "is_dir": is_dir};
 }
 
+"""Walks `path` down from the workspace root, scanning (via `_ensure_scanned`) each ancestor
+`Folder` it hasn't reached yet, so a path the Explorer has never expanded still resolves to a real
+`File` node -- `2026-08-31, docs/roadmap.md` Phase 4's task-runner bullet is the first caller:
+`diagnostics.jac`'s `add_diagnostic` requires an already-reachable `File` node (per its own
+docstring) and silently drops anything else, and a task's problem-matcher output can name any file
+in the project, not just ones a user happened to click open first. Mirrors `_ensure_scanned`'s own
+per-level lazy pattern, just driven top-down toward one target path instead of "whatever the UI
+expanded." Returns `None` for a path outside the open workspace, the workspace root itself (which
+has no `File` node, only `Workspace`), or one that doesn't exist on disk -- callers should treat
+`None` the same "nothing to attach to" way `get_file_node_by_path` already documents.
+
+**Reads each level's children straight off the `Contains` edge, not `_path_index` -- caught by a
+failing test, not assumed.** `_ensure_scanned` only creates nodes and attaches edges; it never
+touches `_path_index` itself (only `list_children_by_path`'s own post-processing does that, as a
+side effect of the de-dup pass it needs anyway). A first version of this function called
+`_ensure_scanned(current)` and then looked the next path segment up in `_path_index` directly,
+exactly the way `list_children_by_path` reads an *already*-scanned parent -- and a real test
+(scanning a two-levels-deep path that had never been clicked in the Explorer) failed immediately:
+the newly-scanned children existed as graph nodes but were never indexed, so the lookup always came
+back empty. Fixed by querying `[current->:Contains:->]` directly at each level (mirroring
+`list_children_by_path`'s own edge-read, not its index-read) and populating `_path_index` as a
+side effect, the same way that function does -- so a later ordinary lazy-scan click on the same
+folder doesn't re-do the work.
+
+**Falls back to a graph query on a cache miss, exactly like `list_all_files` -- caught live against
+a real server, not by inspection.** The first version returned `None` immediately whenever
+`jid(root)` wasn't already a key in `_cached_workspace_jid`, the same unconditional-early-return
+shape `list_all_files` originally had before its own documented fix
+(`2026-08-31-cross-module-def-pub-call-sees-empty-glob-cache`). That tracker entry's own "what to
+check before the next cross-module reuse" note named the task runner as the next likely candidate
+to hit this -- confirmed live: `task_service.jac`'s `run_task` (a cross-module caller, exactly the
+shape that entry describes) got a real `jac check` failure's output parsed correctly, but every
+`add_diagnostic` call silently failed because this function returned `None` for a workspace that
+had, moments earlier in the same request session, been confirmed open (`get_current_workspace`
+returned correct data from the very same call). Fixed with the identical fallback
+`get_or_create_workspace`/`list_all_files` already use: never trust the cache dict's absence as
+proof no workspace is open."""
+def:pub ensure_path_reachable(path: str) -> File | None {
+    key = jid(root);
+    if key in _cached_workspace_jid {
+        ws = jobj(_cached_workspace_jid[key]) as Workspace;
+    } else {
+        existing = [root-->[?:Workspace]];
+        if len(existing) == 0 {
+            return None;
+        }
+        ws = existing[0];
+        _cached_workspace_jid[key] = jid(ws);
+    }
+    if ws.root_path == "" or not os.path.isdir(ws.root_path) {
+        return None;
+    }
+    if key not in _path_index {
+        _path_index[key] = {};
+    }
+    norm_path = os.path.normpath(path);
+    root_norm = os.path.normpath(ws.root_path);
+    if norm_path != root_norm and not norm_path.startswith(root_norm + os.sep) {
+        return None;
+    }
+    if norm_path == root_norm {
+        return None;
+    }
+    rel = os.path.relpath(norm_path, root_norm);
+    parts = rel.split(os.sep);
+    current: (Workspace | Folder) = ws;
+    for idx in range(len(parts)) {
+        _ensure_scanned(current);
+        children = [current->:Contains:->];
+        matches = [c for c in children if c.name == parts[idx] and os.path.exists(c.path)];
+        if len(matches) == 0 {
+            return None;
+        }
+        found = matches[0];
+        _path_index[key][found.path] = found;
+        if idx == len(parts) - 1 {
+            return (found as File) if isinstance(found, File) else None;
+        }
+        if not isinstance(found, Folder) {
+            return None;
+        }
+        current = found;
+    }
+    return None;
+}
+
 def:pub delete_path(path: str) -> None {
     key = jid(root);
     if key not in _path_index or path not in _path_index[key] {

@@ -67,6 +67,7 @@ impl app.submit_command -> None {
     decoder = new(TextDecoder);
     nl = chr(10);
     buf = "";
+    exit_marker = "[process exited with code ";
     feeding = True;
     while feeding {
         part = await reader.read();
@@ -82,6 +83,13 @@ impl app.submit_command -> None {
                 if line.startswith("data: ") and not frame.startswith("event:") {
                     chunk = JSON.parse(line[6:]) as str;
                     term.write(chunk.replace(nl, "\r\n"));
+                    if exit_marker in chunk {
+                        tail = chunk.split(exit_marker)[1];
+                        code_str = tail.split("]")[0].strip();
+                        if code_str != "0" and onNotify {
+                            onNotify(f"Command failed (exit {code_str}): {command}", "error", "Terminal");
+                        }
+                    }
                 }
             }
         }

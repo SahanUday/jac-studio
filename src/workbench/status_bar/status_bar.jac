@@ -18,9 +18,26 @@ other chrome surface there, with blue (`#3994BC`) reserved only for the debuggin
 See `docs/architecture.md`'s Visual identity section for the full correction -- this project's
 earlier assumption that "Dark+/Light+" was still VS Code's default was wrong, found while doing
 this work, not assumed going in.
+
+**Notification bell (2026-08-31, Phase 4's toast-notifications bullet)** -- `NotificationsApp`
+mounts as one more flex child at the far right, matching VS Code's own bell placement at the
+status bar's right edge. Still purely presentational: `notifications`/`notificationPanelOpen`/
+the three callback props all just forward straight through from `workbench.jac`, which owns the
+actual state (see `notifications.jac`'s own docstring for why the state lives there).
 """
 
-def:pub app(line: int, column: int, path: str) -> JsxElement {
+import from src.workbench.notifications.notifications { app as NotificationsApp }
+
+def:pub app(props: any) -> JsxElement {
+    line = props["line"];
+    column = props["column"];
+    path = props["path"];
+    notifications = props["notifications"];
+    notification_panel_open = props["notificationPanelOpen"];
+    on_notification_panel_change = props["onNotificationPanelChange"];
+    on_dismiss_notification = props["onDismissNotification"];
+    on_clear_notifications = props["onClearNotifications"];
+
     <div role="status" aria-live="polite" aria-label="Editor status" style={{
         "display": "flex",
         "alignItems": "center",
@@ -31,8 +48,16 @@ def:pub app(line: int, column: int, path: str) -> JsxElement {
         "background": "#191A1B",
         "color": "#8C8C8C",
         "fontSize": "12px",
-        "fontFamily": "system-ui, sans-serif"
+        "fontFamily": "system-ui, sans-serif",
+        "gap": "0.75rem"
     }}>
-        {("Ln " + str(line) + ", Col " + str(column)) if path != "" else ""}
+        <span>{("Ln " + str(line) + ", Col " + str(column)) if path != "" else ""}</span>
+        <NotificationsApp
+            notifications={notifications}
+            open={notification_panel_open}
+            onOpenChange={on_notification_panel_change}
+            onDismiss={on_dismiss_notification}
+            onClearAll={on_clear_notifications}
+        />
     </div>
 }

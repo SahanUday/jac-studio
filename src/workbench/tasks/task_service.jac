@@ -61,7 +61,7 @@ import from src.workbench.diagnostics.diagnostics { add_diagnostic, clear_diagno
 glob _TASK_TIMEOUT_SECONDS: int = 300;
 
 glob _GENERIC_PATTERN: str = r"^(?P<file>[^:\n]+):(?P<line>\d+):(?P<column>\d+):\s*(?:(?P<severity>error|warning|note)\s*:?\s*)?(?P<message>.+)$";
-glob _JAC_HEADER_PATTERN: str = r"^(?P<severity>error|warning)\[(?P<code>[^\]]+)\]:\s*(?P<message>.+)$";
+glob _JAC_HEADER_PATTERN: str = r"(?P<severity>error|warning)\[(?P<code>[^\]]+)\]:\s*(?P<message>.+)$";
 glob _JAC_LOCATION_PATTERN: str = r"^\s*-->\s*(?P<file>.+):(?P<line>\d+):(?P<column>\d+)\s*$";
 
 def _task_runner_enabled -> bool {
@@ -134,16 +134,26 @@ def _parse_generic(output: str) -> list[dict[str, any]] {
     return results;
 }
 
-"""`jac check`'s real diagnostic shape is two lines: a header (`error[CODE]: message`) immediately
-followed by a location line (`  --> path:line:col`). Scans line-by-line rather than a single
-multi-line regex -- easier to reason about than a `re.MULTILINE` pattern spanning two lines with
-different leading whitespace, and this output isn't large enough for the extra pass to matter."""
+"""`jac check`'s real diagnostic shape is two lines: a header immediately followed by a location
+line (`  --> path:line:col`). Scans line-by-line rather than a single multi-line regex -- easier to
+reason about than a `re.MULTILINE` pattern spanning two lines with different leading whitespace, and
+this output isn't large enough for the extra pass to matter.
+
+**The header line is not just `error[CODE]: message` -- caught live against a real `jac check`
+run, not assumed from the docs.** The CLI's own pretty-printer prefixes every header with a glyph
+and a capitalized label (`✖ Error: error[E0013]: 'entry' is a keyword...`, `⚠ warning[W2003]: ...`
+for a warning), so an anchored `^(?:error|warning)\\[...` pattern (this function's first version)
+never matched a single real diagnostic -- confirmed by running the actual fixture used in this
+module's test file through the real CLI and finding zero results instead of the expected one.
+`_JAC_HEADER_PATTERN` uses `re.search` (unanchored) rather than `re.match` for this one line so the
+glyph/label prefix doesn't matter; the location-line pattern stays anchored (`re.match`), since that
+line genuinely has nothing before it."""
 def _parse_jac(output: str) -> list[dict[str, any]] {
     lines = output.splitlines();
     results = [];
     idx = 0;
     while idx < len(lines) {
-        header_match = re.`match(_JAC_HEADER_PATTERN, lines[idx]);
+        header_match = re.search(_JAC_HEADER_PATTERN, lines[idx]);
         if header_match and (idx + 1) < len(lines) {
             loc_match = re.`match(_JAC_LOCATION_PATTERN, lines[idx + 1]);
             if loc_match {

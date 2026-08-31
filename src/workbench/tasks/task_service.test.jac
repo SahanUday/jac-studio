@@ -59,8 +59,15 @@ test "_parse_generic returns every match across multiple lines" {
     assert results[1]["severity"] == "warning";
 }
 
+"""`jac check`'s CLI pretty-printer prefixes every real header line with a glyph and a capitalized
+label (`✖ Error: `/`⚠ `) before the actual `error[CODE]:`/`warning[CODE]:` text -- these fixtures
+use that real shape, not a simplified one, specifically because a first version of `_parse_jac`
+anchored its header regex at line-start and silently matched nothing against real `jac check`
+output (caught by running the exact fixture below through the real CLI, not assumed). See
+`_parse_jac`'s own docstring for the fix."""
+
 test "_parse_jac matches a real jac check error header plus its location line" {
-    output = "error[E0013]: 'entry' is a keyword and cannot be used as a variable name\n  --> src/workbench/scm/git_service.jac:120:9\n";
+    output = "✖ Error: error[E0013]: 'entry' is a keyword and cannot be used as a variable name\n  --> src/workbench/scm/git_service.jac:120:9\n";
 
     results = _parse_jac(output);
 
@@ -73,7 +80,7 @@ test "_parse_jac matches a real jac check error header plus its location line" {
 }
 
 test "_parse_jac matches a warning header the same way as an error one" {
-    output = "warning[W1037]: Explicit 'any' type annotation disables type checking here\n  --> src/foo.jac:10:5\n";
+    output = "⚠ warning[W1037]: Explicit 'any' type annotation disables type checking here\n  --> src/foo.jac:10:5\n";
 
     results = _parse_jac(output);
 
@@ -82,7 +89,7 @@ test "_parse_jac matches a warning header the same way as an error one" {
 }
 
 test "_parse_jac finds every error/location pair across multiple diagnostics" {
-    output = "error[E1]: first problem\n  --> a.jac:1:1\nerror[E2]: second problem\n  --> b.jac:2:2\n";
+    output = "✖ Error: error[E1]: first problem\n  --> a.jac:1:1\n✖ Error: error[E2]: second problem\n  --> b.jac:2:2\n";
 
     results = _parse_jac(output);
 
@@ -92,7 +99,7 @@ test "_parse_jac finds every error/location pair across multiple diagnostics" {
 }
 
 test "_parse_jac ignores a header line with no following location line" {
-    output = "error[E1]: dangling header with nothing after it\n";
+    output = "✖ Error: error[E1]: dangling header with nothing after it\n";
 
     results = _parse_jac(output);
 

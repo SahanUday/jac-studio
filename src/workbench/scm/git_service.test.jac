@@ -31,6 +31,29 @@ def open_repo(repo_root: str) -> None {
     open_workspace(repo_root);
 }
 
+"""Builds on `make_repo`, then genuinely diverges two branches on the same line of `tracked.txt`
+and attempts a real `git merge` -- confirmed to actually fail with a real conflict (not just
+constructed to look like one), matching real `UU` porcelain output. Leaves the repo mid-merge
+(`.git/MERGE_HEAD` present, real `<<<<<<<`/`=======`/`>>>>>>>` markers in the working-tree file),
+on the branch the merge was run from."""
+def make_conflicted_repo -> str {
+    repo_root = make_repo();
+    tracked_path = os.path.join(repo_root, "tracked.txt");
+    _git(repo_root, ["checkout", "-b", "feature"]);
+    with open(tracked_path, "w") as f {
+        f.write("first line\nFEATURE CHANGE\nthird line\n");
+    }
+    _git(repo_root, ["commit", "-am", "feature change"]);
+    _git(repo_root, ["checkout", "main"]);
+    with open(tracked_path, "w") as f {
+        f.write("first line\nMAIN CHANGE\nthird line\n");
+    }
+    _git(repo_root, ["commit", "-am", "main change"]);
+    merge = subprocess.run(["git"] + _GIT_ENV + ["merge", "feature"], cwd=repo_root, capture_output=True, text=True);
+    assert merge.returncode != 0;
+    return repo_root;
+}
+
 test "no workspace open reports not-a-repo, not an error" {
     _reset_workspace_cache_for_tests();
 
@@ -98,6 +121,19 @@ test "a new file is untracked until staged, then reported as staged with status 
     assert len(after["staged"]) == 1;
     assert after["staged"][0]["name"] == "brand_new.txt";
     assert after["staged"][0]["status"] == "A";
+}
+
+test "a real merge conflict reports the file in conflicted, not staged or unstaged" {
+    repo_root = make_conflicted_repo();
+    open_repo(repo_root);
+
+    status = get_scm_status();
+
+    assert len(status["conflicted"]) == 1;
+    assert status["conflicted"][0]["name"] == "tracked.txt";
+    assert status["conflicted"][0]["status"] == "UU";
+    assert status["staged"] == [];
+    assert status["unstaged"] == [];
 }
 
 test "get_diff_content for an unstaged change compares HEAD against the working-tree file" {

@@ -148,6 +148,13 @@ map, reported via `onStatusChange={set_git_status}` every time the SCM view refr
 unmodified to `FileTreeApp` as `gitStatus` for the Explorer's own decorations -- see
 `file_tree.jac`'s docstring for why that component stays a pure consumer of it.
 
+**Merge conflicts (2026-09-01, `docs/roadmap.md` Phase 4's last exit-criterion item)** --
+`onOpenFile={open_tab}` is `ScmApp`'s second click handler, alongside `onOpenDiff`: a conflicted
+file opens the *plain* editor tab (where `git_conflict_codelens_provider.jac`'s inline "Accept
+Current/Incoming/Both" buttons actually live), not a two-way diff -- there's no sensible two-way
+diff for a three-way conflict anyway. See `git_service.jac`'s `get_scm_status` and
+`git_conflict_codelens_provider.jac`'s own docstrings for the rest of how this is resolved.
+
 **The task runner + Problems panel, a third bottom-panel tab (2026-08-31, `docs/roadmap.md`
 Phase 4)** -- `ProblemsApp` slots into the exact `_toggle_panel`/`active_bottom_panel` mechanism the
 Output bullet above already generalized for this; no new panel plumbing needed, matching that
@@ -378,7 +385,7 @@ def:pub app(onToggleTheme: any) -> JsxElement {
                     <SearchApp onOpenResult={open_search_result} />
                 </div>
                 <div style={{"display": "block" if active_view_id == "scm" else "none", "height": "100%"}}>
-                    <ScmApp active={active_view_id == "scm"} onOpenDiff={open_scm_diff} onNotify={add_notification} onStatusChange={set_git_status} />
+                    <ScmApp active={active_view_id == "scm"} onOpenDiff={open_scm_diff} onOpenFile={open_tab} onNotify={add_notification} onStatusChange={set_git_status} />
                 </div>
                 <div style={{"display": "block" if active_view_id == "outline" else "none", "height": "100%"}}>
                     <OutlineApp active={active_view_id == "outline"} path={active_tab_path} onOpenLocation={open_search_result} />

@@ -5,6 +5,7 @@ impl app.handle_before_mount(monaco: any) -> None {
     register_jac_definition_provider(monaco, onOpenLocation);
     register_jac_reference_provider(monaco);
     register_jac_rename_provider(monaco);
+    register_conflict_codelens_provider(monaco);
 }
 
 impl app.handle_mount(editor: any, monaco: any) -> None {

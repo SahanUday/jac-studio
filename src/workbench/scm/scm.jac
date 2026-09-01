@@ -6,10 +6,15 @@
 component only ever talks to `git_service.jac`'s functions, never a shell command directly; a
 second VCS provider later would mean swapping the import, not restructuring this view.
 
-**Three flat sections (Staged / Changes / Untracked), not a single mixed list** -- mirrors
-`git_service.jac`'s own `get_scm_status` response shape (`{"staged", "unstaged", "untracked"}`)
-directly, the same "render the service's own grouping, don't re-derive it" call `search.jac`
-already made for its file-grouped results.
+**Four flat sections (Merge Changes / Staged / Changes / Untracked), not a single mixed list** --
+mirrors `git_service.jac`'s own `get_scm_status` response shape
+(`{"conflicted", "staged", "unstaged", "untracked"}`) directly, the same "render the service's own
+grouping, don't re-derive it" call `search.jac` already made for its file-grouped results. Merge
+Changes renders first (matching real VS Code's own ordering -- the most urgent bucket) and its rows
+are the one place `ScmFileRow` behaves differently: `isConflicted` swaps the usual
+discard/stage-or-unstage pair for a single "Mark as Resolved (Stage)" action, and the row's own
+click opens the plain editor (`onOpenFile`, not `onOpenDiff`) -- see `workbench.jac`'s own docstring
+for why a two-way diff doesn't make sense for a three-way conflict.
 
 **No file-watcher-driven live refresh (deliberate v1 scope, matching `file_tree.jac`'s own lack of
 one).** `refresh_status` is called after every mutating action this view itself performs (stage/
@@ -64,7 +69,7 @@ import from components.ui.button { Button }
 import from components.ui.textarea { Textarea }
 
 glob _EMPTY_STATUS: dict[str, any] = {
-    "is_repo": False, "branch": "", "staged": [], "unstaged": [], "untracked": []
+    "is_repo": False, "branch": "", "staged": [], "unstaged": [], "untracked": [], "conflicted": []
 };
 
 glob ROW_STYLE: dict[str, str] = {
@@ -99,6 +104,7 @@ def:pub ScmFileRow(props: any) -> JsxElement {
     item = props["item"];
     staged = props["staged"];
     is_untracked = props["isUntracked"];
+    is_conflicted = props.get("isConflicted", False);
     on_open = props["onOpen"];
     on_stage = props["onStage"];
     on_unstage = props["onUnstage"];
@@ -126,31 +132,44 @@ def:pub ScmFileRow(props: any) -> JsxElement {
             {(
                 <span
                     role="button"
-                    title="Discard Changes"
-                    aria-label={"Discard changes to " + item["name"]}
-                    onClick={lambda (e: any) { e.stopPropagation(); on_discard(item["path"], is_untracked); }}
-                    className="codicon codicon-discard"
-                    style={{"fontSize": "14px", "opacity": "0.85"}}
-                />
-            ) if (not staged) else None}
-            {(
-                <span
-                    role="button"
-                    title="Stage Changes"
-                    aria-label={"Stage " + item["name"]}
+                    title="Mark as Resolved (Stage)"
+                    aria-label={"Mark " + item["name"] + " as resolved"}
                     onClick={lambda (e: any) { e.stopPropagation(); on_stage(item["path"]); }}
-                    className="codicon codicon-add"
+                    className="codicon codicon-check"
                     style={{"fontSize": "14px", "opacity": "0.85"}}
                 />
-            ) if (not staged) else (
-                <span
-                    role="button"
-                    title="Unstage Changes"
-                    aria-label={"Unstage " + item["name"]}
-                    onClick={lambda (e: any) { e.stopPropagation(); on_unstage(item["path"]); }}
-                    className="codicon codicon-remove"
-                    style={{"fontSize": "14px", "opacity": "0.85"}}
-                />
+            ) if is_conflicted else (
+                <>
+                    {(
+                        <span
+                            role="button"
+                            title="Discard Changes"
+                            aria-label={"Discard changes to " + item["name"]}
+                            onClick={lambda (e: any) { e.stopPropagation(); on_discard(item["path"], is_untracked); }}
+                            className="codicon codicon-discard"
+                            style={{"fontSize": "14px", "opacity": "0.85"}}
+                        />
+                    ) if (not staged) else None}
+                    {(
+                        <span
+                            role="button"
+                            title="Stage Changes"
+                            aria-label={"Stage " + item["name"]}
+                            onClick={lambda (e: any) { e.stopPropagation(); on_stage(item["path"]); }}
+                            className="codicon codicon-add"
+                            style={{"fontSize": "14px", "opacity": "0.85"}}
+                        />
+                    ) if (not staged) else (
+                        <span
+                            role="button"
+                            title="Unstage Changes"
+                            aria-label={"Unstage " + item["name"]}
+                            onClick={lambda (e: any) { e.stopPropagation(); on_unstage(item["path"]); }}
+                            className="codicon codicon-remove"
+                            style={{"fontSize": "14px", "opacity": "0.85"}}
+                        />
+                    )}
+                </>
             )}
         </span>
         <span
@@ -162,7 +181,7 @@ def:pub ScmFileRow(props: any) -> JsxElement {
     </div>
 }
 
-def:pub app(active: bool, onOpenDiff: any, onNotify: any, onStatusChange: any) -> JsxElement {
+def:pub app(active: bool, onOpenDiff: any, onOpenFile: any, onNotify: any, onStatusChange: any) -> JsxElement {
     has status: dict[str, any] = _EMPTY_STATUS;
     has commit_message: str = "";
     has committing: bool = False;
@@ -226,6 +245,27 @@ def:pub app(active: bool, onOpenDiff: any, onNotify: any, onStatusChange: any) -
                     Open a folder that's a git repository to see source control status.
                 </div>
             ) if not status["is_repo"] else None}
+            {(
+                <div>
+                    <div style={{"padding": "0.3rem 0.5rem", "fontSize": "11px", "fontWeight": "600", "color": "#8C8C8C", "fontFamily": "system-ui, sans-serif"}}>
+                        {"MERGE CHANGES (" + str(len(status["conflicted"])) + ")"}
+                    </div>
+                    {[
+                        <ScmFileRow
+                            key={item["path"]}
+                            item={item}
+                            staged={False}
+                            isUntracked={False}
+                            isConflicted={True}
+                            onOpen={lambda (path: str, name: str, staged: bool) { onOpenFile(path, name); }}
+                            onStage={handle_stage}
+                            onUnstage={handle_unstage}
+                            onDiscard={handle_discard}
+                        />
+                        for item in status["conflicted"]
+                    ]}
+                </div>
+            ) if (status["is_repo"] and len(status["conflicted"]) > 0) else None}
             {(
                 <div>
                     <div style={{"display": "flex", "alignItems": "center", "gap": "0.3rem", "padding": "0.3rem 0.5rem", "fontSize": "11px", "fontWeight": "600", "color": "#8C8C8C", "fontFamily": "system-ui, sans-serif"}}>
@@ -292,7 +332,7 @@ def:pub app(active: bool, onOpenDiff: any, onNotify: any, onStatusChange: any) -
                 <div style={{"padding": "1rem", "fontSize": "12px", "color": "#8C8C8C", "fontFamily": "system-ui, sans-serif"}}>
                     No changes.
                 </div>
-            ) if (status["is_repo"] and len(status["staged"]) == 0 and len(status["unstaged"]) == 0 and len(status["untracked"]) == 0) else None}
+            ) if (status["is_repo"] and len(status["staged"]) == 0 and len(status["unstaged"]) == 0 and len(status["untracked"]) == 0 and len(status["conflicted"]) == 0) else None}
         </div>
     </div>
 }

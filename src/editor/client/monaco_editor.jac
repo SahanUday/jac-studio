@@ -161,6 +161,7 @@ import from src.editor.client.jac_hover_provider { register_jac_hover_provider }
 import from src.editor.client.jac_definition_provider { register_jac_definition_provider }
 import from src.editor.client.jac_reference_provider { register_jac_reference_provider }
 import from src.editor.client.jac_rename_provider { register_jac_rename_provider }
+import from src.editor.client.git_conflict_codelens_provider { register_conflict_codelens_provider }
 import from src.workbench.scm.git_service { get_line_changes }
 import from src.workbench.lsp.lsp_client { notify_document_open, notify_document_save, get_document_symbols }
 import from src.workbench.symbol_icons.symbol_icons { symbol_icon_class }

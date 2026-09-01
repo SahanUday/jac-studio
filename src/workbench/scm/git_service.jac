@@ -88,8 +88,14 @@ def _to_relpath(repo_root: str, path: str) -> str {
 }
 
 glob _EMPTY_STATUS: dict[str, any] = {
-    "is_repo": False, "branch": "", "repo_root": "", "staged": [], "unstaged": [], "untracked": []
+    "is_repo": False, "branch": "", "repo_root": "", "staged": [], "unstaged": [], "untracked": [], "conflicted": []
 };
+
+"""The seven porcelain `XY` codes git itself only ever emits for an unresolved merge conflict --
+confirmed against git's own `git-status` documentation, not guessed from the two-letter shape alone
+(an ordinary `MM`, staged-then-further-modified, is a completely normal non-conflict state that
+happens to also have two non-space letters -- these seven are the actual, complete, closed set)."""
+glob _CONFLICT_CODES: set[str] = {"UU", "AA", "DD", "AU", "UA", "DU", "UD"};
 
 """Parses `git status --porcelain=v1 -z` -- the `-z` (NUL-separated, unquoted paths) form
 specifically so a path containing a space or unusual character round-trips correctly, unlike the
@@ -97,7 +103,14 @@ default human-oriented, potentially-quoted format. Each entry is `"XY " + path`,
 copy, `"XY " + new_path + "\\0" + old_path` (an extra NUL-delimited field this loop consumes and
 discards -- old-path history isn't surfaced in this v1 UI). `X` is the index/staged status, `Y` is
 the working-tree/unstaged status; a bare `??` means untracked, handled as its own bucket rather than
-appearing in both."""
+appearing in both.
+
+**A conflicted file is checked and routed to its own `conflicted` bucket before the ordinary
+staged/unstaged split -- not left to fall through into them.** Without this, `_CONFLICT_CODES`'
+own docstring's real example (`UU`, both letters non-space/non-`?`) would previously have landed in
+*both* `staged` and `unstaged` with a nonsense `status: "U"` in each -- confirmed by reading the
+old logic, not just theorized. The merge-conflict UI (`git_conflict_codelens_provider.jac`) is what
+actually consumes this bucket."""
 def:pub get_scm_status -> dict[str, any] {
     repo_root = _repo_root();
     if repo_root is None {
@@ -108,12 +121,13 @@ def:pub get_scm_status -> dict[str, any] {
 
     (code, out, err) = _run_git(["status", "--porcelain=v1", "-z"], repo_root);
     if code != 0 {
-        return {"is_repo": True, "branch": branch, "repo_root": repo_root, "staged": [], "unstaged": [], "untracked": []};
+        return {"is_repo": True, "branch": branch, "repo_root": repo_root, "staged": [], "unstaged": [], "untracked": [], "conflicted": []};
     }
 
     staged = [];
     unstaged = [];
     untracked = [];
+    conflicted = [];
     entries = out.split("\0");
     idx = 0;
     while idx < len(entries) {
@@ -134,6 +148,10 @@ def:pub get_scm_status -> dict[str, any] {
             untracked.append({"path": abs_path, "name": name, "relPath": rel, "status": "U"});
             continue;
         }
+        if (x + y) in _CONFLICT_CODES {
+            conflicted.append({"path": abs_path, "name": name, "relPath": rel, "status": x + y});
+            continue;
+        }
         if x != " " and x != "?" {
             staged.append({"path": abs_path, "name": name, "relPath": rel, "status": x});
         }
@@ -141,7 +159,7 @@ def:pub get_scm_status -> dict[str, any] {
             unstaged.append({"path": abs_path, "name": name, "relPath": rel, "status": y});
         }
     }
-    return {"is_repo": True, "branch": branch, "repo_root": repo_root, "staged": staged, "unstaged": unstaged, "untracked": untracked};
+    return {"is_repo": True, "branch": branch, "repo_root": repo_root, "staged": staged, "unstaged": unstaged, "untracked": untracked, "conflicted": conflicted};
 }
 
 """Returns `{"original", "modified"}` content for a git diff view -- `original` is always the

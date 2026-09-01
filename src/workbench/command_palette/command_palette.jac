@@ -22,7 +22,17 @@ this component to do that with `open` as private internal state. `workbench.acti
 is now a real `command_registry.jac` entry (`ctrl+shift+p`), dispatched through `handle_command`
 like every other Phase 3 command -- the title bar's button and the keyboard shortcut both flow
 through the identical path, rather than the title bar needing its own separate wiring.
-"""
+
+**"Recently used" / "other commands" split, matching real VS Code's own Command Palette
+(2026-09-01, `docs/roadmap.md` Phase 4's visual-parity pass).** `recent_ids` is plain component
+state -- an in-memory, session-only MRU list, not persisted to `settings_service.jac` -- capped at
+5 and updated on every `handle_select`. A deliberate v1 scope cut: real VS Code's own MRU survives
+a restart, but session-only already delivers the actual visible behavior (recently-run commands
+float to the top under their own heading while you keep working) without adding a new persisted-
+settings surface for a session-scoped nicety. `>` is passed as `CommandInput`'s new `prefix` prop,
+the same visual "this is the Command Palette, not Quick Open" marker real VS Code uses -- `>` is a
+literal rendered character here, not baked into the placeholder text the way the plain shadcn
+default did it."""
 
 import from src.workbench.commands.command_registry { list_commands }
 import from components.ui.command {
@@ -51,6 +61,7 @@ def format_keybinding(keybindings: list[dict[str, str]]) -> str {
 
 def:pub app(open: bool, onOpenChange: any, onRunCommand: any) -> JsxElement {
     has commands: list[dict[str, any]] = [];
+    has recent_ids: list[str] = [];
 
     async can with entry {
         commands = await list_commands();
@@ -58,17 +69,32 @@ def:pub app(open: bool, onOpenChange: any, onRunCommand: any) -> JsxElement {
 
     def handle_select(command_id: str) -> None;
 
+    by_id = {c["id"]: c for c in commands};
+    recent_commands = [by_id[cid] for cid in recent_ids if cid in by_id];
+    other_commands = [c for c in commands if c["id"] not in recent_ids];
+
     <CommandDialog open={open} onOpenChange={onOpenChange}>
-        <CommandInput placeholder="Type a command..." />
+        <CommandInput prefix=">" placeholder="Type a command..." />
         <CommandList>
             <CommandEmpty>No matching commands.</CommandEmpty>
-            <CommandGroup heading="Commands">
+            {(
+                <CommandGroup heading="recently used">
+                    {[
+                        <CommandItem key={c["id"]} value={c["id"]} onSelect={handle_select}>
+                            {c["title"]}
+                            {(<CommandShortcut>{format_keybinding(c["keybindings"])}</CommandShortcut>) if len(c["keybindings"]) > 0 else None}
+                        </CommandItem>
+                        for c in recent_commands
+                    ]}
+                </CommandGroup>
+            ) if len(recent_commands) > 0 else None}
+            <CommandGroup heading="other commands">
                 {[
                     <CommandItem key={c["id"]} value={c["id"]} onSelect={handle_select}>
                         {c["title"]}
                         {(<CommandShortcut>{format_keybinding(c["keybindings"])}</CommandShortcut>) if len(c["keybindings"]) > 0 else None}
                     </CommandItem>
-                    for c in commands
+                    for c in other_commands
                 ]}
             </CommandGroup>
         </CommandList>

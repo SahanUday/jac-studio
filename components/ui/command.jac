@@ -1,3 +1,33 @@
+"""Restyled to VS Code's own dark Quick Input widget palette (2026-09-01, `docs/roadmap.md`
+Phase 4), not the shadcn `bg-popover`/`bg-background` CSS-variable tokens `jac install --shadcn
+command` originally generated. Same root cause `activity_bar.jac`'s own docstring already
+documents for this project's other hand-styled workbench-shell pieces: this project's theme
+toggle doesn't reach the shadcn-primitive-driven chrome the way it reaches everything else, so
+`Command`/`CommandDialog` rendered with the *light* default palette regardless of the app's own
+otherwise-dark chrome -- confirmed live via screenshot, not assumed. Hardcoded hex, matching the
+exact convention `file_tree.jac`/`activity_bar.jac`/`editor_tabs.jac` already use for the identical
+reason, rather than fixing the underlying CSS-variable gap here (that's real, cross-cutting work
+for all of these components together in one pass, out of scope for a two-component visual parity
+pass). Colors are VS Code's own Dark+ Quick Input widget values (`editorWidget.background`
+`#252526`, `widget.border` `#454545`), not invented -- the whole point of this pass is visual
+parity with the real thing, not a fresh palette.
+
+**Every consumer (`command_palette.jac`, `quick_open.jac`, `task_picker.jac`) shares this one
+file** -- restyling once here, rather than three times at each call site, and keeping them
+visually consistent with each other for free, the same reasoning that already justified centralizing
+these primitives in the first place.
+
+**No fuzzy-match character highlighting (deliberate scope cut, not an oversight).** Real VS Code
+bolds/colors the matched characters within each result label. The underlying `cmdk` npm package's
+`filter` prop only returns a numeric rank score, not match *positions* -- getting per-character
+highlight spans would mean swapping in a separate fuzzy-match library with position tracking, a
+real, separate follow-up, not a styling change. Keyboard navigation (arrows/Enter/Escape) and
+substring filtering both already come free from `cmdk` itself, unaffected by this restyle.
+
+**`CommandInput`'s `prefix` prop is new** -- an optional literal character rendered before the
+input box, for `command_palette.jac` to pass `">"` the same way real VS Code visually distinguishes
+"this is the Command Palette" from Quick Open's plain input (which passes no prefix)."""
+
 import from "cmdk" { Command as CommandPrimitive }
 import from .dialog {
     Dialog,
@@ -6,16 +36,21 @@ import from .dialog {
     DialogHeader,
     DialogTitle
 }
-import from ".input_group" { InputGroup, InputGroupAddon }
 import from ...lib.utils { cn }
+
+glob _QUICK_INPUT_BG: str = "#252526";
+glob _QUICK_INPUT_BORDER: str = "#454545";
+glob _QUICK_INPUT_TEXT: str = "#CCCCCC";
+glob _QUICK_INPUT_MUTED: str = "#8C8C8C";
+glob _QUICK_INPUT_SELECTED_BG: str = "#04395E";
+glob _QUICK_INPUT_KEYBINDING_BG: str = "#3A3D41";
 
 def:pub Command(props: any) -> JsxElement {
     <CommandPrimitive
         data-slot="command"
         {**props}
-        className={cn(
-            "bg-popover text-popover-foreground rounded-xl! p-1 flex size-full flex-col overflow-hidden", props["className"]
-        )}
+        className={cn("rounded-md! p-1 flex size-full flex-col overflow-hidden", props["className"])}
+        style={{"background": _QUICK_INPUT_BG, "color": _QUICK_INPUT_TEXT}}
     />
 }
 
@@ -31,12 +66,13 @@ def:pub CommandDialog(props: any) -> JsxElement {
         <DialogContent
             {**props}
             className={cn(
-                "rounded-xl! top-1/3 translate-y-0 overflow-hidden p-0",
+                "rounded-md! top-1/4 translate-y-0 overflow-hidden p-0 border sm:max-w-2xl ring-0! shadow-2xl",
                 props["className"]
             )}
+            style={{"background": _QUICK_INPUT_BG, "borderColor": _QUICK_INPUT_BORDER}}
             showCloseButton={showCloseButton}
         >
-            <Command className="[&_[cmdk-group-heading]]:text-muted-foreground **:data-[slot=command-input-wrapper]:h-12 [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group]]:px-2 [&_[cmdk-group]:not([hidden])_~[cmdk-group]]:pt-0 [&_[cmdk-input-wrapper]_svg]:h-5 [&_[cmdk-input-wrapper]_svg]:w-5 [&_[cmdk-item]]:px-2 [&_[cmdk-item]]:py-3 [&_[cmdk-item]_svg]:h-5 [&_[cmdk-item]_svg]:w-5">
+            <Command className="[&_[cmdk-group-heading]]:px-3 [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group]]:px-2 [&_[cmdk-group]:not([hidden])_~[cmdk-group]]:pt-0 [&_[cmdk-item]]:px-3 [&_[cmdk-item]]:py-1.5">
                 {props["children"]}
             </Command>
         </DialogContent>
@@ -44,20 +80,19 @@ def:pub CommandDialog(props: any) -> JsxElement {
 }
 
 def:pub CommandInput(props: any) -> JsxElement {
-    <div data-slot="command-input-wrapper" className="p-1 pb-0">
-        <InputGroup className="bg-input/30 border-input/30 h-8! rounded-lg! shadow-none! *:data-[slot=input-group-addon]:pl-2!">
-            <CommandPrimitive.Input
-                data-slot="command-input"
-                {**props}
-                className={cn(
-                    "w-full text-sm outline-hidden disabled:cursor-not-allowed disabled:opacity-50",
-                    props["className"]
-                )}
-            />
-            <InputGroupAddon>
-                <span className="codicon codicon-search shrink-0 opacity-50" style={{"fontSize": "14px"}} />
-            </InputGroupAddon>
-        </InputGroup>
+    attrs: dict[str, any] = {** props};
+    prefix = attrs.pop("prefix", "");
+    <div
+        data-slot="command-input-wrapper"
+        style={{"display": "flex", "alignItems": "center", "gap": "0.5rem", "padding": "0.6rem 0.75rem", "borderBottom": "1px solid " + _QUICK_INPUT_BORDER}}
+    >
+        {(<span style={{"color": _QUICK_INPUT_TEXT, "fontSize": "13px", "flexShrink": "0"}}>{prefix}</span>) if prefix != "" else None}
+        <CommandPrimitive.Input
+            data-slot="command-input"
+            {**attrs}
+            className={cn("w-full text-sm outline-hidden disabled:cursor-not-allowed disabled:opacity-50", attrs["className"])}
+            style={{"background": "transparent", "border": "none", "color": _QUICK_INPUT_TEXT}}
+        />
     </div>
 }
 
@@ -66,7 +101,7 @@ def:pub CommandList(props: any) -> JsxElement {
         data-slot="command-list"
         {**props}
         className={cn(
-            "no-scrollbar max-h-72 scroll-py-1 outline-none overflow-x-hidden overflow-y-auto", props["className"]
+            "no-scrollbar max-h-96 scroll-py-1 outline-none overflow-x-hidden overflow-y-auto", props["className"]
         )}
     />
 }
@@ -76,6 +111,7 @@ def:pub CommandEmpty(props: any) -> JsxElement {
         data-slot="command-empty"
         {**props}
         className={cn("py-6 text-center text-sm", props["className"])}
+        style={{"color": _QUICK_INPUT_MUTED}}
     />
 }
 
@@ -83,7 +119,8 @@ def:pub CommandGroup(props: any) -> JsxElement {
     <CommandPrimitive.Group
         data-slot="command-group"
         {**props}
-        className={cn("text-foreground **:[[cmdk-group-heading]]:text-muted-foreground overflow-hidden p-1 **:[[cmdk-group-heading]]:px-2 **:[[cmdk-group-heading]]:py-1.5 **:[[cmdk-group-heading]]:text-xs **:[[cmdk-group-heading]]:font-medium", props["className"])}
+        className={cn("overflow-hidden p-1 **:[[cmdk-group-heading]]:py-1.5 **:[[cmdk-group-heading]]:text-xs **:[[cmdk-group-heading]]:font-medium **:[[cmdk-group-heading]]:uppercase **:[[cmdk-group-heading]]:tracking-wide", props["className"])}
+        style={{"color": _QUICK_INPUT_TEXT}}
     />
 }
 
@@ -91,7 +128,8 @@ def:pub CommandSeparator(props: any) -> JsxElement {
     <CommandPrimitive.Separator
         data-slot="command-separator"
         {**props}
-        className={cn("bg-border -mx-1 h-px", props["className"])}
+        className={cn("-mx-1 h-px", props["className"])}
+        style={{"background": _QUICK_INPUT_BORDER}}
     />
 }
 
@@ -100,15 +138,11 @@ def:pub CommandItem(props: any) -> JsxElement {
         data-slot="command-item"
         {**props}
         className={cn(
-            "data-selected:bg-muted data-selected:text-foreground data-selected:*:[svg]:text-foreground relative flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-hidden select-none in-data-[slot=dialog-content]:rounded-lg! [&_svg:not([class*='size-'])]:size-4 group/command-item data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-50",
+            "relative flex cursor-default items-center gap-2 rounded-sm text-sm outline-hidden select-none [&_svg:not([class*='size-'])]:size-4 group/command-item data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-50 data-selected:[background-color:#04395E]",
             props["className"]
         )}
     >
         {props["children"]}
-        <span
-            className="codicon codicon-check data-selected:bg-muted data-selected:text-foreground data-selected:*:[svg]:text-foreground relative flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-hidden select-none in-data-[slot=dialog-content]:rounded-lg! [&_svg:not([class*='size-'])]:size-4-indicator ml-auto opacity-0 group-has-data-[slot=command-shortcut]/command-item:hidden group-data-[checked=true]/command-item:opacity-100"
-            style={{"fontSize": "14px"}}
-        />
     </CommandPrimitive.Item>
 }
 
@@ -117,6 +151,7 @@ def:pub CommandShortcut(props: any) -> JsxElement {
     <span
         data-slot="command-shortcut"
         {**attrs}
-        className={cn("text-muted-foreground group-data-selected/command-item:text-foreground ml-auto text-xs tracking-widest", props["className"])}
+        className={cn("ml-auto text-xs tracking-wide rounded-sm", attrs["className"])}
+        style={{"color": _QUICK_INPUT_TEXT, "background": _QUICK_INPUT_KEYBINDING_BG, "padding": "1px 5px", "border": "1px solid " + _QUICK_INPUT_BORDER}}
     />
 }

@@ -152,6 +152,7 @@ def:pub app(props: any) -> JsxElement {
     dirty_paths = props["dirtyPaths"];
     on_dirty_change = props["onDirtyChange"];
     on_open_location = props["onOpenLocation"];
+    on_open_command_palette = props["onOpenCommandPalette"];
 
     <div style={{"display": "flex", "flexDirection": "column", "height": "100%", "overflow": "hidden"}}>
         <div role="tablist" aria-label="Open editors" style={{"display": "flex", "alignItems": "center", "borderBottom": "1px solid #2A2B2C", "background": "#191A1B", "flexShrink": "0"}}>
@@ -225,6 +226,7 @@ def:pub app(props: any) -> JsxElement {
                                 initialCursor={initial_cursors[t["path"]] if t["path"] in initial_cursors else None}
                                 onDirtyChange={on_dirty_change}
                                 onOpenLocation={on_open_location}
+                                onOpenCommandPalette={on_open_command_palette}
                             />
                         )}
                     </div>

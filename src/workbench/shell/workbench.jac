@@ -174,6 +174,18 @@ this is the third reuse of that one method, not a new one. Same known limitation
 jumping to a definition in an already-open-but-inactive tab activates it without forcing a
 re-scroll (see the `open_search_result` bullet above).
 
+**`onOpenCommandPalette` on `EditorTabsApp` (2026-09-01) closes a real, user-reported divergence
+from actual VS Code behavior, not a cosmetic addition.** In real VS Code, `F1` and `Ctrl+Shift+P`
+are the *same* command -- both open the one Command Palette. Before this, jac-studio's `F1` (via
+the Monaco editor's own right-click context menu) fell through to Monaco's own bundled, editor-
+scoped `editor.action.quickCommand` instead -- a real action, but one that only knows Monaco's own
+commands, with no awareness this app's workbench-level Command Palette (`workbench.action
+.showCommands`, everything `command_registry.jac` actually registers) exists at all. `handle_command`
+is threaded down through `EditorTabsApp` to `MonacoEditorApp`, which overrides Monaco's built-in
+action (same id, `editor.addAction`'s standard override mechanism -- see `monaco_editor.impl.jac`)
+to open *this* app's own Command Palette instead, unifying `F1` and `Ctrl+Shift+P` the same way
+real VS Code does.
+
 **Outline, the fourth real sidebar view (2026-08-31, `docs/roadmap.md` Phase 4's native LSP client
 bullet)** -- `OutlineApp` follows `ScmApp`'s exact `active`-prop-refreshes-on-activation shape, plus
 `active_tab_path` (already computed above, for the status bar) as a second effect dependency so it
@@ -361,6 +373,7 @@ def:pub app(onToggleTheme: any) -> JsxElement {
                     dirtyPaths={dirty_paths}
                     onDirtyChange={handle_dirty_change}
                     onOpenLocation={open_search_result}
+                    onOpenCommandPalette={lambda (e: any) { handle_command("workbench.action.showCommands"); }}
                 />
             </ResizablePanel>
         );

@@ -421,16 +421,58 @@ def:pub _dap_variables_from_response(response: any) -> list[dict[str, any]] {
     return variables;
 }
 
+"""Runs `python_bin -c "import debugpy"` (with `PYTHONPATH` already pointed at the same env
+`_spawn_session` is about to use) as a cheap, fast preflight before the real spawn-and-connect
+dance -- **the concrete failure this exists for, caught live**: `jac.toml` declares
+`debugpy = ">=1.8.0"`, but that only lands in this project's own `.jac/venv` after an actual
+`jac install` run -- it is not bundled into the embedded runtime cache `_resolve_embedded_python`
+targets. When `.jac/venv` is missing or stale (pruned by this machine's own periodic
+build-artifact cleanup, or simply never installed on a fresh checkout -- see this project's own
+`jac-language` skill for the identical `.jac/venv`-wiped-by-`clean --all` gotcha), the *real*
+`-m debugpy` subprocess spawned further down still starts, but crashes near-instantly with its own
+`ModuleNotFoundError: No module named 'debugpy'` and never binds its listen port -- invisible to
+this client, since `_drain_process_output` isn't wired up until *after* the TCP connect below
+succeeds. Without this preflight, that failure was indistinguishable from a slow adapter: the
+client just sat at "Starting..." for the full `_DAP_CONNECT_TIMEOUT_SECONDS` (15s) before falling
+back to the same generic message every other failure path already produced. Confirmed live (this
+exact scenario, reproduced by emptying `.jac/venv` and hitting Start): five seconds, one specific,
+actionable message, instead of fifteen seconds of silence and a dead end."""
+async def _check_debugpy_available(python_bin: str, env: dict[str, str]) -> bool {
+    try {
+        proc = await asyncio.create_subprocess_exec(
+            python_bin, "-c", "import debugpy",
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
+            env=env
+        );
+    } except Exception {
+        return False;
+    }
+    try {
+        returncode = await asyncio.wait_for(proc.`wait(), timeout=5.0);
+        return returncode == 0;
+    } except Exception {
+        try {
+            proc.kill();
+        } except Exception {}
+        return False;
+    }
+}
+
 """Spawns `python -m debugpy --listen <port> --wait-for-client dap_launcher.py <path>`, connects to
 it as a DAP client, and drives the handshake through `configurationDone` -- see this module's own
 docstring for why each step is shaped the way it is (embedded interpreter, `PYTHONPATH`, the
-`attach`/`initialized` ordering quirk). Returns `None` on any failure along the way (no embedded
-Python found, spawn failed, connect timed out, handshake timed out) rather than raising -- matching
-this project's established "nothing to attach to" convention for a feature that can't proceed."""
-async def _spawn_session(path: str, lines: list[int]) -> DapProcess | None {
+`attach`/`initialized` ordering quirk). Returns `(None, reason)` on any failure along the way (no
+embedded Python found, debugpy not installed, spawn failed, connect timed out, handshake timed out)
+rather than raising -- matching this project's established "nothing to attach to" convention for a
+feature that can't proceed, but **carrying the specific reason back to the caller (2026-09-02),
+not just a bare `None`** -- every branch here used to discard *why* it failed, collapsing every
+distinct cause into `start_debug_session`'s one generic "Failed to start the debug session."
+message, exactly the gap that made the missing-`debugpy` case above so slow to diagnose."""
+async def _spawn_session(path: str, lines: list[int]) -> (DapProcess | None, str) {
     python_bin = _resolve_embedded_python();
     if python_bin is None {
-        return None;
+        return (None, "No Python interpreter found for the embedded Jac runtime.");
     }
     port = _find_free_port();
     pythonpath = _build_pythonpath(sys.path);
@@ -440,6 +482,10 @@ async def _spawn_session(path: str, lines: list[int]) -> DapProcess | None {
 
     env = dict(os.environ);
     env["PYTHONPATH"] = pythonpath;
+
+    if not await _check_debugpy_available(python_bin, env) {
+        return (None, "debugpy is not installed for this project. Run 'jac install' (it's declared in jac.toml) to install it, then try again.");
+    }
 
     handle = DapProcess();
     try {
@@ -454,7 +500,7 @@ async def _spawn_session(path: str, lines: list[int]) -> DapProcess | None {
             env=env
         );
     } except Exception {
-        return None;
+        return (None, "Failed to spawn the debugpy process.");
     }
     handle.event_queue = asyncio.Queue();
     handle.initialized_event = asyncio.Event();
@@ -477,7 +523,7 @@ async def _spawn_session(path: str, lines: list[int]) -> DapProcess | None {
         try {
             handle.process.kill();
         } except Exception {}
-        return None;
+        return (None, "Timed out waiting for the debug adapter to start listening.");
     }
 
     handle.reader_task = asyncio.create_task(_read_loop(handle));
@@ -491,7 +537,7 @@ async def _spawn_session(path: str, lines: list[int]) -> DapProcess | None {
         try {
             handle.process.kill();
         } except Exception {}
-        return None;
+        return (None, "Timed out waiting for the debug adapter to initialize.");
     }
 
     await _send_dap_request(handle, "setBreakpoints", {
@@ -499,7 +545,7 @@ async def _spawn_session(path: str, lines: list[int]) -> DapProcess | None {
         "breakpoints": [{"line": l} for l in lines]
     });
     await _send_dap_request(handle, "configurationDone", {});
-    return handle;
+    return (handle, "");
 }
 
 """Stores `lines` as `path`'s breakpoints, purely for the gutter to restore on a later file open --
@@ -540,9 +586,9 @@ async def:pub start_debug_session(path: str, lines: list[int]) -> Generator {
         }
 
         _reset_dap_command_file();
-        handle = await _spawn_session(path, lines);
+        (handle, spawn_error) = await _spawn_session(path, lines);
         if handle is None {
-            yield json.dumps({"type": "error", "message": "Failed to start the debug session."});
+            yield json.dumps({"type": "error", "message": spawn_error if spawn_error != "" else "Failed to start the debug session."});
             return;
         }
         # Stored on `handle`, not discarded -- asyncio only holds a *weak* reference to a task once

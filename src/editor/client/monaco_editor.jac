@@ -103,6 +103,18 @@ isn't the active one); `jac_reference_provider.jac`/`jac_rename_provider.jac` ne
 wiring for the same reason -- see their own docstrings for why they reuse that same registered
 editor opener (references) or apply edits directly rather than navigating at all (rename).
 
+**`onOpenCommandPalette` overrides Monaco's own built-in `editor.action.quickCommand`
+(2026-09-01), unifying `F1` with `Ctrl+Shift+P` the same way real VS Code does.** Real VS Code's
+`F1` and `Ctrl+Shift+P` are the *same* command, both opening the one Command Palette -- but
+embedded Monaco ships its own separate, editor-scoped `F1` action (real, but aware only of
+Monaco's own commands, not `command_registry.jac`'s workbench-level ones). `editor.addAction`
+called with that exact same id (`"editor.action.quickCommand"`) replaces Monaco's built-in
+definition rather than adding a second one -- `contextMenuGroupId: "z_commands"` matches Monaco's
+own original placement so the right-click menu still shows one "Command Palette" entry in the same
+spot, just now opening this app's own `CommandPaletteApp` instead of Monaco's internal one. See
+`workbench.jac`'s own docstring for the full prop-threading chain (`workbench.jac` →
+`editor_tabs.jac` → here).
+
 **Breadcrumb bar (2026-08-31, `docs/roadmap.md` Phase 4's native LSP client bullet, closing out its
 originally-scoped "outline/breadcrumbs" pair)** -- a thin strip above `<Editor>` showing the file
 name plus the chain of symbols (`breadcrumb_symbols.jac`'s `symbol_path_at_position`, walked over
@@ -168,7 +180,7 @@ import from src.workbench.symbol_icons.symbol_icons { symbol_icon_class }
 import from src.editor.client.breadcrumb_symbols { symbol_path_at_position }
 import from src.workbench.dap.dap_client { get_breakpoints, set_breakpoints }
 
-def:pub app(path: str, onCursorChange: any, initialCursor: any, onDirtyChange: any, onOpenLocation: any) -> JsxElement {
+def:pub app(path: str, onCursorChange: any, initialCursor: any, onDirtyChange: any, onOpenLocation: any, onOpenCommandPalette: any) -> JsxElement {
     has content: str = "";
     has loaded: bool = False;
     has dirty: bool = False;

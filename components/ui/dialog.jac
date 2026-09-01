@@ -1,3 +1,12 @@
+"""`DialogOverlay`'s dim (`bg-black/10`) and backdrop-blur are removed (2026-09-01) -- this
+project's only consumer of `Dialog`/`DialogContent` is `components/ui/command.jac`'s
+`CommandDialog` (Command Palette/Quick Open/Task Picker), and real VS Code's own Quick Input
+widget doesn't dim the workbench behind it at all -- it floats over a fully visible, undimmed app,
+unlike a true modal dialog. `DialogOverlay` element itself stays (Radix's click-outside-to-dismiss
+behavior needs it to exist), just visually transparent. `DialogContent` forwards an optional
+`overlayClassName` prop to `DialogOverlay` for any future consumer that *does* want a dimmed
+overlay -- transparent is the new default, not the only option."""
+
 import from "radix-ui" { Dialog as DialogPrimitive }
 import from ...lib.utils { cn }
 import from .button { buttonVariants }
@@ -23,7 +32,7 @@ def:pub DialogOverlay(props: any) -> JsxElement {
         {**props}
         data-slot="dialog-overlay"
         className={cn(
-            "data-open:animate-in data-closed:animate-out data-closed:fade-out-0 data-open:fade-in-0 bg-black/10 duration-100 supports-backdrop-filter:backdrop-blur-xs data-open:animate-in data-closed:animate-out data-closed:fade-out-0 data-open:fade-in-0 bg-black/10 duration-100 supports-backdrop-filter:backdrop-blur-xs fixed inset-0 isolate z-50",
+            "data-open:animate-in data-closed:animate-out data-closed:fade-out-0 data-open:fade-in-0 duration-100 fixed inset-0 isolate z-50",
             props["className"]
         )}
     />
@@ -32,7 +41,7 @@ def:pub DialogOverlay(props: any) -> JsxElement {
 def:pub DialogContent(props: any) -> JsxElement {
     showCloseButton = props["showCloseButton"] is not False;
     <DialogPortal>
-        <DialogOverlay/>
+        <DialogOverlay className={props["overlayClassName"]}/>
         <DialogPrimitive.Content
             {**props}
             data-slot="dialog-content"

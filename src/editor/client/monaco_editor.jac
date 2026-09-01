@@ -136,7 +136,22 @@ seconds) without adding a polling loop. **Explicitly not a full fix** -- a check
 past 4 seconds (also observed, well past a minute in the worst case) leaves the breadcrumb empty
 until the next save, same as before this retry existed; a real fix would need `jac lsp` itself to
 push a "this file's outline changed" notification the way it already pushes `publishDiagnostics`,
-which doesn't exist today and is out of scope here."""
+which doesn't exist today and is out of scope here.
+
+**Breakpoint gutter (2026-08-31, `docs/roadmap.md` Phase 4's DAP client bullet)** -- a second,
+independent `IEditorDecorationsCollection` (`breakpoints_ref`, alongside `decorations_ref`'s git
+gutter one -- Monaco's `createDecorationsCollection` supports any number of independent
+collections, and the two paint into different lanes: `linesDecorationsClassName` for git changes,
+`glyphMarginClassName` for breakpoints, so they never collide on the same line) painted from
+`breakpoint_lines`, which loads once at mount from `dap_client.jac`'s `get_breakpoints(path)`
+(this project's own stored state, not Monaco's) and is re-applied on every toggle. Clicking the
+glyph margin (`editor.onMouseDown`, checking `e.target.type ==
+monaco.editor.MouseTargetType.GUTTER_GLYPH_MARGIN`) toggles that line in `breakpoint_lines` and
+calls `dap_client.jac`'s `set_breakpoints(path, breakpoint_lines)` -- an ordinary RPC stub call
+(imported directly, same as every LSP function above), not a stream, since setting a breakpoint has
+one definite answer (which lines ended up verified), unlike a debug session's open-ended event
+flow. `options.glyphMargin: True` is required for Monaco to reserve the glyph-margin lane at
+all -- without it, `glyphMarginClassName` decorations are accepted but never rendered."""
 
 import from "@monaco-editor/react" { Editor }
 import from src.editor.document_service { open_document, save_document }
@@ -150,6 +165,7 @@ import from src.workbench.scm.git_service { get_line_changes }
 import from src.workbench.lsp.lsp_client { notify_document_open, notify_document_save, get_document_symbols }
 import from src.workbench.symbol_icons.symbol_icons { symbol_icon_class }
 import from src.editor.client.breadcrumb_symbols { symbol_path_at_position }
+import from src.workbench.dap.dap_client { get_breakpoints, set_breakpoints }
 
 def:pub app(path: str, onCursorChange: any, initialCursor: any, onDirtyChange: any, onOpenLocation: any) -> JsxElement {
     has content: str = "";
@@ -158,8 +174,10 @@ def:pub app(path: str, onCursorChange: any, initialCursor: any, onDirtyChange: a
     has editor_ref: Ref[any] = Ref();
     has monaco_ref: Ref[any] = Ref();
     has decorations_ref: Ref[any] = Ref();
+    has breakpoints_ref: Ref[any] = Ref();
     has symbols: list[dict[str, any]] = [];
     has breadcrumb_path: list[dict[str, any]] = [];
+    has breakpoint_lines: list[int] = [];
 
     async can with entry {
         result = await open_document(path);
@@ -171,12 +189,15 @@ def:pub app(path: str, onCursorChange: any, initialCursor: any, onDirtyChange: a
         if len(symbols) == 0 {
             setTimeout(lambda { retry_refresh_symbols(loaded_content); }, 4000);
         }
+        breakpoint_lines = await get_breakpoints(path);
     }
 
     def handle_before_mount(monaco: any) -> None;
     def handle_mount(editor: any, monaco: any) -> None;
     async def handle_save -> None;
     def handle_cursor_change(e: any) -> None;
+    def apply_breakpoint_decorations -> None;
+    async def handle_gutter_click(e: any) -> None;
     def handle_content_change(e: any) -> None;
     async def apply_git_decorations -> None;
     async def refresh_symbols(current_content: str) -> None;
@@ -233,7 +254,7 @@ def:pub app(path: str, onCursorChange: any, initialCursor: any, onDirtyChange: a
                     onMount={handle_mount}
                     onChange={handle_content_change}
                     keepCurrentModel={True}
-                    options={{"automaticLayout": True, "minimap": {"enabled": True}}}
+                    options={{"automaticLayout": True, "minimap": {"enabled": True}, "glyphMargin": True}}
                 />
             ) if loaded else (
                 <div style={{"padding": "1rem", "fontSize": "12px", "color": "#8C8C8C", "fontFamily": "system-ui, sans-serif"}}>

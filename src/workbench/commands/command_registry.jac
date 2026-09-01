@@ -85,6 +85,11 @@ glob BUILTIN_COMMANDS: list[dict[str, any]] = [
         "keybindings": [{"key": "ctrl+shift+u", "when": ""}]
     },
     {
+        "id": "workbench.action.debug.toggle",
+        "title": "View: Toggle Debug Console",
+        "keybindings": [{"key": "ctrl+shift+y", "when": ""}]
+    },
+    {
         "id": "workbench.action.showSearch",
         "title": "View: Show Search",
         "keybindings": [{"key": "ctrl+shift+f", "when": ""}]

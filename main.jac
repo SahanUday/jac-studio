@@ -23,6 +23,11 @@ import from src.workbench.shell.workbench { app as WorkbenchApp }
 # self-registration, this top-level import is what registers the /function/run_in_terminal route at
 # all (see the jac-sv-streaming guide's "Registration: streams need an entry-module import" section).
 import from src.workbench.terminal.terminal_service { run_in_terminal }
+
+# Same reason, same fix: `start_debug_session` (src/workbench/dap/dap_client.jac) is also consumed
+# by a raw SSE `fetch` (in debug_console.impl.jac), not a generated RPC stub -- needs the identical
+# entry-module import to register /function/start_debug_session at all.
+import from src.workbench.dap.dap_client { start_debug_session }
 import from src.workbench.settings.settings_service { get_setting, set_setting }
 
 """**Dark mode was never activated (2026-08-25, caught via real browser screenshots, again not

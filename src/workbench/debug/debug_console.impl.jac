@@ -34,7 +34,7 @@ impl app.handle_start -> None {
         buf = raw_frames.pop();
         for frame in raw_frames {
             for line in frame.split(nl) {
-                if line.startswith("data: ") {
+                if line.startswith("data: ") and not frame.startswith("event:") {
                     chunk = JSON.parse(line[6:]) as str;
                     event = JSON.parse(chunk) as dict[str, any];
                     handle_event(event);

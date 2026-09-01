@@ -68,7 +68,27 @@ way `expanded`/`selected_path` already are) is owned by `workbench.jac`, not fet
 `scm.jac`'s own `refresh_status` reports it up via `onStatusChange` every time *that* view
 refreshes, so this component stays a pure consumer, same "leaf renders, parent owns cross-view
 state" shape already used for `dirty_paths`. A row with no entry in the map renders exactly as
-before (no badge, default color) -- this is additive, not a rewrite of the existing row shape."""
+before (no badge, default color) -- this is additive, not a rewrite of the existing row shape.
+
+**`<Sidebar collapsible="none">` (2026-09-01), the real fix for the overlap/click-interception bug
+the two 2026-08-31 z-index findings (`activity_bar.jac`'s and `workbench.jac`'s own docstrings)
+only ever band-aided.** The vendored `components/ui/sidebar.jac`'s *default* (`offcanvas`) variant
+renders its container as `position: fixed; inset-y-0; left: 0` -- pinned to the literal viewport
+edge regardless of where it sits in the actual flex layout, not `position: relative` inside the
+workbench's own activity-bar+sidebar+editor flex row. That's the same 0-48px column the Activity
+Bar occupies; the two prior fixes only raised each *sibling*'s own z-index high enough to stop
+losing to the Sidebar's fixed layer at that spot, without touching the Sidebar's own broken
+positioning -- so the Sidebar itself stayed pinned under whichever sibling now had the higher
+z-index, silently swallowing clicks in that strip for whatever was on the Sidebar's side of it.
+Confirmed live report: the root-level file/folder label rendered as "g-workspace" instead of
+"testing-workspace" (flush-left content clipped by the Activity Bar painted on top of it), and
+expand chevrons -- which render inside that same 0-48px strip at shallow tree depths -- stopped
+registering clicks at all, since a click there was landing on the Activity Bar's own DOM node
+instead. `collapsible="none"` is not a workaround -- it's the vendored primitive's own built-in
+variant for a sidebar that's a persistent in-flow panel rather than a collapsible overlay (this
+component never used `SidebarTrigger`/offcanvas collapse behavior in the first place), and its own
+branch in `sidebar.jac` renders a plain flow `<div>` with no `fixed`/`z-index` at all -- so it
+participates in the workbench's flex row like every other column instead of fighting it."""
 
 import from src.workbench.workspace.workspace_service {
     open_workspace, list_children_by_path, get_current_workspace,
@@ -253,7 +273,7 @@ def:pub app(props: any) -> JsxElement {
     }
 
     <SidebarProvider>
-        <Sidebar>
+        <Sidebar collapsible="none">
             <SidebarHeader>
                 <div style={{"padding": "0.5rem", "display": "flex", "gap": "0.4rem", "fontFamily": "system-ui, sans-serif"}}>
                     <input

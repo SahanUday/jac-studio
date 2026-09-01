@@ -115,7 +115,21 @@ been scanned yet. Idempotent per `parent` via the `scanned` flag, guarded by `_w
 the check-then-scan-then-flag sequence is atomic across concurrent calls (see `_workspace_lock`'s
 own docstring) -- never re-reads the directory or duplicates children on repeat calls, which is
 what makes lazy expand-on-demand safe to call on every UI expand click, including several
-near-simultaneous ones."""
+near-simultaneous ones.
+
+**A `scanned=True`-but-zero-live-children folder can get permanently stuck showing no children --
+a real, reproduced, currently-open gap, not yet fixed here (2026-09-01).** Three same-day attempts
+at a self-heal (re-scan when `scanned` is set but no `Contains` edges survive) each looked correct
+under `jac check`/`jac test` and an initial live check, then failed differently under further live
+testing against a real `jac run --serve --dev` process -- including a version that returned the
+exact `child` objects the scan loop had just created, with no graph read anywhere near the write,
+which still came back empty on a subsequent independent request. Root cause not fully isolated:
+plausibly an edge-creation durability gap in the same family as this file's own already-documented
+one for edge *deletion* (`2026-08-28-edge-deletion-not-committed-across-real-http-requests`), but
+not confirmed. Reverted to the original, simple, unconditional-early-return behavior below rather
+than ship an unverified fix -- see tracker entry
+`2026-09-01-folder-scan-flag-permanently-stuck-after-edge-loss` for the full record and what
+unblocking this would need."""
 def _ensure_scanned(parent: (Workspace | Folder)) -> None {
     with _workspace_lock {
         if parent.scanned {

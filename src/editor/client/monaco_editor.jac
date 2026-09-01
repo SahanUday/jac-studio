@@ -128,7 +128,11 @@ convention `apply_git_decorations` already uses) -- so no cross-component RPC or
 needed the way go-to-definition's cross-tab navigation required. `update_breadcrumb` recomputes the
 chain from the live `editor_ref` position, called from `handle_mount` (once, mirroring
 `onCursorChange`'s own "fire once at mount, not just on the live listener" convention),
-`handle_cursor_change` (every cursor move), and after `refresh_symbols` in `handle_save` (a save can
+`handle_cursor_change` (every cursor move -- **this call was missing entirely until 2026-09-01**,
+reported live: the docstring here always described it, but the actual `handle_cursor_change` body
+only ever called `onCursorChange`, so the breadcrumb silently froze at whatever it showed at mount
+or the last save, never tracking the cursor at all -- restored, matching what was already documented
+and already true of every other call site), and after `refresh_symbols` in `handle_save` (a save can
 shift symbol ranges, e.g. adding a line before the current one, so the chain is recomputed against
 the fresh tree, not just re-evaluated against the stale one). Clicking a segment calls
 `editor_ref.current.setPosition`/`revealPositionInCenter` directly -- no `open_search_result`

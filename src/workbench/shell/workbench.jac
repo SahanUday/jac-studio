@@ -192,6 +192,11 @@ bullet)** -- `OutlineApp` follows `ScmApp`'s exact `active`-prop-refreshes-on-ac
 also refreshes when the active editor tab changes while already visible. Clicking a symbol is the
 fourth reuse of `open_search_result`.
 
+**`cursorLine`/`cursorColumn` (2026-09-01) forward the exact same `active_cursor` the status bar
+already reads** -- no new state, just the same value passed to a second consumer so Outline can
+highlight whichever row contains the live cursor (see `outline.jac`'s own docstring for the
+containment logic this feeds).
+
 **Title bar (2026-08-28, `docs/roadmap.md` Phase 3)** -- `command_palette_open` moved here from
 being `command_palette.jac`'s own private state, specifically so `TitleBarApp`'s Command Center
 button has something to call: `onOpenCommandPalette` dispatches through `handle_command`'s
@@ -401,7 +406,13 @@ def:pub app(onToggleTheme: any) -> JsxElement {
                     <ScmApp active={active_view_id == "scm"} onOpenDiff={open_scm_diff} onOpenFile={open_tab} onNotify={add_notification} onStatusChange={set_git_status} />
                 </div>
                 <div style={{"display": "block" if active_view_id == "outline" else "none", "height": "100%"}}>
-                    <OutlineApp active={active_view_id == "outline"} path={active_tab_path} onOpenLocation={open_search_result} />
+                    <OutlineApp
+                        active={active_view_id == "outline"}
+                        path={active_tab_path}
+                        onOpenLocation={open_search_result}
+                        cursorLine={active_cursor["line"]}
+                        cursorColumn={active_cursor["column"]}
+                    />
                 </div>
             </div>
             <div style={{"flex": "1", "overflow": "hidden"}}>

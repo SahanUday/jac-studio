@@ -108,6 +108,7 @@ impl app.apply_git_decorations -> None {
 
 impl app.handle_cursor_change(e: any) -> None {
     onCursorChange(path, e.position.lineNumber, e.position.column);
+    update_breadcrumb();
 }
 
 """Paints a red dot into the glyph margin for every line in `breakpoint_lines` -- called once at

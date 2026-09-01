@@ -6,20 +6,13 @@ impl app.handle_before_mount(monaco: any) -> None {
     register_jac_reference_provider(monaco);
     register_jac_rename_provider(monaco);
     register_conflict_codelens_provider(monaco);
+    register_command_palette_override(onOpenCommandPalette);
 }
 
 impl app.handle_mount(editor: any, monaco: any) -> None {
     editor_ref.current = editor;
     monaco_ref.current = monaco;
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, handle_save);
-    editor.addAction({
-        "id": "editor.action.quickCommand",
-        "label": "Command Palette",
-        "keybindings": [monaco.KeyCode.F1],
-        "contextMenuGroupId": "z_commands",
-        "contextMenuOrder": 1,
-        "run": lambda (ed: any) { onOpenCommandPalette(); }
-    });
     editor.onDidChangeCursorPosition(handle_cursor_change);
     if initialCursor {
         restored_position = {"lineNumber": initialCursor["line"], "column": initialCursor["column"]};

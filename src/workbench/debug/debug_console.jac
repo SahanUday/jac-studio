@@ -21,6 +21,24 @@ string a `Generator[str]` yields as the wire payload, so `handle_start`'s parsin
 `terminal.impl.jac`'s `chunk = JSON.parse(line[6:])` exactly), a second to decode the JSON *this*
 module's own payload actually carries.
 
+**`and not frame.startswith("event:")` (2026-09-01 fix) -- a real, 100%-reproducible bug found live,
+not theoretical.** jaclang's own SSE dispatcher emits a trailing `event: end\ndata: {}` frame after
+the generator returns, on *every* session end (manual stop or natural completion) -- confirmed
+directly, both via a raw `curl -N` capture of the stream and via the browser console. The initial
+version of this loop copied `terminal.impl.jac`'s `chunk = JSON.parse(line[6:])` line but dropped
+its `and not frame.startswith("event:")` guard, so that trailing frame's bare `data: {}` (a JSON
+*object* literal, not this module's expected JSON *string* payload) fed into the same two-`JSON.parse`
+call: the first parse succeeds (`{}` is valid JSON), but the *second* parse receives an actual JS
+object where a string was expected, coercing it to the literal text `"[object Object]"` and throwing
+`SyntaxError: "[object Object]" is not valid JSON` -- confirmed via the exact browser-console
+traceback. Since this throw was never caught, it aborted `handle_start`'s `async def` entirely,
+skipping the loop's own post-loop cleanup (`session_active = False; ...`) -- the reason a session
+that ended *without* the user clicking Stop left the Start button permanently disabled afterward
+(`session_active` stuck `True` forever), matching the "debugging stops working after the first
+run" bug reported live. Restoring the same guard `terminal.impl.jac` already has fixes it at the
+source, for every termination path, not just the manual-stop one `handle_stop`'s own direct
+`session_active = False` happened to paper over.
+
 **`handle_start` fetches `get_breakpoints(path)` itself and sends the result as `start_debug_session`'s
 `lines` argument, rather than trusting the server to already know them.** `dap_client.jac`'s own
 docstring explains why: a `Generator`-returning SSE function runs in a genuinely separate process

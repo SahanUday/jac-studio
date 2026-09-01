@@ -107,11 +107,13 @@ editor opener (references) or apply edits directly rather than navigating at all
 (2026-09-01), unifying `F1` with `Ctrl+Shift+P` the same way real VS Code does.** Real VS Code's
 `F1` and `Ctrl+Shift+P` are the *same* command, both opening the one Command Palette -- but
 embedded Monaco ships its own separate, editor-scoped `F1` action (real, but aware only of
-Monaco's own commands, not `command_registry.jac`'s workbench-level ones). `editor.addAction`
-called with that exact same id (`"editor.action.quickCommand"`) replaces Monaco's built-in
-definition rather than adding a second one -- `contextMenuGroupId: "z_commands"` matches Monaco's
-own original placement so the right-click menu still shows one "Command Palette" entry in the same
-spot, just now opening this app's own `CommandPaletteApp` instead of Monaco's internal one. See
+Monaco's own commands, not `command_registry.jac`'s workbench-level ones). Registered via
+`command_palette_override.jac`'s `register_command_palette_override`, **not** `editor.addAction`
+with the built-in's own id -- a first attempt at exactly that was shipped and found live to create
+a *second*, duplicate "Command Palette" context-menu entry rather than replacing the original
+(`editor.addAction` and Monaco's static `registerEditorAction` are two entirely separate internal
+registries; see `command_palette_override.jac`'s own docstring for the full investigation and why
+re-registering Monaco's command id in `CommandsRegistry` is the correct fix instead). See
 `workbench.jac`'s own docstring for the full prop-threading chain (`workbench.jac` →
 `editor_tabs.jac` → here).
 
@@ -179,6 +181,7 @@ import from src.workbench.lsp.lsp_client { notify_document_open, notify_document
 import from src.workbench.symbol_icons.symbol_icons { symbol_icon_class }
 import from src.editor.client.breadcrumb_symbols { symbol_path_at_position }
 import from src.workbench.dap.dap_client { get_breakpoints, set_breakpoints }
+import from src.editor.client.command_palette_override { register_command_palette_override }
 
 def:pub app(path: str, onCursorChange: any, initialCursor: any, onDirtyChange: any, onOpenLocation: any, onOpenCommandPalette: any) -> JsxElement {
     has content: str = "";

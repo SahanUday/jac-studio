@@ -188,6 +188,33 @@ test "get_current_workspace re-populates the path index so list_children_by_path
     assert [c["name"] for c in children] == ["sub", "a.txt"];
 }
 
+test "a no-op get_current_workspace call in between does not wipe an already-expanded folder's children" {
+    # Regression test for a real, reported bug: every SCM function (get_scm_status,
+    # get_diff_content, ...) calls get_current_workspace -> get_or_create_workspace first, purely
+    # to resolve the repo root, with no intent to change or reset anything. get_or_create_workspace
+    # used to unconditionally overwrite _path_index[key] with a fresh single-entry dict on *every*
+    # call, even when root_path hadn't changed -- discarding every previously cached Folder/File
+    # entry (list_children_by_path's own doc). Since list_children_by_path returns [] immediately
+    # when parent_path isn't in _path_index[key] (never even reaching the graph), simply having the
+    # SCM panel open -- or opening a diff view -- silently emptied out every already-expanded
+    # folder in the Explorer, even though the underlying graph (Folder node, scanned flag, Contains
+    # edges) was never touched.
+    _reset_workspace_cache_for_tests();
+    fixture = make_fixture();
+    open_workspace(fixture);
+    list_children_by_path(fixture);
+    sub_path = os.path.join(fixture, "sub");
+    list_children_by_path(sub_path);
+
+    # simulates an SCM-panel-shaped call: resolves the current workspace, same as
+    # get_scm_status/get_diff_content do via git_service.jac's _repo_root(), with no path change
+    get_current_workspace();
+
+    sub_children_again = list_children_by_path(sub_path);
+
+    assert [c["name"] for c in sub_children_again] == ["nested", "b.txt"];
+}
+
 test "list_all_files returns nothing when no workspace has ever been opened" {
     _reset_workspace_cache_for_tests();
 

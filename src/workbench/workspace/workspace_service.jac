@@ -87,7 +87,23 @@ first-ever call in this root's lifetime had opened). Now detaches the stale `Con
 not `del`-ed outright, since a Folder's own nested children would need a recursive walk to clean up
 too, and leaving them as unreachable graph garbage is a fine trade-off for a local, single-user dev
 tool) and re-points `ws` at the newly requested path with a fresh `scanned=False`, so opening a
-different folder actually re-scans it instead of silently continuing to show the old one."""
+different folder actually re-scans it instead of silently continuing to show the old one.
+
+**The `elif key not in _path_index` branch (2026-09-02) is the actual fix for a real, reported bug
+-- `_path_index[key]` used to be unconditionally overwritten with a fresh single-entry dict on
+*every* call to this function, even when `root_path` hadn't changed and there was nothing to
+reset.** Every SCM function (`get_scm_status`, `get_diff_content`, ...) calls
+`get_current_workspace` -> here first, purely to resolve the current repo root -- so simply having
+the SCM panel open, or opening a diff view, silently discarded every previously-cached `Folder`/
+`File` entry `list_children_by_path` had built up as the user expanded the tree. Since
+`list_children_by_path` returns `[]` immediately (never touching the graph at all) when
+`parent_path not in _path_index[key]`, this looked exactly like "folders that used to expand fine
+now show nothing" -- while the underlying graph (the `Folder` node, its `scanned` flag, its
+`Contains` edges) was never actually touched, confirmed by re-expanding the root instantly
+restoring the listing with no re-scan. See tracker entry
+`2026-09-01-folder-scan-flag-permanently-stuck-after-edge-loss`'s 2026-09-02 correction for the
+full repro and how this was distinguished from `_ensure_scanned`'s own separate, still-open
+edge-loss question below."""
 def get_or_create_workspace(root_path: str) -> Workspace {
     with _workspace_lock {
         key = jid(root);
@@ -104,8 +120,10 @@ def get_or_create_workspace(root_path: str) -> Workspace {
             }
             ws.root_path = root_path;
             ws.scanned = False;
+            _path_index[key] = {ws.root_path: ws};
+        } elif key not in _path_index {
+            _path_index[key] = {ws.root_path: ws};
         }
-        _path_index[key] = {ws.root_path: ws};
         return ws;
     }
 }
@@ -117,19 +135,27 @@ own docstring) -- never re-reads the directory or duplicates children on repeat 
 what makes lazy expand-on-demand safe to call on every UI expand click, including several
 near-simultaneous ones.
 
-**A `scanned=True`-but-zero-live-children folder can get permanently stuck showing no children --
-a real, reproduced, currently-open gap, not yet fixed here (2026-09-01).** Three same-day attempts
-at a self-heal (re-scan when `scanned` is set but no `Contains` edges survive) each looked correct
-under `jac check`/`jac test` and an initial live check, then failed differently under further live
-testing against a real `jac run --serve --dev` process -- including a version that returned the
-exact `child` objects the scan loop had just created, with no graph read anywhere near the write,
-which still came back empty on a subsequent independent request. Root cause not fully isolated:
-plausibly an edge-creation durability gap in the same family as this file's own already-documented
-one for edge *deletion* (`2026-08-28-edge-deletion-not-committed-across-real-http-requests`), but
-not confirmed. Reverted to the original, simple, unconditional-early-return behavior below rather
-than ship an unverified fix -- see tracker entry
-`2026-09-01-folder-scan-flag-permanently-stuck-after-edge-loss` for the full record and what
-unblocking this would need."""
+**A `scanned=True`-but-zero-live-children folder was suspected of getting permanently stuck showing
+no children (2026-09-01) -- since resolved as a *different* bug entirely (2026-09-02), see below.**
+Three same-day attempts at a self-heal here (re-scan when `scanned` is set but no `Contains` edges
+survive) each looked correct under `jac check`/`jac test` and an initial live check, then failed
+differently under further live testing against a real `jac run --serve --dev` process -- including
+a version that returned the exact `child` objects the scan loop had just created, with no graph
+read anywhere near the write, which still came back empty on a subsequent independent request.
+Reverted to the original, simple, unconditional-early-return behavior below rather than ship an
+unverified fix.
+
+**The actual bug behind the reported symptom turned out to live in `get_or_create_workspace`
+above, not here at all -- see that function's own docstring and tracker entry
+`2026-09-01-folder-scan-flag-permanently-stuck-after-edge-loss`'s 2026-09-02 correction for the
+full story.** `_path_index` (not this function's `scanned` flag or any `Contains` edge) was being
+silently wiped by every SCM-panel-triggered call, which is what actually produced "folder that
+used to expand now shows nothing" -- the graph itself was never touched. The edge-loss theory above
+remains a documented, still-unconfirmed question in its own right (not proven wrong, just no
+longer believed to be the primary explanation for what was reported) -- if a *new*, independently
+reproduced case of a `scanned=True`-but-truly-edgeless folder ever turns up, this is still the
+right place to revisit it, following this docstring's own original "What was tried" record in the
+tracker entry rather than starting over."""
 def _ensure_scanned(parent: (Workspace | Folder)) -> None {
     with _workspace_lock {
         if parent.scanned {

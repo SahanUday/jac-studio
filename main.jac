@@ -30,6 +30,12 @@ import from src.workbench.terminal.terminal_service { run_in_terminal }
 import from src.workbench.dap.dap_client { start_debug_session }
 import from src.workbench.settings.settings_service { get_setting, set_setting }
 
+# Same reason, same fix as the two imports above: `start_chat_turn`
+# (src/workbench/ai/claude_code_client.jac) is also consumed by a raw SSE `fetch` (in
+# ai_chat.impl.jac), not a generated RPC stub -- needs the identical entry-module import to
+# register /function/start_chat_turn at all.
+import from src.workbench.ai.claude_code_client { start_chat_turn }
+
 """**Dark mode was never activated (2026-08-25, caught via real browser screenshots, again not
 compiled-bundle inspection)** -- `styles/global.css` defines dark-theme values behind
 `@custom-variant dark (&:is(.dark *));`, a *class-based* switch: every shadcn component (`Sidebar`,

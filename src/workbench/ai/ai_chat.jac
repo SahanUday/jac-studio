@@ -154,7 +154,26 @@ two more real, live-found gaps:**
   existing Tailwind `@utility` in `styles/global.css` that was defined but never actually applied
   anywhere in this project until now) -- `overflow: "auto"` still scrolls via wheel/touch/keyboard,
   it just doesn't reserve a visible OS-chrome scrollbar gutter in a column this narrow. Same
-  treatment applied to `inline_chat_widget.jac`'s own scrollable response area for consistency."""
+  treatment applied to `inline_chat_widget.jac`'s own scrollable response area for consistency.
+
+**Fourth QA pass (2026-09-05), two more real gaps found live against a real VS Code Claude Code
+extension screenshot for direct comparison:**
+
+- **The message list now auto-scrolls to the latest content.** Found live: without scrolling
+  manually, the panel stayed pinned at the top of the conversation as new turns/tool steps/text
+  streamed in below the visible area -- real chat UIs (the reference screenshot included) always
+  keep the latest content in view. `messages_list_ref` (a plain `Ref[any]` on the message-list
+  container) plus a `useEffect` keyed on `[messages, is_streaming, pending_approvals]` sets
+  `scrollTop = scrollHeight` on every change that could add content -- covers a new/updated
+  message, the thinking indicator appearing, and a new approval card, not just `messages` alone.
+  Same fix applied to `inline_chat_widget.jac`'s own response area.
+- **User messages now render inside a distinct card** (`background: "#2A2B2C"`, rounded), instead
+  of a plain-text line with only a small uppercase "user" label above it -- found live via a direct
+  side-by-side screenshot comparison against the real Claude Code VS Code extension's own chat UI,
+  where the user's own prompt is visually boxed and the assistant's response flows as plain
+  markdown-rendered text below it, unboxed. Matches that same asymmetry here: only `role == "user"`
+  gets the card treatment (and drops its own now-redundant role label, since the card itself
+  signals "this is what you typed"); assistant/error entries are unchanged."""
 
 import from "react" { useState, useEffect }
 import from src.workbench.ai.claude_code_client { start_chat_turn, approve_tool_call }
@@ -189,6 +208,7 @@ def:pub app(active: bool, pendingPrompt: str, pendingAutoSend: bool, pendingNonc
     has is_streaming: bool = False;
     has session_id: str | None = None;
     has pending_approvals: list[dict[str, any]] = [];
+    has messages_list_ref: Ref[any] = Ref();
 
     async def handle_send -> None;
     def handle_input_change(e: any) -> None;
@@ -206,6 +226,12 @@ def:pub app(active: bool, pendingPrompt: str, pendingAutoSend: bool, pendingNonc
             }
         }
     }, [pendingNonce]);
+
+    useEffect(lambda {
+        if messages_list_ref.current {
+            messages_list_ref.current.scrollTop = messages_list_ref.current.scrollHeight;
+        }
+    }, [messages, is_streaming, pending_approvals]);
 
     can_send = input_text.strip() != "" and not is_streaming;
 
@@ -236,7 +262,7 @@ def:pub app(active: bool, pendingPrompt: str, pendingAutoSend: bool, pendingNonc
                     style={{"fontSize": "13px", "color": "#8C8C8C", "cursor": "pointer", "opacity": "0.8"}}
                 />
             </div>
-            <div className="no-scrollbar" style={{"flex": "1", "overflow": "auto", "padding": "0.5rem 0.6rem", "display": "flex", "flexDirection": "column", "gap": "0.6rem"}}>
+            <div ref={messages_list_ref} className="no-scrollbar" style={{"flex": "1", "overflow": "auto", "padding": "0.5rem 0.6rem", "display": "flex", "flexDirection": "column", "gap": "0.6rem"}}>
                 {[
                     (
                         <div key={str(i)} style={{"border": "1px solid #2A2B2C", "borderRadius": "4px", "background": "#1E1E1E", "overflow": "hidden", "flexShrink": "0"}}>
@@ -271,17 +297,21 @@ def:pub app(active: bool, pendingPrompt: str, pendingAutoSend: bool, pendingNonc
                         </div>
                     ) if m.get("kind") == "tool_step" else (
                         <div key={str(i)} style={{"display": "flex", "flexDirection": "column", "gap": "0.15rem", "flexShrink": "0"}}>
-                            <span style={{
-                                "fontSize": "10px",
-                                "textTransform": "uppercase",
-                                "color": "#f48771" if m["role"] == "error" else ("#9CDCFE" if m["role"] == "user" else "#8C8C8C")
-                            }}>
-                                {m["role"]}
-                            </span>
                             {(
-                                <MarkdownMessage text={m["text"]} />
-                            ) if m["role"] == "assistant" else (
-                                <span style={{"whiteSpace": "pre-wrap", "wordBreak": "break-word"}}>{m["text"]}</span>
+                                <div style={{"background": "#2A2B2C", "borderRadius": "6px", "padding": "0.4rem 0.55rem"}}>
+                                    <span style={{"whiteSpace": "pre-wrap", "wordBreak": "break-word"}}>{m["text"]}</span>
+                                </div>
+                            ) if m["role"] == "user" else (
+                                <>
+                                    <span style={{"fontSize": "10px", "textTransform": "uppercase", "color": "#f48771" if m["role"] == "error" else "#8C8C8C"}}>
+                                        {m["role"]}
+                                    </span>
+                                    {(
+                                        <MarkdownMessage text={m["text"]} />
+                                    ) if m["role"] == "assistant" else (
+                                        <span style={{"whiteSpace": "pre-wrap", "wordBreak": "break-word"}}>{m["text"]}</span>
+                                    )}
+                                </>
                             )}
                         </div>
                     )

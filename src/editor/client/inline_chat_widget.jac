@@ -67,6 +67,7 @@ def:pub app(open: bool, onClose: any, editorRef: any, monacoRef: any, path: str)
     has pending_approvals: list[dict[str, any]] = [];
     has widget_node_ref: Ref[any] = Ref();
     has content_widget_ref: Ref[any] = Ref();
+    has response_area_ref: Ref[any] = Ref();
 
     async def handle_submit -> None;
     def handle_input_change(e: any) -> None;
@@ -109,6 +110,12 @@ def:pub app(open: bool, onClose: any, editorRef: any, monacoRef: any, path: str)
         }
     }, [open]);
 
+    useEffect(lambda {
+        if response_area_ref.current {
+            response_area_ref.current.scrollTop = response_area_ref.current.scrollHeight;
+        }
+    }, [response_text, is_streaming, pending_approvals]);
+
     <>
         {(
             createPortal(
@@ -138,7 +145,7 @@ def:pub app(open: bool, onClose: any, editorRef: any, monacoRef: any, path: str)
                         />
                     </div>
                     {(
-                        <div className="no-scrollbar" style={{"maxHeight": "10rem", "overflow": "auto", "padding": "0.3rem", "background": "#1E1E1E", "borderRadius": "3px"}}>
+                        <div ref={response_area_ref} className="no-scrollbar" style={{"maxHeight": "10rem", "overflow": "auto", "padding": "0.3rem", "background": "#1E1E1E", "borderRadius": "3px"}}>
                             <MarkdownMessage text={response_text} />
                         </div>
                     ) if response_text != "" else None}

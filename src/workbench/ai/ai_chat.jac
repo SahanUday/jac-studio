@@ -134,7 +134,27 @@ two more real, live-found gaps:**
   spinner, not a fixed word), `thinking_indicator.jac` now cycles through a similarly-spirited word
   list every 2.5s and counts elapsed seconds, shared with `inline_chat_widget.jac`'s own popover
   rather than duplicated. Not a byte-for-byte reproduction of Anthropic's own exact internal word
-  list (unverifiable from here) -- see that module's own docstring."""
+  list (unverifiable from here) -- see that module's own docstring.
+
+**Third QA pass (2026-09-05), two more small but real UI bugs found live, both fixed here:**
+
+- **Tool-step cards (and, defensively, plain text entries too) now carry an explicit
+  `flexShrink: "0"`.** Found live via two screenshots of the same conversation before/after a
+  follow-up message: tool-step cards visibly collapsed to razor-thin bars once the message list
+  grew past the visible area, while plain text bubbles didn't. Root cause: each tool-step card's
+  outer wrapper has `overflow: "hidden"` (needed for its own collapse/expand animation-adjacent
+  clipping) -- per the CSS flexbox spec, a flex item's *automatic* minimum size in the main axis is
+  0 when it has `overflow` other than `visible`, instead of its content size. In a `flexDirection:
+  column` list under real content pressure, that makes exactly the entries with `overflow: hidden`
+  (the tool-step cards, not the plain-text ones) the first to get squeezed toward zero height. Not
+  a guess -- confirmed against the exact styles below and the spec's own "automatic minimum size"
+  rule. `pending_approvals`' own cards already had `flexShrink: "0"` from PR #72; this extends the
+  same guard to every entry in the main `messages` list, which never had it.
+- **The message list no longer shows a visible scrollbar** (`className="no-scrollbar"`, an
+  existing Tailwind `@utility` in `styles/global.css` that was defined but never actually applied
+  anywhere in this project until now) -- `overflow: "auto"` still scrolls via wheel/touch/keyboard,
+  it just doesn't reserve a visible OS-chrome scrollbar gutter in a column this narrow. Same
+  treatment applied to `inline_chat_widget.jac`'s own scrollable response area for consistency."""
 
 import from "react" { useState, useEffect }
 import from src.workbench.ai.claude_code_client { start_chat_turn, approve_tool_call }
@@ -216,10 +236,10 @@ def:pub app(active: bool, pendingPrompt: str, pendingAutoSend: bool, pendingNonc
                     style={{"fontSize": "13px", "color": "#8C8C8C", "cursor": "pointer", "opacity": "0.8"}}
                 />
             </div>
-            <div style={{"flex": "1", "overflow": "auto", "padding": "0.5rem 0.6rem", "display": "flex", "flexDirection": "column", "gap": "0.6rem"}}>
+            <div className="no-scrollbar" style={{"flex": "1", "overflow": "auto", "padding": "0.5rem 0.6rem", "display": "flex", "flexDirection": "column", "gap": "0.6rem"}}>
                 {[
                     (
-                        <div key={str(i)} style={{"border": "1px solid #2A2B2C", "borderRadius": "4px", "background": "#1E1E1E", "overflow": "hidden"}}>
+                        <div key={str(i)} style={{"border": "1px solid #2A2B2C", "borderRadius": "4px", "background": "#1E1E1E", "overflow": "hidden", "flexShrink": "0"}}>
                             <div
                                 role="button"
                                 onClick={lambda (e: any) { toggle_tool_step_expanded(m["tool_use_id"]); }}
@@ -250,7 +270,7 @@ def:pub app(active: bool, pendingPrompt: str, pendingAutoSend: bool, pendingNonc
                             ) if m.get("expanded") else None}
                         </div>
                     ) if m.get("kind") == "tool_step" else (
-                        <div key={str(i)} style={{"display": "flex", "flexDirection": "column", "gap": "0.15rem"}}>
+                        <div key={str(i)} style={{"display": "flex", "flexDirection": "column", "gap": "0.15rem", "flexShrink": "0"}}>
                             <span style={{
                                 "fontSize": "10px",
                                 "textTransform": "uppercase",

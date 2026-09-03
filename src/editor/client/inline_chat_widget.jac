@@ -138,7 +138,7 @@ def:pub app(open: bool, onClose: any, editorRef: any, monacoRef: any, path: str)
                         />
                     </div>
                     {(
-                        <div style={{"maxHeight": "10rem", "overflow": "auto", "padding": "0.3rem", "background": "#1E1E1E", "borderRadius": "3px"}}>
+                        <div className="no-scrollbar" style={{"maxHeight": "10rem", "overflow": "auto", "padding": "0.3rem", "background": "#1E1E1E", "borderRadius": "3px"}}>
                             <MarkdownMessage text={response_text} />
                         </div>
                     ) if response_text != "" else None}

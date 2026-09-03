@@ -114,11 +114,29 @@ scope** -- see `docs/phases/phase-5-ai-integrations.md`'s own addendum for the f
   `pending_approvals` in the process. `zIndex: 30` -- above ordinary in-flow content (the sidebar's
   own `zIndex: 20`) but below dialogs/menus/toasts (Radix's own `z-50` convention throughout this
   project), so the command palette and other overlays still correctly sit on top even while this
-  panel is maximized."""
+  panel is maximized.
+
+**Second QA pass on the same branch (2026-09-05), after manually testing the first round above --
+two more real, live-found gaps:**
+
+- **Assistant text now renders as real markdown** (`markdown_message.jac`, shared with
+  `inline_chat_widget.jac`) instead of raw pre-wrap text. Found live: a response's own literal
+  ```` ``` ````/`**` markdown syntax was showing up unrendered in the panel, not interpreted --
+  confirmed via a real screenshot, not assumed. User's own messages stay plain text (matching real
+  chat UIs -- markdown rendering is for the *assistant's* formatted output, not literal
+  interpretation of what a user typed).
+- **A "Thinking…" status row (spinner + label) now shows for the whole duration `is_streaming` is
+  true**, docked at the bottom of the message list -- found live: nothing in the UI indicated the
+  agent was actively working between hitting Send and the first token/tool call arriving (the Send
+  button just quietly disabled), unlike Claude Code's own CLI or VS Code Copilot Chat, both of
+  which show a persistent working indicator for the whole turn, not just gaps. Tied directly to the
+  existing `is_streaming` flag rather than new state -- shows for the entire turn, same as those
+  two reference tools, not just before the first token."""
 
 import from "react" { useState, useEffect }
 import from src.workbench.ai.claude_code_client { start_chat_turn, approve_tool_call }
 import from src.workbench.ai.ai_tool_diff_preview { app as AiToolDiffPreview }
+import from src.workbench.ai.markdown_message { app as MarkdownMessage }
 import from src.workbench.workspace.workspace_service { get_current_workspace }
 
 """One-line summary for a collapsed tool-step card's header -- the single input value most useful
@@ -236,11 +254,21 @@ def:pub app(active: bool, pendingPrompt: str, pendingAutoSend: bool, pendingNonc
                             }}>
                                 {m["role"]}
                             </span>
-                            <span style={{"whiteSpace": "pre-wrap", "wordBreak": "break-word"}}>{m["text"]}</span>
+                            {(
+                                <MarkdownMessage text={m["text"]} />
+                            ) if m["role"] == "assistant" else (
+                                <span style={{"whiteSpace": "pre-wrap", "wordBreak": "break-word"}}>{m["text"]}</span>
+                            )}
                         </div>
                     )
                     for (i, m) in enumerate(messages)
                 ]}
+                {(
+                    <div style={{"display": "flex", "alignItems": "center", "gap": "0.35rem", "color": "#8C8C8C", "fontSize": "11px", "padding": "0.1rem 0"}}>
+                        <span className="codicon codicon-loading codicon-modifier-spin" style={{"fontSize": "12px"}} />
+                        <span>Thinking…</span>
+                    </div>
+                ) if is_streaming else None}
             </div>
             {[
                 <div key={a["tool_use_id"]} style={{"margin": "0 0.6rem 0.5rem", "border": "1px solid #f0883e", "borderRadius": "3px", "background": "#2A1F14", "padding": "0.4rem 0.5rem", "display": "flex", "flexDirection": "column", "gap": "0.3rem", "flexShrink": "0"}}>

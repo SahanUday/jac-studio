@@ -25,13 +25,14 @@ displayed `messages` list is purely a rendering log, not what gets sent back on 
 **Tool-approval requests are a separate `pending_approvals` list, not folded into `messages`.**
 `claude_code_launcher.py`'s `can_use_tool` callback (see that module's own docstring for the
 real trust-boundary gap this closes) emits a `tool_approval_request` event mid-stream and then
-blocks the tool call until a decision arrives. Keeping approval cards in their own list (rather
-than widening `messages`' `dict[str, str]` shape to carry a mix of types) keeps both pieces simple:
-`messages` stays a plain rendering log, and a resolved approval collapses into one short log line
-there (`"[Approved Write]"`/`"[Denied Bash]"`) once decided. `tool_use_id` is the join key between
-a card and the `approve_tool_call` RPC call it fires -- concurrent approval requests (the SDK can
-ask for several tool calls in one turn) are handled correctly since each card tracks its own id
-independently.
+blocks the tool call until a decision arrives. Keeping approval cards in their own list keeps both
+pieces simple: `messages` stays a plain rendering log of turn content (text and tool steps), while
+`pending_approvals` is purely "what's blocked on the user right now" -- once decided, the card is
+just removed, and the corresponding `tool_step` entry in `messages` (see below) picks up the real
+outcome on its own via the launcher's own `tool_result` event, not a note written here. `tool_use_id`
+is the join key between a card and the `approve_tool_call` RPC call it fires -- concurrent approval
+requests (the SDK can ask for several tool calls in one turn) are handled correctly since each card
+tracks its own id independently.
 
 **`Edit`/`Write` cards render a real diff (`ai_tool_diff_preview.jac`), not the generic JSON dump.**
 `claude_code_launcher.py` includes `original_text`/`modified_text` on the event only for those two
@@ -47,14 +48,35 @@ would silently no-op a second identical request (React's own dependency-array eq
 no change), where the nonce increments on every call regardless of the text. Sets `input_text` to
 the constructed prompt always; calls `handle_send()` immediately only when `pendingAutoSend` is
 `True` ("Fix"/"Explain", self-contained requests) -- "Modify..." leaves it in the box unsent so the
-user can finish describing the change before submitting."""
+user can finish describing the change before submitting.
+
+**`messages` holds two kinds of entries, distinguished by `m["kind"]`, interleaved in stream
+order -- item 6 of the "Reframed 2026-09-03" AI section (richer agent-session visualization).**
+`"text"` (the pre-existing `role`+`text` shape) and `"tool_step"` (`tool_use_id`, `name`, `input`,
+`status`: `"running"|"done"|"error"`, `result_text`) -- a structured card per tool call instead of
+the old plain `"[Using X...]"` marker spliced into the surrounding text, driven by
+`claude_code_launcher.py`'s three-event tool lifecycle (`tool_use_start`/`tool_use_input`/
+`tool_result`, see that module's own docstring). A `tool_step` is a genuinely separate list entry,
+not folded into the running assistant text bubble the way the old marker was -- `text_delta`
+appends into `messages[-1]` only when it's still an open `"text"` entry; once a `tool_step` lands
+as the last entry, the next `text_delta` starts a fresh `"text"` entry rather than corrupting the
+step card, matching how a real turn actually alternates between talking and acting.
+
+**Tool approval no longer writes a local "[Allowed X]"/"[Denied X]" note.** Found live, confirmed
+via a direct `can_use_tool`-denial probe: a decision -- allow or deny -- always produces a real
+`tool_result` event from the launcher shortly after (the SDK sends a synthetic
+`ToolResultBlock(is_error=True, content=<the deny message>)` for a denial, indistinguishable in
+shape from a real execution's result), which updates the matching `tool_step` card with the
+authentic outcome. A separate optimistic local note was redundant with, and could race, that
+authoritative update -- `handle_approval_decision` now only forwards the decision and clears the
+pending-approval card; the step card itself carries the result."""
 
 import from "react" { useState, useEffect }
 import from src.workbench.ai.claude_code_client { start_chat_turn, approve_tool_call }
 import from src.workbench.ai.ai_tool_diff_preview { app as AiToolDiffPreview }
 
 def:pub app(active: bool, pendingPrompt: str, pendingAutoSend: bool, pendingNonce: int) -> JsxElement {
-    has messages: list[dict[str, str]] = [];
+    has messages: list[dict[str, any]] = [];
     has input_text: str = "";
     has is_streaming: bool = False;
     has session_id: str | None = None;
@@ -64,7 +86,8 @@ def:pub app(active: bool, pendingPrompt: str, pendingAutoSend: bool, pendingNonc
     def handle_input_change(e: any) -> None;
     def handle_key_down(e: any) -> None;
     def handle_event(event: dict[str, any]) -> None;
-    async def handle_approval_decision(tool_use_id: str, name: str, decision: str) -> None;
+    def update_tool_step(tool_use_id: str, updates: dict[str, any]) -> bool;
+    async def handle_approval_decision(tool_use_id: str, decision: str) -> None;
 
     useEffect(lambda {
         if pendingNonce > 0 {
@@ -84,16 +107,34 @@ def:pub app(active: bool, pendingPrompt: str, pendingAutoSend: bool, pendingNonc
             </div>
             <div style={{"flex": "1", "overflow": "auto", "padding": "0.5rem 0.6rem", "display": "flex", "flexDirection": "column", "gap": "0.6rem"}}>
                 {[
-                    <div key={str(i)} style={{"display": "flex", "flexDirection": "column", "gap": "0.15rem"}}>
-                        <span style={{
-                            "fontSize": "10px",
-                            "textTransform": "uppercase",
-                            "color": "#f48771" if m["role"] == "error" else ("#569CD6" if m["role"] == "tool" else ("#9CDCFE" if m["role"] == "user" else "#8C8C8C"))
-                        }}>
-                            {m["role"]}
-                        </span>
-                        <span style={{"whiteSpace": "pre-wrap", "wordBreak": "break-word"}}>{m["text"]}</span>
-                    </div>
+                    (
+                        <div key={str(i)} style={{"border": "1px solid " + ("#3A3A3A" if m["status"] == "running" else ("#f48771" if m["status"] == "error" else "#2A2B2C")), "borderRadius": "3px", "background": "#1E1E1E", "padding": "0.35rem 0.5rem", "display": "flex", "flexDirection": "column", "gap": "0.25rem"}}>
+                            <div style={{"display": "flex", "alignItems": "center", "gap": "0.35rem"}}>
+                                <span
+                                    className={"codicon " + ("codicon-loading codicon-modifier-spin" if m["status"] == "running" else ("codicon-error" if m["status"] == "error" else "codicon-check"))}
+                                    style={{"fontSize": "12px", "color": "#8C8C8C" if m["status"] == "running" else ("#f48771" if m["status"] == "error" else "#89D185")}}
+                                />
+                                <span style={{"fontSize": "11px", "color": "#569CD6"}}>{m["name"]}</span>
+                            </div>
+                            {(
+                                <pre style={{"margin": "0", "fontSize": "10px", "whiteSpace": "pre-wrap", "wordBreak": "break-word", "maxHeight": "4rem", "overflow": "auto", "color": "#8C8C8C", "fontFamily": "monospace"}}>{JSON.stringify(m["input"])}</pre>
+                            ) if m["input"] else None}
+                            {(
+                                <pre style={{"margin": "0", "fontSize": "10px", "whiteSpace": "pre-wrap", "wordBreak": "break-word", "maxHeight": "6rem", "overflow": "auto", "color": "#f48771" if m["status"] == "error" else "#CCCCCC", "fontFamily": "monospace"}}>{m["result_text"]}</pre>
+                            ) if m["result_text"] != "" else None}
+                        </div>
+                    ) if m.get("kind") == "tool_step" else (
+                        <div key={str(i)} style={{"display": "flex", "flexDirection": "column", "gap": "0.15rem"}}>
+                            <span style={{
+                                "fontSize": "10px",
+                                "textTransform": "uppercase",
+                                "color": "#f48771" if m["role"] == "error" else ("#9CDCFE" if m["role"] == "user" else "#8C8C8C")
+                            }}>
+                                {m["role"]}
+                            </span>
+                            <span style={{"whiteSpace": "pre-wrap", "wordBreak": "break-word"}}>{m["text"]}</span>
+                        </div>
+                    )
                     for (i, m) in enumerate(messages)
                 ]}
             </div>
@@ -107,13 +148,13 @@ def:pub app(active: bool, pendingPrompt: str, pendingAutoSend: bool, pendingNonc
                     )}
                     <div style={{"display": "flex", "gap": "0.4rem"}}>
                         <button
-                            onClick={lambda (e: any) { handle_approval_decision(a["tool_use_id"], a["name"], "allow"); }}
+                            onClick={lambda (e: any) { handle_approval_decision(a["tool_use_id"], "allow"); }}
                             style={{"background": "#238636", "color": "#FFFFFF", "border": "none", "borderRadius": "3px", "padding": "0.2rem 0.6rem", "cursor": "pointer", "fontSize": "11px"}}
                         >
                             Allow
                         </button>
                         <button
-                            onClick={lambda (e: any) { handle_approval_decision(a["tool_use_id"], a["name"], "deny"); }}
+                            onClick={lambda (e: any) { handle_approval_decision(a["tool_use_id"], "deny"); }}
                             style={{"background": "#3A3A3A", "color": "#CCCCCC", "border": "none", "borderRadius": "3px", "padding": "0.2rem 0.6rem", "cursor": "pointer", "fontSize": "11px"}}
                         >
                             Deny

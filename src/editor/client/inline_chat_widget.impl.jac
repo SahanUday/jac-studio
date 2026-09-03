@@ -71,7 +71,7 @@ impl app.handle_event(event: dict[str, any]) -> None {
         }
         return;
     }
-    if event_type == "tool_use" {
+    if event_type == "tool_use_start" {
         response_text = response_text + chr(10) + "[Using " + str(event.get("name", "")) + "...]" + chr(10);
         return;
     }

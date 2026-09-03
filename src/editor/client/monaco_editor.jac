@@ -117,6 +117,13 @@ re-registering Monaco's command id in `CommandsRegistry` is the correct fix inst
 `workbench.jac`'s own docstring for the full prop-threading chain (`workbench.jac` →
 `editor_tabs.jac` → here).
 
+**AI code actions (2026-09-04, `docs/architecture.md`'s "Reframed 2026-09-03" AI section, item 1)**
+-- `onAskAI` is threaded down the same `workbench.jac` → `editor_tabs.jac` → here chain as
+`onOpenLocation`/`onOpenCommandPalette` above, and registered in `handle_before_mount` alongside
+the other six providers via `register_ai_code_action_provider` (`ai_code_action_provider.jac`).
+See that module's own docstring for the full "Fix"/"Explain"/"Modify" design and why it routes
+through the already-shipped `AIChatApp` sidebar rather than a new UI surface.
+
 **Breadcrumb bar (2026-08-31, `docs/roadmap.md` Phase 4's native LSP client bullet, closing out its
 originally-scoped "outline/breadcrumbs" pair)** -- a thin strip above `<Editor>` showing the file
 name plus the chain of symbols (`breadcrumb_symbols.jac`'s `symbol_path_at_position`, walked over
@@ -180,6 +187,7 @@ import from src.editor.client.jac_definition_provider { register_jac_definition_
 import from src.editor.client.jac_reference_provider { register_jac_reference_provider }
 import from src.editor.client.jac_rename_provider { register_jac_rename_provider }
 import from src.editor.client.git_conflict_codelens_provider { register_conflict_codelens_provider }
+import from src.editor.client.ai_code_action_provider { register_ai_code_action_provider }
 import from src.workbench.scm.git_service { get_line_changes }
 import from src.workbench.lsp.lsp_client { notify_document_open, notify_document_save, get_document_symbols }
 import from src.workbench.symbol_icons.symbol_icons { symbol_icon_class }
@@ -187,7 +195,7 @@ import from src.editor.client.breadcrumb_symbols { symbol_path_at_position }
 import from src.workbench.dap.dap_client { get_breakpoints, set_breakpoints }
 import from src.editor.client.command_palette_override { register_command_palette_override }
 
-def:pub app(path: str, onCursorChange: any, initialCursor: any, onDirtyChange: any, onOpenLocation: any, onOpenCommandPalette: any) -> JsxElement {
+def:pub app(path: str, onCursorChange: any, initialCursor: any, onDirtyChange: any, onOpenLocation: any, onOpenCommandPalette: any, onAskAI: any) -> JsxElement {
     has content: str = "";
     has loaded: bool = False;
     has dirty: bool = False;

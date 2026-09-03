@@ -710,10 +710,27 @@ generic "start a chat turn" entry point — exactly the shape `start_chat_turn` 
 building richer AI UX is not "build three more integrations," it's "build a few new *UI entry
 points* against the *same* provider interface already in place":
 
-1. **AI code actions** (the lightbulb "Fix"/"Explain"/"Modify" menu) — smallest lift. A new Monaco
-   `CodeActionProvider` (same category as the LSP client's existing completion/hover/definition
-   providers), each action building a prompt and calling the existing `start_chat_turn`. No new
-   backend concept.
+1. **AI code actions — done (2026-09-04).** The lightbulb "Fix"/"Explain"/"Modify" menu, built as
+   a new Monaco `CodeActionProvider` (`ai_code_action_provider.jac`), registered for `"*"` (every
+   language, the same call `git_conflict_codelens_provider.jac` already made for the identical
+   reason — explaining or fixing code is just as useful outside `.jac` files, unlike the
+   LSP-backed providers, which are genuinely jac-specific). "Fix" appears only when the range has
+   real diagnostics (`context.markers`); "Explain"/"Modify" appear on any non-empty selection.
+   Routes through the *already-shipped* `AIChatApp` sidebar, not a new UI surface or backend call —
+   `onAskAI(promptText, autoSend)` threads down the same `workbench.jac` → `editor_tabs.jac` →
+   `monaco_editor.jac` chain `onOpenLocation`/`onOpenCommandPalette` already use, switches to the
+   Claude Code view, and hands `AIChatApp` a prompt via a `pendingPrompt`/`pendingNonce` prop pair
+   it picks up with `useEffect`. "Fix"/"Explain" auto-send (self-contained requests); "Modify..."
+   only prefills the box, matching upstream's own `autoSend: true/false` distinction on
+   `editorChat.start(...)` (confirmed in the research doc's reading of `inlineChatCodeActions.ts`).
+   **Live-verified end to end** (`jac browse`, real credentials, screenshots at each step): a real
+   text selection produced the real Monaco Quick Fix menu with "Explain with Claude Code"/"Ask
+   Claude Code to modify this..."; selecting Explain switched to the sidebar, sent the exact
+   constructed prompt, and returned a real answer (including a real tool-approval card from item 4
+   along the way, confirming the two features compose correctly); selecting Modify prefilled the
+   box without sending; a synthetic diagnostic marker (standing in for a real `jac lsp` one — see
+   the PR for why) made "Fix with Claude Code" appear and send the diagnostic-plus-code prompt
+   correctly.
 2. **Inline chat** (a Ctrl+I popover for targeted edits without leaving the editor) — medium lift.
    New UI surface (a Monaco content-widget/zone-widget anchored at cursor/selection), but total
    backend reuse — same `start_chat_turn` stream, different presentation.

@@ -7,6 +7,7 @@ impl app.handle_before_mount(monaco: any) -> None {
     register_jac_rename_provider(monaco);
     register_conflict_codelens_provider(monaco);
     register_command_palette_override(onOpenCommandPalette);
+    register_ai_code_action_provider(monaco, onAskAI);
 }
 
 impl app.handle_mount(editor: any, monaco: any) -> None {

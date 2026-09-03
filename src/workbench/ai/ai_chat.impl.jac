@@ -10,7 +10,10 @@ impl app.handle_send -> None {
     }
     prompt = input_text;
     input_text = "";
-    messages = messages + [{"role": "user", "text": prompt}, {"role": "assistant", "text": ""}];
+    messages = messages + [
+        {"kind": "text", "role": "user", "text": prompt},
+        {"kind": "text", "role": "assistant", "text": ""}
+    ];
     is_streaming = True;
 
     resp = await fetch("/function/start_chat_turn", {
@@ -49,24 +52,47 @@ impl app.handle_event(event: dict[str, any]) -> None {
     event_type = event.get("type", "");
     if event_type == "text_delta" {
         delta = event.get("text", "");
-        updated_last: dict[str, str] = {**messages[-1]};
-        updated_last["text"] = updated_last["text"] + delta;
-        messages = messages[:-1] + [updated_last];
+        last_is_open_text = len(messages) > 0 and messages[-1].get("kind") == "text" and messages[-1]["role"] == "assistant";
+        if last_is_open_text {
+            updated_last: dict[str, any] = {**messages[-1]};
+            updated_last["text"] = updated_last["text"] + delta;
+            messages = messages[:-1] + [updated_last];
+        } else {
+            messages = messages + [{"kind": "text", "role": "assistant", "text": delta}];
+        }
         return;
     }
     if event_type == "text_final" {
-        updated_last: dict[str, str] = {**messages[-1]};
-        if updated_last["text"] == "" {
+        last_is_empty_text = len(messages) > 0 and messages[-1].get("kind") == "text" and messages[-1]["role"] == "assistant" and messages[-1]["text"] == "";
+        if last_is_empty_text {
+            updated_last: dict[str, any] = {**messages[-1]};
             updated_last["text"] = event.get("text", "");
             messages = messages[:-1] + [updated_last];
         }
         return;
     }
-    if event_type == "tool_use" {
-        updated_last: dict[str, str] = {**messages[-1]};
-        note = chr(10) + "[Using " + str(event.get("name", "")) + "...]" + chr(10);
-        updated_last["text"] = updated_last["text"] + note;
-        messages = messages[:-1] + [updated_last];
+    if event_type == "tool_use_start" {
+        step: dict[str, any] = {
+            "kind": "tool_step",
+            "tool_use_id": event.get("tool_use_id", ""),
+            "name": event.get("name", ""),
+            "input": {},
+            "status": "running",
+            "result_text": ""
+        };
+        messages = messages + [step];
+        return;
+    }
+    if event_type == "tool_use_input" {
+        update_tool_step(event.get("tool_use_id", ""), {"input": event.get("input", {})});
+        return;
+    }
+    if event_type == "tool_result" {
+        is_error = event.get("is_error", False);
+        update_tool_step(event.get("tool_use_id", ""), {
+            "status": "error" if is_error else "done",
+            "result_text": str(event.get("content", ""))
+        });
         return;
     }
     if event_type == "done" {
@@ -75,12 +101,12 @@ impl app.handle_event(event: dict[str, any]) -> None {
             session_id = sid;
         }
         if event.get("is_error", False) {
-            messages = messages + [{"role": "error", "text": str(event.get("result", "The turn ended with an error."))}];
+            messages = messages + [{"kind": "text", "role": "error", "text": str(event.get("result", "The turn ended with an error."))}];
         }
         return;
     }
     if event_type == "error" {
-        messages = messages + [{"role": "error", "text": str(event.get("message", ""))}];
+        messages = messages + [{"kind": "text", "role": "error", "text": str(event.get("message", ""))}];
         return;
     }
     if event_type == "tool_approval_request" {
@@ -100,25 +126,36 @@ impl app.handle_event(event: dict[str, any]) -> None {
     }
 }
 
+"""Finds the `tool_step` entry with a matching `tool_use_id` and merges `updates` into it in place
+(same shallow-copy-and-replace shape every other `messages`/`pending_approvals` mutation in this
+file already uses). Returns whether a match was found, so a caller can fall back if the step
+somehow isn't there -- a defensive check, not an expected path, since `tool_use_start` always
+creates the step before `tool_use_input`/`tool_result` can reference its id."""
+impl app.update_tool_step(tool_use_id: str, updates: dict[str, any]) -> bool {
+    for (i, m) in enumerate(messages) {
+        if m.get("kind") == "tool_step" and m["tool_use_id"] == tool_use_id {
+            updated: dict[str, any] = {**m, **updates};
+            messages = messages[:i] + [updated] + messages[i + 1:];
+            return True;
+        }
+    }
+    return False;
+}
+
 """Sends the user's decision to `claude_code_client.jac`'s `approve_tool_call` (an ordinary RPC
 call, not part of the SSE stream -- see `app`'s own docstring for why the approval card and the
 message log are kept as separate lists) and removes the resolved card.
 
-**The decision note is appended into `messages[-1]`'s own text, the exact same pattern
-`handle_event`'s `tool_use` branch already uses -- not pushed as a new list entry.** Found live,
-not assumed: an earlier version pushed a separate `{"role": "tool", ...}` message here, which
-silently broke `text_delta`'s own `messages[-1]` append target -- Claude's turn resumes streaming
-*after* a tool call resolves, and that continuation text landed on this decision line instead of a
-fresh assistant bubble (reproduced live: `"[Allowed Write]Created ..."` concatenated with no
-break). Reusing the established in-place-note pattern keeps the last-message-is-the-live-response
-invariant every other branch already depends on."""
-impl app.handle_approval_decision(tool_use_id: str, name: str, decision: str) -> None {
+**No longer writes a local note into `messages` at all -- see `app`'s own docstring for why.** The
+launcher always follows a decision with a real `tool_result` event (a genuine execution outcome for
+an allow, or the SDK's own synthetic denial `ToolResultBlock` for a deny -- confirmed live via a
+direct `can_use_tool`-denial probe), which lands on the matching `tool_step` card through
+`handle_event`'s own `tool_result` branch. A second, local, optimistic note here would be redundant
+with that authoritative update and could race it -- this method's only remaining job is forwarding
+the decision and clearing the resolved approval card."""
+impl app.handle_approval_decision(tool_use_id: str, decision: str) -> None {
     await approve_tool_call(tool_use_id, decision);
     pending_approvals = [a for a in pending_approvals if a["tool_use_id"] != tool_use_id];
-    verb = "Allowed" if decision == "allow" else "Denied";
-    updated_last: dict[str, str] = {**messages[-1]};
-    updated_last["text"] = updated_last["text"] + chr(10) + "[" + verb + " " + name + "]" + chr(10);
-    messages = messages[:-1] + [updated_last];
 }
 
 impl app.handle_input_change(e: any) -> None {

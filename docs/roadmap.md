@@ -354,6 +354,19 @@ Added to this phase's scope:
   `architecture.md`'s item 2 and tracker entry
   `2026-09-04-monaco-addcommand-does-not-scope-per-standalone-editor-instance` for the full record.
   Live-verified end to end via `jac browse`.
+- **Richer agent-session visualization — done (2026-09-04).** `claude_code_launcher.py`'s single
+  bare `{"type": "tool_use", "name": ...}` event became a three-event lifecycle sharing
+  `tool_use_id` as the join key (`tool_use_start`/`tool_use_input`/`tool_result`), letting
+  `ai_chat.jac` render each tool call as its own structured step card (name, input, a
+  running/done/error status icon, and the real result text) instead of a plain `"[Using X...]"`
+  marker spliced into the response text. A real simplification fell out of confirming live that a
+  `can_use_tool` denial reaches the client through the same `tool_result` event as a genuine
+  execution: `handle_approval_decision` no longer writes its own optimistic local note, since the
+  authoritative result always follows on its own shortly after either decision. Live-verified end
+  to end via `jac browse`: a `Bash` step card went running→done with its real output as the result
+  text; a `Write` call needing approval sat "running" behind its approval card and flipped to
+  "done" with the real success message the instant it was allowed. See `architecture.md`'s item 3
+  for the full record.
 - **A native, dependency-free agent provider** built on `by llm(tools=[...])` using jac-studio's own
   already-built Phase 4 service functions as tools (`create_file`, `run_in_terminal`,
   `search_in_files`, ...) — a fourth provider option needing no external CLI, just a model API key.

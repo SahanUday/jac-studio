@@ -14,6 +14,15 @@ are dataclasses, not dicts).
 
 Usage: claude_code_launcher.py <prompt> [--resume <session_id>] [--cwd <path>]
 
+**`ClaudeAgentOptions.model` is pinned to `"haiku"`, a deliberate standing choice, not a
+leftover from one PR's live-verification pass.** Every feature built against this integration
+gets exercised for real (`jac browse`, a genuine running server, genuine API calls -- this
+project's own "verify empirically" discipline), which means real API spend on every session, not
+just this one. Pinning to the cheapest model keeps that discipline affordable across the whole
+run of AI-integration work, not only while implementing it -- correctness of the plumbing this
+launcher owns (event shapes, streaming, tool approval, MCP wiring) doesn't depend on which model
+answers, so there's no accuracy tradeoff being made here worth trading back for.
+
 `mcp_servers` points Claude Code at `jac mcp` (a real, working first-party MCP server --
 confirmed live via `jac mcp --inspect`, 140 resources/19 tools/9 prompts) over stdio, giving it
 structured Jac-specific tools (validate/format/transpile/docs-search) instead of shelling out
@@ -70,7 +79,21 @@ preview doesn't over- or under-represent what will actually change). Every other
 the `jac mcp` tools, ...) gets neither field, and the client falls back to its existing generic
 card -- no attempt made here to guess at a shape for a tool this project hasn't verified live (a
 possible `MultiEdit` tool included; a probe for it timed out inconclusively rather than confirming
-a real shape, so it deliberately isn't special-cased)."""
+a real shape, so it deliberately isn't special-cased).
+
+**A tool call's full lifecycle is now three separate events, not one bare name, closing item 6 of
+`docs/architecture.md`'s "Reframed 2026-09-03" AI section (richer agent-session visualization).**
+`tool_use_start` (immediate, at `content_block_start` -- `id`+`name` only, `input` isn't populated
+yet at this point in the stream) lets a client show a step the instant it begins; `tool_use_input`
+(from the completed `AssistantMessage`'s own `ToolUseBlock`, confirmed live that this is the first
+point the full `input` dict actually exists) fills in the arguments; `tool_result` (from the
+`UserMessage`/`ToolResultBlock` the SDK yields once the tool actually finishes -- confirmed live
+this fires identically for a real execution *and* for a `can_use_tool` denial, whose own message
+string arrives here as `is_error=True` content, not as a separate mechanism) carries the outcome.
+All three share the same `tool_use_id` as the join key, exactly like the pre-existing
+`tool_approval_request`/`approve_tool_call` pairing. Replaces the old single `{"type": "tool_use",
+"name": ...}` event, which gave a client no way to show anything beyond "a tool started" -- no id to
+correlate a later outcome against, no input, no result."""
 import argparse
 import asyncio
 import json
@@ -82,8 +105,11 @@ from claude_agent_sdk import query, ClaudeAgentOptions
 from claude_agent_sdk.types import (
     StreamEvent,
     AssistantMessage,
+    UserMessage,
     ResultMessage,
     TextBlock,
+    ToolUseBlock,
+    ToolResultBlock,
     PermissionResultAllow,
     PermissionResultDeny,
 )
@@ -127,6 +153,23 @@ def _read_file_safe(path: str) -> str:
             return f.read()
     except Exception:  # noqa: BLE001 -- missing/unreadable/binary all collapse to "no prior content"
         return ""
+
+
+def _stringify_tool_result_content(content) -> str:
+    """`ToolResultBlock.content` is `str | list[dict] | None` depending on the tool (confirmed live:
+    a plain str for Bash/Write, a denied call's synthetic message is also a plain str) -- collapses
+    every shape to display text rather than guessing one is the only real one."""
+    if content is None:
+        return ""
+    if isinstance(content, str):
+        return content
+    parts = []
+    for item in content:
+        if isinstance(item, dict) and "text" in item:
+            parts.append(str(item["text"]))
+        else:
+            parts.append(json.dumps(item))
+    return "\n".join(parts)
 
 
 def _diff_preview_for_tool_call(tool_name: str, tool_input: dict) -> tuple[str, str] | None:
@@ -178,6 +221,7 @@ async def main() -> None:
         cwd=args.cwd,
         mcp_servers={"jac": {"command": "jac", "args": ["mcp"]}},
         can_use_tool=_can_use_tool,
+        model="haiku",
     )
 
     try:
@@ -191,7 +235,11 @@ async def main() -> None:
                 elif event.get("type") == "content_block_start":
                     block = event.get("content_block", {})
                     if block.get("type") == "tool_use":
-                        _emit({"type": "tool_use", "name": block.get("name", "")})
+                        _emit({
+                            "type": "tool_use_start",
+                            "tool_use_id": block.get("id", ""),
+                            "name": block.get("name", ""),
+                        })
             elif isinstance(message, AssistantMessage):
                 # Fallback text for a run with partial-message streaming disabled or a message
                 # whose text never arrived as deltas -- ensures the client always has the full
@@ -199,6 +247,33 @@ async def main() -> None:
                 text = "".join(b.text for b in message.content if isinstance(b, TextBlock))
                 if text:
                     _emit({"type": "text_final", "text": text})
+                # The full tool_use input only exists once the block finishes streaming (the
+                # content_block_start above fires with an empty input) -- confirmed live via a
+                # direct query() probe (AssistantMessage.content carries a fully-populated
+                # ToolUseBlock). Fills in what tool_use_start's own immediate feedback couldn't.
+                for b in message.content:
+                    if isinstance(b, ToolUseBlock):
+                        _emit({
+                            "type": "tool_use_input",
+                            "tool_use_id": b.id,
+                            "name": b.name,
+                            "input": b.input,
+                        })
+            elif isinstance(message, UserMessage):
+                # A tool's result (success, failure, or a denied call's synthetic error) comes back
+                # as a UserMessage carrying ToolResultBlock(s) -- confirmed live via query(), both
+                # for a real Bash/Write execution and for a can_use_tool denial (the deny message
+                # itself arrives here as is_error=True content, not as a separate event).
+                content = message.content
+                if isinstance(content, list):
+                    for b in content:
+                        if isinstance(b, ToolResultBlock):
+                            _emit({
+                                "type": "tool_result",
+                                "tool_use_id": b.tool_use_id,
+                                "is_error": bool(b.is_error),
+                                "content": _stringify_tool_result_content(b.content),
+                            })
             elif isinstance(message, ResultMessage):
                 _emit({
                     "type": "done",

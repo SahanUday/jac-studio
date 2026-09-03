@@ -767,9 +767,29 @@ points* against the *same* provider interface already in place":
    screenshots): `Ctrl+I` opened a correctly-positioned popover; a real turn streamed a real
    response, including a real inline tool-approval card that resolved correctly and let the
    response continue streaming afterward.
-3. **Richer agent-session visualization** (step-by-step tool-call/file-change display) — lowest
-   priority; `ai_chat.jac` already streams `tool_use` events, this is a rendering enhancement to an
-   existing surface, not a new mechanism.
+3. **Richer agent-session visualization — done (2026-09-04).** The old plain `"[Using X...]"`
+   text marker spliced into the running response bubble replaced with a real structured step card
+   per tool call — name, pretty-printed input, a status icon (running/done/error), and the tool's
+   actual result text, rendered as its own list entry interleaved with the surrounding assistant
+   text rather than folded into it. Required widening `claude_code_launcher.py`'s single bare
+   `{"type": "tool_use", "name": ...}` event into a three-event lifecycle sharing `tool_use_id` as
+   the join key (the same pairing pattern `tool_approval_request`/`approve_tool_call` already
+   established): `tool_use_start` (immediate, at `content_block_start` — id+name only, since the
+   full input hasn't streamed in yet at that point), `tool_use_input` (from the completed
+   `AssistantMessage`'s own `ToolUseBlock`, confirmed live this is the first point the full `input`
+   dict actually exists), and `tool_result` (from the `UserMessage`/`ToolResultBlock` the SDK
+   yields once the tool finishes — confirmed live this fires identically for a real execution *and*
+   for a `can_use_tool` denial, whose message arrives here as `is_error=True` content rather than
+   through any separate mechanism). That last finding let a real simplification fall out of it:
+   `handle_approval_decision` no longer writes an optimistic local "[Allowed X]"/"[Denied X]" note
+   at all — the authoritative `tool_result` event updates the matching step card on its own,
+   shortly after either decision, so the separate note was redundant and could race it.
+   **Live-verified end to end** (`jac browse`, real credentials, screenshots): a `Bash echo` step
+   card showed running→done with the real command output as its result text, and a fresh assistant
+   text bubble started cleanly after it (not corrupting the step card); a `Write` call needing
+   approval showed the same step card sitting at "running" behind its approval card, then flipped to
+   "done" with the real "File created successfully..." result text the instant Allow was clicked,
+   with no local note involved.
 
 **A follow-up, more systematic audit (2026-09-03, same day — see the research doc's "full audit"
 section) went through all 84 top-level entries in upstream's `chat/browser/`, not just what one

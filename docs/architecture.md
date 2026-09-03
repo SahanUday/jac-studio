@@ -768,13 +768,19 @@ to be a drop-in replacement for what an external agentic CLI already brings (per
 context management, a large curated tool set, safety guardrails refined over real usage starts from
 zero here) — see the research doc's own "what this does NOT get for free" section.
 
-**A concrete, cheap, near-term improvement to the Claude Code integration already shipped**:
-`jac mcp` is a real, working MCP server (confirmed live: `jac mcp --inspect` lists 140 resources, 19
-tools, 9 prompts covering Jac validation/formatting/transpilation/docs-search) that `claude_agent_sdk.
-ClaudeAgentOptions` can already point at (`mcp_servers`, a real, introspected field — not assumed).
-Wiring `mcp_servers={"jac": {"command": "jac", "args": ["mcp"]}}` into `claude_code_client.jac`
-would give Claude Code structured Jac-specific tools (`validate_jac`, `explain_error`, `jac_to_js`)
-instead of shelling out through Bash — small, self-contained, doesn't touch the UI at all.
+**MCP wiring for the Claude Code integration — done (2026-09-03).** `jac mcp` is a real, working
+MCP server (confirmed live: `jac mcp --inspect` lists 140 resources, 19 tools, 9 prompts covering
+Jac validation/formatting/transpilation/docs-search) that `claude_agent_sdk.ClaudeAgentOptions`
+can point at (`mcp_servers`, a real, introspected field). `mcp_servers={"jac": {"command": "jac",
+"args": ["mcp"]}}` now lands in `claude_code_launcher.py` (the only module that ever constructs a
+`ClaudeAgentOptions`, for the same import-explosion reason it's plain Python and not `.jac`) —
+giving Claude Code structured Jac-specific tools (`validate_jac`, `explain_error`, `jac_to_js`, ...)
+instead of shelling out through Bash for the same work. Live-verified, not just wired: a real turn
+correctly lists all 19 `mcp__jac__*` tool names, and a direct SDK call with permissions granted
+confirms one (`validate_jac`) genuinely round-trips over stdio and returns a real result. **Found in
+the process, not a defect of this change**: the SDK's default permission behavior blocks calling
+any MCP tool without prior approval, exactly like Bash/Edit/Write already are — the same
+tool-approval gap flagged as item 4 above, not something wiring the server itself needed to solve.
 
 **Not decided yet, deliberately**: whether the `ChatProvider` shape should eventually split into two
 layers the way VS Code's `chat.createChatParticipant` / `lm.registerLanguageModelChatProvider` do

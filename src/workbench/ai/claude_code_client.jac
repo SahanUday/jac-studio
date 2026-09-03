@@ -45,7 +45,14 @@ file-based command channel `dap_client.jac` already established, once actually n
 is one `start_chat_turn` call; passing the previous turn's `session_id` back in as `resume` is the
 SDK's own documented mechanism for conversation continuity (`docs/en/authentication`'s and
 `docs/en/agent-sdk/streaming-output`'s own `session_id` field on every message) -- no long-lived
-subprocess or connection needs to survive between turns."""
+subprocess or connection needs to survive between turns.
+
+**`approve_tool_call` is an ordinary RPC stub, not part of the stream -- the same shape
+`dap_client.jac`'s `continue_execution`/`step_over`/... take, for the identical reason.** A tool
+call awaiting approval lives inside `claude_code_launcher.py`'s own process (see that module's own
+docstring), a process this RPC call has no shared memory with -- it reaches the live wait purely
+via `_TOOL_APPROVAL_FILE`, a fixed `/tmp` path both sides agree on without needing to ask each
+other. See the launcher's own docstring for why `/tmp` is hardcoded rather than derived."""
 
 import asyncio;
 import glob as glob_module;
@@ -166,4 +173,31 @@ async def:pub start_chat_turn(prompt: str, session_id: str | None) -> Generator 
         await proc.`wait();
     }
     report stream();
+}
+
+glob _TOOL_APPROVAL_FILE: str = "/tmp/jac_studio_tool_approval_decisions.json";
+
+"""Records the user's approve/deny decision for one tool call so
+`claude_code_launcher.py`'s `can_use_tool` callback -- polling the same fixed path from a
+genuinely separate process, see this module's own docstring -- picks it up on its next poll.
+`decision` is `"allow"` or `"deny"`; anything else is stored as-is and reads back as an implicit
+deny (the launcher only ever treats the literal string `"allow"` as approval)."""
+async def:pub approve_tool_call(tool_use_id: str, decision: str) -> None {
+    if not _ai_enabled() {
+        return;
+    }
+    decisions: dict[str, str] = {};
+    try {
+        if os.path.exists(_TOOL_APPROVAL_FILE) {
+            with open(_TOOL_APPROVAL_FILE, "r") as f {
+                decisions = json.load(f).get("decisions", {});
+            }
+        }
+    } except Exception {}
+    decisions[tool_use_id] = decision;
+    tmp_path = _TOOL_APPROVAL_FILE + ".tmp";
+    with open(tmp_path, "w") as f {
+        json.dump({"decisions": decisions}, f);
+    }
+    os.replace(tmp_path, _TOOL_APPROVAL_FILE);
 }

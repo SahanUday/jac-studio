@@ -726,16 +726,35 @@ section) went through all 84 top-level entries in upstream's `chat/browser/`, no
 screenshot led to. Two real, currently-missing capabilities surfaced, both higher-priority than
 the three above because they're gaps in trust/safety and data-loss risk, not just UX polish**:
 
-4. **Tool approval/confirmation.** Claude Code's tool calls (Edit, Write, Bash, ...) run today with
-   whatever `ClaudeAgentOptions.permission_mode` default the SDK applies — **entirely invisible in
-   jac-studio's own UI**. Upstream's `languageModelToolsConfirmationService.ts` is a real, working
-   reference: per-tool approval prompts, a persisted "always allow this tool" store, "run without
-   approval" and "continue without reviewing results" as separately-grantable permissions. The SDK
-   already has a hook for this — `ClaudeAgentOptions.can_use_tool`, a real, awaitable callback field
-   confirmed by introspecting the installed package directly — but `claude_code_launcher.py` doesn't
-   wire it up yet. A jac-studio equivalent is a real backend change (implement `can_use_tool`, route
-   the decision through an SSE event asking the UI to approve/deny) plus a new, small UI surface —
-   not just a new UI on an already-open stream.
+4. **Tool approval/confirmation — done (2026-09-03).** Claude Code's tool calls (Edit, Write, Bash,
+   the `jac mcp` tools wired in above, ...) used to run with whatever `ClaudeAgentOptions.permission_mode`
+   default the SDK applies — confirmed live, before this change, that meant a silent, outright deny
+   for anything needing a prompt (a plain `Write` call and a plain MCP tool call were both blocked
+   with no way for the user to ever say yes) — **entirely invisible in jac-studio's own UI**.
+   `ClaudeAgentOptions.can_use_tool` (a real, awaitable callback field, confirmed by introspecting
+   the installed package directly) is now wired up in `claude_code_launcher.py`: it emits a
+   `tool_approval_request` event (relayed through the existing SSE stream, no new endpoint needed)
+   and blocks the tool call by polling a fixed `/tmp` decision file — the exact same file-based
+   cross-process command-channel pattern `dap_client.jac`'s own docstring already established, for
+   the identical underlying reason (the launcher is a separate OS process; even the eventual RPC
+   call carrying the user's decision runs in yet another, different process). `ai_chat.jac` renders
+   each pending request as its own approve/deny card (concurrent requests handled correctly, each
+   tracked by the SDK's own `tool_use_id`), and `claude_code_client.jac`'s new `approve_tool_call`
+   RPC writes the decision. **Live-verified end to end** (`jac browse` against a real `jac run
+   --serve --dev` session, real credentials): a real `Write` call correctly produces an approval
+   card showing the tool name and its exact JSON input; clicking Allow lets the write actually land
+   on disk and the turn continue; clicking Deny blocks the write and the turn continues knowing it
+   was denied. **A real bug found and fixed during that same live pass, not left for later**: the
+   first version logged the decision as a new `{"role": "tool", ...}` chat-log entry, which broke
+   the "the last message in the list is the live assistant response" invariant `text_delta` depends
+   on — Claude's own text resumed streaming right after approval and landed concatenated onto the
+   decision line (`"[Allowed Write]Created ..."`, no separator) instead of a new bubble, reproduced
+   live before the fix. Fixed by reusing the exact pattern the pre-existing `tool_use` event already
+   established (append a note into `messages[-1]`'s own text, never push a separate list entry) —
+   consistent with, not a new pattern alongside, what the module already did. **No "always allow
+   this tool" persistence in this slice, deliberately** — every call gets its own explicit decision;
+   a persisted per-tool trust store (VS Code's own `IAutoConfirmEntry`) is real follow-up work, not
+   something this slice's core trust-boundary fix needed to include.
 5. **Multi-file edit review.** Claude Code's file edits land on disk directly today, with no diff,
    review, or rollback surface inside jac-studio at all. Upstream's `chatEditing/` (20 files) is
    larger and more capable than a simple diff-accept-reject would suggest — a checkpoint/timeline

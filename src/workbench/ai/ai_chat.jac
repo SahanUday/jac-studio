@@ -20,21 +20,34 @@ in flight.
 **Conversation continuity is `session_id` round-tripped through `done` events, not client-side
 history replay** -- each turn sends only the new prompt plus the previous turn's `session_id`; the
 SDK's own `resume` mechanism (via `claude_code_launcher.py`) reconstructs context server-side. The
-displayed `messages` list is purely a rendering log, not what gets sent back on the next turn."""
+displayed `messages` list is purely a rendering log, not what gets sent back on the next turn.
+
+**Tool-approval requests are a separate `pending_approvals` list, not folded into `messages`.**
+`claude_code_launcher.py`'s `can_use_tool` callback (see that module's own docstring for the
+real trust-boundary gap this closes) emits a `tool_approval_request` event mid-stream and then
+blocks the tool call until a decision arrives. Keeping approval cards in their own list (rather
+than widening `messages`' `dict[str, str]` shape to carry a mix of types) keeps both pieces simple:
+`messages` stays a plain rendering log, and a resolved approval collapses into one short log line
+there (`"[Approved Write]"`/`"[Denied Bash]"`) once decided. `tool_use_id` is the join key between
+a card and the `approve_tool_call` RPC call it fires -- concurrent approval requests (the SDK can
+ask for several tool calls in one turn) are handled correctly since each card tracks its own id
+independently."""
 
 import from "react" { useState }
-import from src.workbench.ai.claude_code_client { start_chat_turn }
+import from src.workbench.ai.claude_code_client { start_chat_turn, approve_tool_call }
 
 def:pub app(active: bool) -> JsxElement {
     has messages: list[dict[str, str]] = [];
     has input_text: str = "";
     has is_streaming: bool = False;
     has session_id: str | None = None;
+    has pending_approvals: list[dict[str, any]] = [];
 
     async def handle_send -> None;
     def handle_input_change(e: any) -> None;
     def handle_key_down(e: any) -> None;
     def handle_event(event: dict[str, any]) -> None;
+    async def handle_approval_decision(tool_use_id: str, name: str, decision: str) -> None;
 
     can_send = input_text.strip() != "" and not is_streaming;
 
@@ -58,6 +71,27 @@ def:pub app(active: bool) -> JsxElement {
                     for (i, m) in enumerate(messages)
                 ]}
             </div>
+            {[
+                <div key={a["tool_use_id"]} style={{"margin": "0 0.6rem 0.5rem", "border": "1px solid #f0883e", "borderRadius": "3px", "background": "#2A1F14", "padding": "0.4rem 0.5rem", "display": "flex", "flexDirection": "column", "gap": "0.3rem", "flexShrink": "0"}}>
+                    <span style={{"fontSize": "11px", "color": "#f0883e"}}>{"Claude Code wants to use " + a["name"]}</span>
+                    <pre style={{"margin": "0", "fontSize": "11px", "whiteSpace": "pre-wrap", "wordBreak": "break-word", "maxHeight": "6rem", "overflow": "auto", "color": "#CCCCCC", "fontFamily": "monospace"}}>{a["input_text"]}</pre>
+                    <div style={{"display": "flex", "gap": "0.4rem"}}>
+                        <button
+                            onClick={lambda (e: any) { handle_approval_decision(a["tool_use_id"], a["name"], "allow"); }}
+                            style={{"background": "#238636", "color": "#FFFFFF", "border": "none", "borderRadius": "3px", "padding": "0.2rem 0.6rem", "cursor": "pointer", "fontSize": "11px"}}
+                        >
+                            Allow
+                        </button>
+                        <button
+                            onClick={lambda (e: any) { handle_approval_decision(a["tool_use_id"], a["name"], "deny"); }}
+                            style={{"background": "#3A3A3A", "color": "#CCCCCC", "border": "none", "borderRadius": "3px", "padding": "0.2rem 0.6rem", "cursor": "pointer", "fontSize": "11px"}}
+                        >
+                            Deny
+                        </button>
+                    </div>
+                </div>
+                for a in pending_approvals
+            ]}
             <div style={{"borderTop": "1px solid #2A2B2C", "padding": "0.5rem 0.6rem", "flexShrink": "0", "display": "flex", "gap": "0.4rem", "alignItems": "flex-end"}}>
                 <textarea
                     value={input_text}

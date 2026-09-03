@@ -305,6 +305,14 @@ adapter.
 
 ## Phase 5 — Native AI coding-tool integrations
 
+**Complete (2026-09-04).** See [`docs/phases/phase-5-ai-integrations.md`](phases/phase-5-ai-integrations.md)
+for the full closing record. Exit criteria (below) were met by Claude Code alone; GitHub Copilot,
+OpenCode, a native `by llm()` provider, and `.claude-plugin/` bundle discovery were all originally
+scoped under this phase but never started (or, for the native provider, only proposed) — rather
+than keep an already-met phase open around them, they've been moved to "Explicitly out of scope for
+now" at the bottom of this document, to be picked up as their own scoped work whenever prioritized,
+not implicitly re-opening this phase.
+
 Goal: a small, explicitly-named set of external AI coding tools work natively inside jac-studio,
 without building a generic mechanism for arbitrary third-party chat/agent extensions to plug in
 (that remains deferred to the extension-system Phase B/C track below). See `architecture.md`'s "AI
@@ -316,17 +324,6 @@ scoped deliverable.
   mechanism) + `ai_chat.jac`'s sidebar panel. Live-verified end to end via a real `jac run` +
   `jac browse` session, not just `jac check`. Meets this phase's original exit criterion below on
   its own.
-- **GitHub Copilot** — realistic shape: the same subprocess/JSON-RPC pattern as the LSP/DAP clients
-  above, since Copilot's own inline-completion path runs a bundled `copilot-language-server`
-  subprocess in real VS Code too, not primarily through chat-extension APIs. Needs its own scoping
-  pass first (auth/licensing model, exact protocol surface). Not started.
-- **OpenCode** — CLI-first, SDK/subprocess-drivable agentic tool; the realistic integration shape is
-  a spawned, capability-gated process (the terminal's own mechanism) with output streamed back via
-  the SSE/`Generator` pattern already used for LLM-token streaming. Needs its own scoping pass
-  before implementation, same as Copilot. Not started.
-- **`by llm()`/`sem`-based native features** (inline suggestions, a native chat panel jac-studio
-  owns outright) are a legitimate parallel track here too, not superseded by the external
-  integrations above — build whichever gives the fastest real signal first.
 
 **Reframed 2026-09-03, still within this phase, not a scope change to the bullets above**: two real
 research passes (a live `microsoft/vscode` checkout's actual Copilot Chat source, and jaseci's own
@@ -367,12 +364,6 @@ Added to this phase's scope:
   text; a `Write` call needing approval sat "running" behind its approval card and flipped to
   "done" with the real success message the instant it was allowed. See `architecture.md`'s item 3
   for the full record.
-- **A native, dependency-free agent provider** built on `by llm(tools=[...])` using jac-studio's own
-  already-built Phase 4 service functions as tools (`create_file`, `run_in_terminal`,
-  `search_in_files`, ...) — a fourth provider option needing no external CLI, just a model API key.
-  Not a replacement for the external-tool integrations (an external agentic CLI brings permission
-  prompting, context management, and a curated tool set a from-scratch `by llm()` loop starts
-  without) — a real parallel option, per the research doc's own caveats.
 - **MCP wiring for the Claude Code provider — done (2026-09-03).** `jac mcp` is a real, working
   MCP server (confirmed: `jac mcp --inspect` lists 140 resources/19 tools/9 prompts) that
   `claude_agent_sdk.ClaudeAgentOptions.mcp_servers` (a real, introspected field) now points at,
@@ -412,17 +403,14 @@ polish:
   Live-verified end to end via `jac browse`: both a `Write` and a chained `Edit` produced a correct
   diff card, confirmed by screenshot against what actually landed on disk. See `architecture.md`'s
   item 5 for the full record.
-- **A portable AI-plugin format worth supporting, not inventing**: VS Code natively parses
-  `.claude-plugin/plugin.json` bundles (`hooks`/`commands`/`skills`/`agents`/`mcpServerDefinitions`)
-  — the exact format Claude Code's own plugin system already uses. Since jac-studio's Claude Code
-  provider already talks to real Claude Code, a discovery/install feature for these bundles needs
-  no new format design.
 
-Exit criteria (unchanged, already met): at least one of the three named tools is usable end to end
-inside jac-studio for a real coding task (not a mock/demo), with its own auth flow and output
-surfaced through the Output/notification infra Phase 4 already built. The reframed items above are
-this phase's next concrete steps, not new exit-criteria — Copilot/OpenCode and the UI/native-agent
-expansion remain open work within this same phase.
+Exit criteria (met): at least one of the three named tools is usable end to end inside jac-studio
+for a real coding task (not a mock/demo), with its own auth flow and output surfaced through the
+Output/notification infra Phase 4 already built — Claude Code, with the reframed items above on
+top of it, clears this on its own. GitHub Copilot, OpenCode, a native `by llm()` provider, and
+`.claude-plugin/` bundle discovery were all considered within this phase's scope at various points
+but never built (or, for the native provider, only proposed) — see "Explicitly out of scope for
+now" below for where they live now that this phase is closed.
 
 ## Phase 6 — Extension system, Phase B (dynamic, still trusted)
 
@@ -495,3 +483,26 @@ pipeline (not a manual `jac nacompile` on a developer's machine).
 - Collaborative real-time editing — the multi-user access-control primitives exist in Jac
   (`root.shared`, `grant`/`revoke`) and would make this more tractable than in a from-scratch
   stack, but it's not on the critical path to a usable single-user MVP.
+- **Moved out of Phase 5 on its closure (2026-09-04), not decided against — see
+  `docs/phases/phase-5-ai-integrations.md`.** Phase 5's own exit criteria were fully met by Claude
+  Code alone, so these were deferred rather than kept as "still open" scope in an already-complete
+  phase. Each needs its own scoping pass before implementation, same as when they were first named:
+  - **GitHub Copilot** — same subprocess/JSON-RPC pattern as the LSP/DAP clients (Copilot's own
+    inline-completion path runs a bundled `copilot-language-server` subprocess in real VS Code too,
+    not primarily through chat-extension APIs). Needs its own auth/licensing scoping pass first.
+  - **OpenCode** — CLI-first, SDK/subprocess-drivable agentic tool; realistic shape is a spawned,
+    capability-gated process (the terminal's own mechanism) streamed back via the same
+    SSE/`Generator` pattern already used for Claude Code. Needs its own scoping pass first.
+  - **A native, dependency-free agent provider** built on `by llm(tools=[...])` using jac-studio's
+    own already-built Phase 4 service functions as tools (`create_file`, `run_in_terminal`,
+    `search_in_files`, ...) — a fourth provider option needing no external CLI, just a model API
+    key. Not a replacement for the external-tool integrations (an external agentic CLI brings
+    permission prompting, context management, and a curated tool set a from-scratch `by llm()` loop
+    starts without) — a real parallel option, per `research/jac-native-agent-capabilities.md`'s own
+    caveats. Only ever proposed, no implementation started.
+  - **`.claude-plugin/` bundle discovery/install** — VS Code natively parses
+    `.claude-plugin/plugin.json` bundles (`hooks`/`commands`/`skills`/`agents`/
+    `mcpServerDefinitions`), the exact format Claude Code's own plugin system already uses. Since
+    jac-studio's Claude Code provider already talks to real Claude Code, a discovery/install
+    feature for these bundles needs no new format design. Only ever proposed, no implementation
+    started.

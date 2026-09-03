@@ -230,3 +230,38 @@ to this sandbox's own cache/toolchain state" instead. Given the sponsor's own en
 already verified the base branch works, and given this file's own scope is a UI text-rendering
 change with no new backend surface, live-verifying it there (rather than fighting this local
 environment further) is the practical path, not a gap being glossed over.
+
+**Update, same day, twice more**: the sponsor's own live testing of the second commit found two
+real regressions of its own, each fixed and pushed as its own commit on the same branch/PR:
+
+1. A genuine compile error (`thinking_indicator.jac`'s `Math.floor()` needed an explicit `as int`
+   cast) reached the sponsor's browser before this investigation's own `jac check` pass had been
+   committed — a real timing gap, not a false negative in `jac check` itself. Also surfaced,
+   immediately following that error in the sponsor's own terminal log, a cascading
+   `E7001: no export named 'create_file'` for a completely unrelated file
+   (`workspace_service.jac`) — much stronger, causally-linked evidence than anything gathered
+   earlier that this investigation's whole "silent partial client-bundle compile" saga above was
+   never about memory pressure at all: **a genuine compile error in one file appears to leave the
+   client bundler's build in a state where unrelated files silently lose their own exports too,
+   with no error reported for those other files.** That's a materially better, more actionable
+   root cause than the memory-pressure theory this doc originally recorded — worth a real tracker
+   entry if it's confirmed to recur cleanly (a deliberately-broken file plus a clean, isolated
+   rebuild, checking whether an unrelated file's exports vanish too), not yet written up formally
+   here since this round's own evidence, while strong, is still one incident, not a controlled
+   repro.
+2. A second real error: `react-markdown`'s own `.d.ts` type declarations disagree with its actual
+   runtime export shape (`export function Markdown(...)` is real in `lib/index.js`, but the
+   package's actual resolved entry point, `index.js`, re-exports it only as `Markdown as default`)
+   — `jac check` trusts the `.d.ts` and passes; the browser's real module linker only sees the
+   runtime shape and fails. Fixed via `{ default as Markdown }`, the documented pattern for exactly
+   this shape (`jac guide jac-types`'s own `mermaid` example) — confirmed correct afterward by
+   directly inspecting the compiled output on the sponsor's own still-running server, not assumed.
+
+A third live-testing round (screenshots of the same conversation before/after a follow-up message)
+found two more real UI bugs, both fixed in the same commit: **tool-step cards visibly collapsed to
+razor-thin bars once the message list grew** (root cause: each card's `overflow: hidden` wrapper
+makes its automatic flex min-height `0` per the CSS flexbox spec, the first thing squeezed under
+content pressure in a `flexDirection: column` list — fixed with an explicit `flexShrink: "0"` on
+every message entry), and **a visible OS-chrome scrollbar** in the narrow message column (fixed
+with `styles/global.css`'s own `no-scrollbar` Tailwind utility, defined at some earlier point but
+never actually applied anywhere in this project until now).

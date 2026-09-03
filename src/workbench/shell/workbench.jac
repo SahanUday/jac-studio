@@ -270,6 +270,7 @@ import from src.workbench.file_tree.file_tree { app as FileTreeApp }
 import from src.workbench.search.search { app as SearchApp }
 import from src.workbench.scm.scm { app as ScmApp }
 import from src.workbench.outline.outline { app as OutlineApp }
+import from src.workbench.ai.ai_chat { app as AIChatApp }
 import from src.workbench.editor_tabs.editor_tabs { app as EditorTabsApp }
 import from src.workbench.activity_bar.activity_bar { app as ActivityBarApp }
 import from src.workbench.command_palette.command_palette { app as CommandPaletteApp }
@@ -413,6 +414,9 @@ def:pub app(onToggleTheme: any) -> JsxElement {
                         cursorLine={active_cursor["line"]}
                         cursorColumn={active_cursor["column"]}
                     />
+                </div>
+                <div style={{"display": "block" if active_view_id == "ai_chat" else "none", "height": "100%"}}>
+                    <AIChatApp active={active_view_id == "ai_chat"} />
                 </div>
             </div>
             <div style={{"flex": "1", "overflow": "hidden"}}>

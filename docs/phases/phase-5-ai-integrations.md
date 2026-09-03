@@ -349,3 +349,22 @@ with `jac browse` + `getComputedStyle`/pixel sampling rather than guessed from s
   everything the app renders) now paints `background: var(--background); color:
   var(--foreground)` directly, making this whole bug class structurally impossible to reintroduce
   by omission elsewhere.
+
+**Update, same day again**: the sponsor re-tested the `~/.claude-scratch/` fix above and hit the
+identical bug again -- `setting_sources=["project", "local"]` was real progress but did not
+actually close it. Root-caused this time by reading the real `claude` CLI's own TypeScript source
+directly (a local checkout at `/home/sahan/dev/coder/src/`), not re-guessing from the Python SDK's
+docstring a second time: `"user"` gates one dedicated lookup
+(`homedir()/.claude/CLAUDE.md`), but `"project"` gates a *separate* one that walks every ancestor
+directory from `cwd` up to the filesystem root looking for `.claude/CLAUDE.md` in each, with no
+special case for `$HOME` — and since any real workspace's `cwd` is necessarily nested under the
+actual OS user's home directory, that walk always eventually reaches `$HOME` and independently
+rediscovers the identical global file through the `"project"`-gated path, completely bypassing the
+`"user"` exclusion. Confirmed with standalone `claude_agent_sdk.query()` probe scripts against the
+installed SDK directly (not just this launcher): `setting_sources=["project", "local"]` still
+leaked the exact `~/.claude-scratch/...` write; `setting_sources=[]` (full isolation) did not, and
+correctly landed a normal file request in the open workspace with no confusion. Since `"project"`
+scope can never be excluded from this ancestor-walk risk while `cwd` is home-nested — true for
+every real jac-studio workspace — full isolation is the *minimum* setting that actually works here,
+not a broader fix than necessary. See `claude_code_launcher.py`'s own docstring for the complete,
+source-verified write-up.

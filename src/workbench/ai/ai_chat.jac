@@ -210,13 +210,19 @@ SDK/product capability, not invented from scratch:**
   every one of the five sidebar views' own missing fallback background letting the app's true,
   never-actually-dark `<body>` show through). Not an AI-chat-specific fix, but found while testing
   this panel, so recorded here alongside the rest of this pass.
-- **`claude_code_launcher.py`'s `setting_sources` now excludes `"user"`**, closing a real, live-
-  reproduced bug: asking the agent to create a file literally named `scratch_test.txt` landed it
-  under `~/.claude-scratch/<session-id>/` instead of the open workspace, because this launcher
-  runs as the same OS user as whoever's own separate Claude Code CLI session has a personal global
-  `CLAUDE.md` with exactly that rule. See that module's own docstring for the full finding -- this
-  wasn't a `cwd`-plumbing bug (confirmed `cwd` was correct in the request log), it was inheriting
-  an unrelated person's own tooling preferences purely from running on the same machine."""
+- **`claude_code_launcher.py`'s `setting_sources` now excludes filesystem settings entirely
+  (`[]`)**, closing a real, live-reproduced bug: asking the agent to create a file literally named
+  `scratch_test.txt` landed it under `~/.claude-scratch/<session-id>/` instead of the open
+  workspace, because this launcher runs as the same OS user as whoever's own separate Claude Code
+  CLI session has a personal global `CLAUDE.md` with exactly that rule. This wasn't a
+  `cwd`-plumbing bug (confirmed `cwd` was correct in the request log), it was inheriting an
+  unrelated person's own tooling preferences purely from running on the same machine. **A first fix
+  attempt, excluding only `"user"`, looked right but re-leaked the identical file live-tested
+  moments later** -- see that module's own docstring for the full, source-verified finding (the
+  `"project"` scope's own CLAUDE.md discovery walks every ancestor directory up to the filesystem
+  root with no special case for `$HOME`, independently rediscovering the exact same global file a
+  different way); full isolation is the only setting that's actually correct here, not a broader
+  fix than necessary."""
 
 import from "react" { useState, useEffect }
 import from src.workbench.ai.claude_code_client { start_chat_turn, approve_tool_call }

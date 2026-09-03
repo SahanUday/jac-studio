@@ -102,31 +102,44 @@ card -- no attempt made here to guess at a shape for a tool this project hasn't 
 possible `MultiEdit` tool included; a probe for it timed out inconclusively rather than confirming
 a real shape, so it deliberately isn't special-cased).
 
-**`setting_sources=["project", "local"]` -- deliberately excludes `"user"`, a real, live-reproduced
-bug fix, not a defensive default (2026-09-04, real-user QA).** A real user asked this launcher to
+**`setting_sources=[]` -- full isolation, a real, live-reproduced bug fix, not a defensive
+default (2026-09-04, real-user QA, corrected same day after the first fix attempt below turned out
+to be insufficient -- also confirmed live, not assumed).** A real user asked this launcher to
 "Create a new file called scratch_test.txt", with `--cwd` correctly pointing at their own open
 workspace (confirmed live in the server's own request log) -- yet the file landed under
-`~/.claude-scratch/<session-id>/`, nowhere near that workspace. Root cause, confirmed by reading
-`ClaudeAgentOptions.setting_sources`'s own docstring in the installed SDK directly: this field
-defaults to `None`, which "matches CLI defaults" -- every filesystem settings source, `"user"`
-(`~/.claude/settings.json` and `~/.claude/CLAUDE.md`) included, gets loaded. This launcher runs on
+`~/.claude-scratch/<session-id>/`, nowhere near that workspace. Root cause: this launcher runs on
 the *same machine, same OS user* as whoever is developing jac-studio itself with their own,
 separate Claude Code CLI session -- so a query spawned here was reading that developer's own
-personal global `CLAUDE.md`, not anything jac-studio ships or controls. That file's own real
-standing rule (verbatim: "Anything throwaway ... goes in `$HOME/.claude-scratch/<session-id>/`,
+personal global `~/.claude/CLAUDE.md`, not anything jac-studio ships or controls. That file's own
+real standing rule (verbatim: "Anything throwaway ... goes in `$HOME/.claude-scratch/<session-id>/`,
 never inside a project repo") is exactly what fired: the requested file was *literally named*
 "scratch_test.txt", and the agent, correctly following instructions it had no way to know weren't
-meant for it, obeyed. This isn't specific to that one rule or that one developer's machine --
-*any* end user of jac-studio's shipped AI Chat feature could have their own unrelated global
-`CLAUDE.md` (a different tool's config, a different project's conventions, anything) silently
-steering this in-app assistant's behavior on a completely unrelated project, purely because both
-happen to run as the same OS user. `setting_sources=["project", "local"]` keeps the two sources
-that are genuinely scoped to the *opened workspace* (`.claude/settings.json`,
-`.claude/settings.local.json`, and -- per the field's own docstring, "Must include `'project'` to
-load CLAUDE.md files" -- that workspace's own `CLAUDE.md` if it has one, which is legitimate,
-expected context for a project-specific assistant) while dropping the one source
-(`"user"`) that reflects the *host machine owner's* personal, unrelated tooling preferences rather
-than anything about the project actually open in jac-studio.
+meant for it, obeyed. This isn't specific to that one rule or that one developer's machine -- *any*
+end user of jac-studio's shipped AI Chat feature could have their own unrelated global `CLAUDE.md`
+silently steering this in-app assistant's behavior on a completely unrelated project, purely
+because both run as the same OS user.
+
+**CORRECTION, same day: the first fix, `setting_sources=["project", "local"]` (excluding only
+`"user"`), was real progress but did not actually close the bug -- confirmed live, the exact same
+`~/.claude-scratch/...` write still happened with that value set.** Diagnosed by reading the real
+`claude` CLI's own TypeScript source directly (`utils/claudemd.ts`'s memory-file loader), not
+re-guessing from the Python SDK's docstring a second time: `"user"` gates one specific, dedicated
+lookup (`getMemoryPath('User')` -- `homedir()/.claude/CLAUDE.md`), but `"project"` gates a
+*separate* one that walks every ancestor directory from `cwd` up to the filesystem root looking for
+`.claude/CLAUDE.md` in each -- with no special case to stop at, or skip, `$HOME`. Since any real
+workspace's `cwd` is necessarily nested *under* the actual OS user's home directory, that ancestor
+walk always eventually reaches `$HOME` itself and independently rediscovers
+`$HOME/.claude/CLAUDE.md` -- the identical file, reached through the `"project"`-gated code path,
+completely bypassing the `"user"` exclusion. Verified both the failure and the fix directly against
+the installed SDK (`claude_agent_sdk.query()`, standalone probe scripts, not just this launcher) --
+`setting_sources=["project", "local"]` still leaked; `setting_sources=[]` did not, and let a
+normal (non-"scratch"-named) file request land correctly in the open workspace with no confusion.
+Given `"project"` scope can never be excluded from this ancestor-walk risk while `cwd` is
+home-nested (true for every real jac-studio workspace), full isolation is the only setting that is
+actually correct here -- not a broader hammer than necessary, the *minimum* one that works. The
+trade-off (a workspace's own project-level `CLAUDE.md`, if it ever has one, goes unread too) is
+accepted deliberately: predictable, host-independent behavior for jac-studio's own shipped
+assistant matters more here than an unbuilt, so-far-unused feature.
 
 **A tool call's full lifecycle is now three separate events, not one bare name, closing item 6 of
 `docs/architecture.md`'s "Reframed 2026-09-03" AI section (richer agent-session visualization).**
@@ -274,7 +287,7 @@ async def main() -> None:
         model=args.model or "haiku",
         permission_mode=args.permission_mode,
         effort=args.effort,
-        setting_sources=["project", "local"],
+        setting_sources=[],
     )
 
     try:

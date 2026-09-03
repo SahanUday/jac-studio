@@ -88,3 +88,84 @@ autonomous agent runs (multiple tool calls, file changes, step tracking). Compar
 purpose to what jac-studio's existing `ai_chat.jac` sidebar panel already does at a smaller scale
 (it streams `tool_use` events today) — this is an enhancement of an existing surface, not a new
 mechanism, and lowest priority of the patterns found here.
+
+## Full audit, 2026-09-03: every one of the 84 top-level files/dirs in `chat/browser/`, categorized
+
+Prompted directly by "get all possible capabilities, not everything" — the sections above came from
+following one screenshot's lead, not a systematic pass. This is the systematic pass: every entry in
+`src/vs/workbench/contrib/chat/browser/` (`ls` count: 84), read or at minimum opened, not inferred
+from filenames alone for anything listed as a real finding below.
+
+### New real findings (not covered above)
+
+**Tool approval/confirmation is a whole real subsystem, and jac-studio currently has none of it.**
+`tools/languageModelToolsConfirmationService.ts` (read directly) implements a genuine "approve this
+tool call" flow: per-tool confirmation prompts, an `IAutoConfirmEntry` store so a user's "always
+allow" choice persists, `RUN_WITHOUT_APPROVAL`/`CONTINUE_WITHOUT_REVIEWING_RESULTS` as distinct,
+separately-grantable permissions. `chatToolRiskAssessmentService.ts` (sibling file, not read in
+full, name/import-graph confirms role) assesses risk before a tool runs. jac-studio's Claude Code
+integration today has **zero UI for this** — `claude_code_launcher.py` runs with whatever
+`ClaudeAgentOptions.permission_mode` default the SDK applies, entirely invisible to the user in
+jac-studio's own chrome. This is the single most concrete, real gap found in this whole audit.
+
+**`chatEditing/` (20 files, `chatEditing.ts` + `chatEditingSession.ts` +
+`chatEditingCheckpointTimeline.ts`/`chatEditingCheckpointTimelineImpl.ts` +
+`chatEditingModifiedFileEntry.ts`/`chatEditingModifiedDocumentEntry.ts`/
+`chatEditingModifiedNotebookEntry.ts` + `chatEditingExplanationWidget.ts` + more) is a real,
+sizable feature, bigger than first estimated.** Not a simple "show a diff, click accept" — a
+**checkpoint/timeline mechanism** (rollback points across an editing session, not just per-file
+undo), separate tracking for text vs. notebook documents, and an "explanation" widget surfacing why
+an edit was made. `ai_chat.jac` today has no equivalent at any scale: Claude Code's own file edits
+(via its Edit/Write tools) land on disk directly, with no review, diff, or rollback surface inside
+jac-studio at all.
+
+**The single strongest finding of this whole investigation: VS Code natively parses a portable,
+non-Copilot-specific AI-plugin format that already includes Claude Code's own format.** Read
+`src/vs/platform/agentPlugins/common/pluginParsers.ts` directly. `PluginFormat` is an enum with four
+values: `Copilot`, `Claude`, `OpenPlugin`, `AgentPlugin`. The `Claude` format config
+(`CLAUDE_FORMAT`, line 172) expects `.claude-plugin/plugin.json` as its manifest and
+`hooks/hooks.json` for hooks — **the exact directory convention Anthropic's own Claude Code CLI uses
+for its plugin system**, not a Copilot invention. A plugin bundle (`IAgentPlugin`,
+`agentPluginService.ts`) can carry `hooks`, `commands`, `skills`, `agents`, `instructions`, and
+`mcpServerDefinitions` — precisely the same customization surface `.claude/` directories already
+use (this very Claude Code session's own skills/hooks are that exact shape). There is also a
+distinct `OpenPlugin` format (`.plugin/plugin.json`) that reads as a deliberate attempt at a
+vendor-neutral standard, independent of both Copilot and Claude specifically. `agentPluginEditor/`
++ `pluginInstallService.ts`/`pluginMarketplaceService.ts`/`claudePluginRecommendations.ts` (the
+files originally flagged as "uncertain") are the UI/install/marketplace layer built on top of this
+parser — installable, enablable/disablable, sourced from git repos or a marketplace.
+
+Concrete implication: jac-studio's Claude Code provider already talks to real Claude Code, which
+already understands `.claude-plugin/` bundles natively (skills/hooks/agents/commands/MCP servers).
+A jac-studio feature that discovers and surfaces `.claude-plugin/`-formatted bundles a user has
+installed (or lets them install one from a git URL) would need **no new format design at all** —
+it's parsing an already-open, already-documented format that the underlying tool already consumes,
+not inventing a jac-studio-specific plugin system from scratch.
+
+**Reusable prompt/skill files (`promptSyntax/`)** confirmed as a real, generic pattern, not
+Copilot-specific: `skillActions.ts`, `hookActions.ts`, `chatModeActions.ts` (custom modes),
+`newPromptFileActions.ts`/`promptFileActions.ts` (user-authored `.prompt.md`-style files),
+`runPromptAction.ts`. This is the UI-side counterpart to the plugin-format finding above — the same
+skills/hooks/agents concepts, but authored loosely in a workspace rather than packaged as an
+installable plugin bundle.
+
+### Correction to an earlier claim: `chatStatus/` is not a clean generic pattern
+
+The previous version of this doc listed "cost/usage in the status bar" as cheap and reusable,
+inferring purely from the directory name. Reading `chatStatusEntry.ts` directly shows this file is
+almost entirely **Copilot's own quota/entitlement UI** — `ChatQuotas`, `premiumChat.percentRemaining`,
+`isQuotaBlocked`, a `computeQuotaResumeState` state machine tied specifically to Copilot's
+subscription-plan quota resets. Little to none of this implementation is generic. The *underlying
+idea* (surface per-turn cost/usage in the status bar) is still valid and still cheap for jac-studio —
+`ResultMessage.total_cost_usd`/`usage` are already received by `claude_code_client.jac` and
+currently discarded — but there is no VS Code implementation worth mirroring for it; it would be a
+small, from-scratch addition, not a port.
+
+### Confirmed correctly excluded, no changes from the first pass
+
+`chatPetAchievements*` (4 files), `chatQuotaNotification.ts`, `chatPromoNotification.ts`,
+`chatSetup/`, `chatRepoInfo.ts`, `githubRepoFetcher.ts`, `telemetry/`, `feedbackSurvey/`,
+`copilotCliEventsUri.ts` — GitHub-account/billing/telemetry/gamification specific, no backend or
+audience for any of it outside Copilot's own product. `voiceClient/`, `voiceInputMode/`,
+`speechToText/`, `pcmCaptureWorklet.ts` — a real, working feature (voice input), not excluded on
+principle, just clearly lower priority than anything above and not investigated further here.

@@ -721,6 +721,42 @@ points* against the *same* provider interface already in place":
    priority; `ai_chat.jac` already streams `tool_use` events, this is a rendering enhancement to an
    existing surface, not a new mechanism.
 
+**A follow-up, more systematic audit (2026-09-03, same day — see the research doc's "full audit"
+section) went through all 84 top-level entries in upstream's `chat/browser/`, not just what one
+screenshot led to. Two real, currently-missing capabilities surfaced, both higher-priority than
+the three above because they're gaps in trust/safety and data-loss risk, not just UX polish**:
+
+4. **Tool approval/confirmation.** Claude Code's tool calls (Edit, Write, Bash, ...) run today with
+   whatever `ClaudeAgentOptions.permission_mode` default the SDK applies — **entirely invisible in
+   jac-studio's own UI**. Upstream's `languageModelToolsConfirmationService.ts` is a real, working
+   reference: per-tool approval prompts, a persisted "always allow this tool" store, "run without
+   approval" and "continue without reviewing results" as separately-grantable permissions. The SDK
+   already has a hook for this — `ClaudeAgentOptions.can_use_tool`, a real, awaitable callback field
+   confirmed by introspecting the installed package directly — but `claude_code_launcher.py` doesn't
+   wire it up yet. A jac-studio equivalent is a real backend change (implement `can_use_tool`, route
+   the decision through an SSE event asking the UI to approve/deny) plus a new, small UI surface —
+   not just a new UI on an already-open stream.
+5. **Multi-file edit review.** Claude Code's file edits land on disk directly today, with no diff,
+   review, or rollback surface inside jac-studio at all. Upstream's `chatEditing/` (20 files) is
+   larger and more capable than a simple diff-accept-reject would suggest — a checkpoint/timeline
+   mechanism (rollback points across a whole editing session, not just per-file undo). A v1 for
+   jac-studio doesn't need that full scope; even a per-file diff-preview-before-write, reusing the
+   two-way diff editor Phase 3 already shipped, would close most of the actual risk (an agent
+   silently overwriting a file the user didn't expect).
+
+**The single strongest finding from the follow-up audit: VS Code natively parses a portable,
+non-Copilot AI-plugin format that already includes Claude Code's own format**, confirmed by reading
+`src/vs/platform/agentPlugins/common/pluginParsers.ts` directly — `PluginFormat.Claude` expects
+`.claude-plugin/plugin.json` + `hooks/hooks.json`, the exact convention Claude Code's own plugin
+system already uses (not a Copilot invention), bundling `hooks`/`commands`/`skills`/`agents`/
+`instructions`/`mcpServerDefinitions`. There's also a distinct, deliberately vendor-neutral
+`OpenPlugin` format. Since jac-studio's Claude Code provider already talks to real Claude Code,
+which already understands `.claude-plugin/` bundles, a jac-studio feature that discovers/installs
+them needs no new format design — it's parsing a format the underlying tool already consumes. See
+the research doc's "full audit" section for the rest of the categorized list (what's excluded and
+why, and the `chatStatus/` status-bar idea correction — it's real but Copilot-quota-specific in
+upstream, not something to port, only a small from-scratch addition).
+
 **A genuinely jac-native agent option is now on the table, not just external CLI clients.**
 `by llm(tools=[...])` is a real, working ReAct tool-calling loop with native streaming and
 multi-turn support (see the native-agent-capabilities research doc) — nothing about it needs a

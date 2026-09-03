@@ -353,6 +353,25 @@ Added to this phase's scope:
   at — small, cheap, backend-only change giving Claude Code structured Jac tools instead of raw
   Bash.
 
+**A second, more systematic pass (same day) went through all 84 top-level entries in upstream's
+`chat/browser/`, not just what one screenshot led to — see the research doc's own "full audit"
+section for the complete categorized list.** Two real, currently-missing capabilities surfaced,
+higher priority than the UI items above since they're trust/safety and data-loss gaps, not just
+polish:
+
+- **Tool approval/confirmation** — Claude Code's Edit/Write/Bash tool calls run today with whatever
+  SDK permission default applies, entirely invisible in jac-studio's UI. `ClaudeAgentOptions.can_use_tool`
+  is a real, unwired SDK hook for building this.
+- **Multi-file edit review** — Claude Code's edits land on disk directly today, no diff/review/
+  rollback surface at all. Upstream's `chatEditing/` is a full checkpoint/timeline system (larger
+  than a simple accept/reject); a jac-studio v1 doesn't need that scope, even a per-file diff
+  preview reusing Phase 3's existing diff editor would close most of the real risk.
+- **A portable AI-plugin format worth supporting, not inventing**: VS Code natively parses
+  `.claude-plugin/plugin.json` bundles (`hooks`/`commands`/`skills`/`agents`/`mcpServerDefinitions`)
+  — the exact format Claude Code's own plugin system already uses. Since jac-studio's Claude Code
+  provider already talks to real Claude Code, a discovery/install feature for these bundles needs
+  no new format design.
+
 Exit criteria (unchanged, already met): at least one of the three named tools is usable end to end
 inside jac-studio for a real coding task (not a mock/demo), with its own auth flow and output
 surfaced through the Output/notification infra Phase 4 already built. The reframed items above are

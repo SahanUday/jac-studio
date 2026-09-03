@@ -320,3 +320,32 @@ here for the phase-level record.
   switcher already calls) through a `CommandDialog` picker. One-shot per turn, not persisted pinned
   context across a conversation — a deliberate v1 scope cut to avoid silently re-sending the same
   file's content (and cost) on every follow-up.
+
+**Update, same day**: live-testing the resizable-sidebar fix above (dragging the Explorer sidebar
+wide, then opening two diff editors side by side) surfaced two more real bugs, both root-caused
+with `jac browse` + `getComputedStyle`/pixel sampling rather than guessed from screenshots alone:
+
+- **A regression in the sidebar-width fix itself**: `className="w-full min-w-0"` on `Sidebar`
+  looked correct and fixed the width, but silently discarded the primitive's own `bg-sidebar
+  text-sidebar-foreground` classes too, rendering the entire Explorer tree in near-invisible
+  near-black text on a transparent background. Root cause, confirmed via `getComputedStyle` in a
+  live session: `sidebar.jac`'s `collapsible="none"` branch spreads `{**attrs}` (every prop,
+  `className` included) *after* its own computed `className={cn(...)}` — a prop specified twice in
+  JSX keeps the last one, so any `className` passed to `<Sidebar collapsible="none">` from any
+  caller clobbers the whole `cn(...)` result. Fixed by routing the width override through `style`
+  instead (`style={{"width": "100%", "minWidth": "0"}}`) — `attrs` still carries `style` through
+  the same spread, but nothing in that branch sets an explicit `style` of its own to collide with
+  it, so it applies cleanly without touching the vendored primitive.
+- **A second, unrelated white-gap instance**, this time at the editor group's own split, not the
+  sidebar: a genuinely white ~25px band flanking the resize handle between two editor panes,
+  confirmed with real sampled pixel values (`(255, 255, 255)`), not assumed from a screenshot.
+  Same root cause as the sidebar's white-space bug, one level more general: `.dark`'s
+  `--background`/`--foreground` CSS variables cascade to every descendant, but nothing was ever
+  painting an actual `background-color`/`color` from them anywhere near the app's actual root —
+  every dark surface up to this point was one more hand-styled component's own hardcoded hex color,
+  meaning any *other*, not-yet-hand-styled gap anywhere in the tree was one more undiscovered
+  instance of the same bug. Fixed at the true root this time, not a third individual container:
+  `main.jac`'s own `.dark`-classed wrapper div (the one element that already wraps literally
+  everything the app renders) now paints `background: var(--background); color:
+  var(--foreground)` directly, making this whole bug class structurally impossible to reintroduce
+  by omission elsewhere.

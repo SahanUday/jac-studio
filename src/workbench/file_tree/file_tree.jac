@@ -90,20 +90,37 @@ component never used `SidebarTrigger`/offcanvas collapse behavior in the first p
 branch in `sidebar.jac` renders a plain flow `<div>` with no `fixed`/`z-index` at all -- so it
 participates in the workbench's flex row like every other column instead of fighting it.
 
-**`className="w-full min-w-0"` on `Sidebar` itself (2026-09-04, real-user QA), a second, separate
-gap in the same `collapsible="none"` branch.** Found live: dragging the sidebar's resize handle
-wider left a large blank (true white, not this app's dark theme -- see `workbench.jac`'s own note
-on the same finding) gap between the Explorer's actual content and the editor area. Root cause:
+**A `style` prop on `Sidebar` itself (2026-09-04, real-user QA), a second, separate gap in the
+same `collapsible="none"` branch.** Found live: dragging the sidebar's resize handle wider left a
+large blank (true white, not this app's dark theme -- see `workbench.jac`'s own note on the same
+finding) gap between the Explorer's actual content and the editor area. Root cause:
 `sidebar.jac`'s `collapsible="none"` branch hardcodes `w-(--sidebar-width)` (`16rem`, sized for a
 real app's own fixed-width sidebar with its own internal collapse mechanism) regardless of its
 container's actual width -- so the `ResizablePanel` around this component (`workbench.jac`) could
 be dragged to any width, but the `Sidebar` DOM node inside it stayed pinned at 256px, leaving
 whatever's beneath (`workbench.jac`'s own new fallback background, previously nothing) exposed for
-the remainder. `cn()`'s `tailwind-merge` resolves the resulting `w-full`/`w-(--sidebar-width)`
-class conflict in `className`-argument order (this component's own class, passed second, wins) --
-no `!important` override or a `sidebar.jac` edit needed. Makes the resize handle actually resize
-the visible tree, not just the empty space next to it, closing the functional half of this bug
-alongside the cosmetic one."""
+the remainder.
+
+**A first attempt at this fix (`className="w-full min-w-0"`, briefly shipped the same day) was
+itself a real, worse regression, found live moments later: the entire Explorer tree rendered in
+near-invisible near-black text on a transparent background.** Root cause, confirmed with
+`getComputedStyle` in a real `jac browse` session, not guessed: `sidebar.jac`'s own
+`collapsible="none"` branch spreads `{**attrs}` (`attrs = {**props}`, every prop this component
+received, `className` included) *after* its own `className={cn("bg-sidebar text-sidebar-foreground
+... ", props["className"])}` -- and in JSX, a prop specified twice keeps the *last* one. Passing
+any `className` at all to `<Sidebar collapsible="none">`, from any caller, silently discards the
+entire `cn(...)`-computed class list (background, text color, flex layout, all of it) in favor of
+whatever raw string was passed in -- a latent bug in the vendored primitive that nothing had ever
+triggered before this component became the first caller to pass `Sidebar` its own `className`. Not
+a `sidebar.jac` edit (per this docstring's own earlier note: `jac install --shadcn sidebar` would
+silently regenerate over a hand-patch) -- the real fix routes around it entirely via `style`
+instead of `className`: `attrs` still carries `style` through the same `{**attrs}` spread, but
+`sidebar.jac`'s own `collapsible="none"` div never sets an explicit `style` prop of its own to
+collide with it, so `width: "100%"` applies cleanly (inline styles also simply outrank a utility
+class in CSS specificity regardless) while `cn(...)`'s own `className` output -- now receiving
+`props["className"]` as `None` again, since nothing overrides it -- survives completely
+unclobbered. Makes the resize handle actually resize the visible tree, not just the empty space
+next to it, without reintroducing the text/background regression."""
 
 import from src.workbench.workspace.workspace_service {
     open_workspace, list_children_by_path, get_current_workspace,
@@ -288,7 +305,7 @@ def:pub app(props: any) -> JsxElement {
     }
 
     <SidebarProvider>
-        <Sidebar collapsible="none" className="w-full min-w-0">
+        <Sidebar collapsible="none" style={{"width": "100%", "minWidth": "0"}}>
             <SidebarHeader>
                 <div style={{"padding": "0.5rem", "display": "flex", "gap": "0.4rem", "fontFamily": "system-ui, sans-serif"}}>
                     <input

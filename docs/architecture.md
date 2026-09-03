@@ -898,6 +898,23 @@ external-tool provider (Copilot or OpenCode) is actually built and there's a rea
 not before. Splitting now, with only one provider shipped, would be exactly the premature
 generalization this project's own implementation discipline warns against.
 
+### Phase 5 closed — 2026-09-04, decided by explicit project-sponsor direction
+
+Phase 5's own exit criteria (`roadmap.md`) were fully met by the Claude Code integration alone —
+tool approval, multi-file edit review, MCP wiring, and all three reframed UI entry points (code
+actions, inline chat, richer session visualization) above are shipped and live-verified. Rather
+than keep the phase open around the two originally-named tools that were never started, or the two
+enrichment ideas above that only ever reached the proposal stage, the decision made here is to
+**close Phase 5 now and move GitHub Copilot, OpenCode, the native `by llm()` provider, and
+`.claude-plugin/` bundle discovery out to `roadmap.md`'s "Explicitly out of scope for now" section**
+— real, legitimate future work, not decided against, just no longer implicitly blocking this phase
+from being called done. See
+[`docs/phases/phase-5-ai-integrations.md`](phases/phase-5-ai-integrations.md) for the full closing
+record (what was built, key decisions, deviations, blockers logged, suggested next steps). The
+`ChatProvider`-split question directly above stays genuinely open either way — it doesn't require
+Phase 5 to still be "in progress," only a second provider to eventually exist, whenever one is
+built.
+
 ## Open questions this document deliberately does not resolve
 
 - ~~Root-graph-as-service-registry: validated or replaced with `glob` singletons?~~ **Resolved in

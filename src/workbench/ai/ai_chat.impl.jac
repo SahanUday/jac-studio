@@ -9,7 +9,9 @@ impl app.handle_send -> None {
         return;
     }
     prompt = input_text;
+    sent_paths = attached_paths;
     input_text = "";
+    attached_paths = [];
     messages = messages + [
         {"kind": "text", "role": "user", "text": prompt},
         {"kind": "text", "role": "assistant", "text": ""}
@@ -22,7 +24,15 @@ impl app.handle_send -> None {
     resp = await fetch("/function/start_chat_turn", {
         "method": "POST",
         "headers": {"Content-Type": "application/json"},
-        "body": JSON.stringify({"prompt": prompt, "session_id": session_id, "cwd": cwd})
+        "body": JSON.stringify({
+            "prompt": prompt,
+            "session_id": session_id,
+            "cwd": cwd,
+            "attached_paths": sent_paths,
+            "model": model,
+            "permission_mode": permission_mode,
+            "effort": effort
+        })
     });
     reader = resp.body.getReader();
     decoder = new(TextDecoder);
@@ -174,8 +184,40 @@ impl app.handle_approval_decision(tool_use_id: str, decision: str) -> None {
     pending_approvals = [a for a in pending_approvals if a["tool_use_id"] != tool_use_id];
 }
 
+"""Typing `@` as the last character opens the attach-file picker (`attach_open`), reusing
+`workspace_service.jac`'s own `list_all_files` the same way `quick_open.jac`'s Ctrl+P picker
+already does -- matches the trigger character real Copilot/Claude Code chat inputs use for a file
+mention, without needing a full Monaco-editor-backed dynamic-variable system (real VS Code's own
+mechanism, confirmed by reading `chatDynamicVariables.ts` in a real checkout before choosing this
+scoped-down equivalent -- see `claude_code_client.jac`'s `_build_prompt_with_attachments` docstring
+for the rest of that finding) for what's, here, a plain `<textarea>`."""
 impl app.handle_input_change(e: any) -> None {
     input_text = e.target.value;
+    if input_text.endswith("@") {
+        attach_open = True;
+    }
+}
+
+impl app.refresh_attach_files -> None {
+    attach_files = await list_all_files();
+}
+
+"""Adds `path` to `attached_paths` (deduplicated -- selecting the same file twice is a no-op, not
+a second chip) and strips the trailing `@` that opened the picker off `input_text`, so the mention
+character doesn't linger as literal text once the file it was standing in for has a real chip of
+its own."""
+impl app.handle_attach_select(path: str) -> None {
+    if path not in attached_paths {
+        attached_paths = attached_paths + [path];
+    }
+    if input_text.endswith("@") {
+        input_text = input_text[:-1];
+    }
+    attach_open = False;
+}
+
+impl app.remove_attached_file(path: str) -> None {
+    attached_paths = [p for p in attached_paths if p != path];
 }
 
 impl app.handle_key_down(e: any) -> None {

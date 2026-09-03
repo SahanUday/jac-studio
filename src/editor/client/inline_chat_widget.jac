@@ -56,6 +56,7 @@ import from "react-dom" { createPortal }
 import from src.workbench.ai.claude_code_client { start_chat_turn, approve_tool_call }
 import from src.workbench.ai.ai_tool_diff_preview { app as AiToolDiffPreview }
 import from src.workbench.ai.markdown_message { app as MarkdownMessage }
+import from src.workbench.ai.thinking_indicator { app as ThinkingIndicator }
 import from src.workbench.workspace.workspace_service { get_current_workspace }
 
 def:pub app(open: bool, onClose: any, editorRef: any, monacoRef: any, path: str) -> JsxElement {
@@ -141,12 +142,7 @@ def:pub app(open: bool, onClose: any, editorRef: any, monacoRef: any, path: str)
                             <MarkdownMessage text={response_text} />
                         </div>
                     ) if response_text != "" else None}
-                    {(
-                        <div style={{"display": "flex", "alignItems": "center", "gap": "0.35rem", "color": "#8C8C8C", "fontSize": "11px"}}>
-                            <span className="codicon codicon-loading codicon-modifier-spin" style={{"fontSize": "12px"}} />
-                            <span>Thinking…</span>
-                        </div>
-                    ) if is_streaming else None}
+                    <ThinkingIndicator active={is_streaming} />
                     {[
                         <div key={a["tool_use_id"]} style={{"border": "1px solid #f0883e", "borderRadius": "3px", "background": "#2A1F14", "padding": "0.3rem", "display": "flex", "flexDirection": "column", "gap": "0.25rem"}}>
                             <span style={{"fontSize": "10px", "color": "#f0883e"}}>{"Wants to use " + a["name"]}</span>

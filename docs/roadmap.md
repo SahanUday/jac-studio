@@ -347,11 +347,21 @@ Added to this phase's scope:
   Not a replacement for the external-tool integrations (an external agentic CLI brings permission
   prompting, context management, and a curated tool set a from-scratch `by llm()` loop starts
   without) — a real parallel option, per the research doc's own caveats.
-- **MCP wiring for the Claude Code provider already shipped**: `jac mcp` is a real, working MCP
-  server (confirmed: `jac mcp --inspect` lists 140 resources/19 tools/9 prompts) that
-  `claude_agent_sdk.ClaudeAgentOptions.mcp_servers` (a real, introspected field) can already point
-  at — small, cheap, backend-only change giving Claude Code structured Jac tools instead of raw
-  Bash.
+- **MCP wiring for the Claude Code provider — done (2026-09-03).** `jac mcp` is a real, working
+  MCP server (confirmed: `jac mcp --inspect` lists 140 resources/19 tools/9 prompts) that
+  `claude_agent_sdk.ClaudeAgentOptions.mcp_servers` (a real, introspected field) now points at,
+  landing in `claude_code_launcher.py` (not `claude_code_client.jac` as this bullet originally
+  said — that module never touches `ClaudeAgentOptions` at all, for the same import-explosion
+  reason the launcher exists as its own plain-Python process; `mcp_servers={"jac": {"command":
+  "jac", "args": ["mcp"]}}` only needed adding where the options object is actually built).
+  Live-verified end to end, not just wired and assumed: a real turn against Claude Code sees and
+  correctly names all 19 `mcp__jac__*` tools, and a direct SDK call with permissions granted
+  confirms one (`validate_jac`) genuinely executes over the stdio connection and returns a real
+  result. **A real, honest finding from that verification, not a gap in this change**: by default
+  the SDK blocks calling *any* MCP tool without prior approval, identically to how it already
+  gates Bash/Edit/Write — invisible to jac-studio's UI today for the same reason those are. That's
+  the tool-approval gap this phase already tracks as its own, separate, higher-priority item
+  below, not something this bullet needed to solve to be complete.
 
 **A second, more systematic pass (same day) went through all 84 top-level entries in upstream's
 `chat/browser/`, not just what one screenshot led to — see the research doc's own "full audit"

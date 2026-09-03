@@ -13,6 +13,17 @@ forwarding raw SDK messages (which aren't JSON-serializable as-is: AssistantMess
 are dataclasses, not dicts).
 
 Usage: claude_code_launcher.py <prompt> [--resume <session_id>] [--cwd <path>]
+
+`mcp_servers` points Claude Code at `jac mcp` (a real, working first-party MCP server --
+confirmed live via `jac mcp --inspect`, 140 resources/19 tools/9 prompts) over stdio, giving it
+structured Jac-specific tools (validate/format/transpile/docs-search) instead of shelling out
+through Bash for the same work. `command="jac"` resolves via this process's own inherited PATH
+(the same PATH the parent `jac run` server process already resolved `jac` from to start itself),
+not an absolute path -- no extra resolution needed since `claude_code_client.jac` already copies
+the full parent environment (`dict(os.environ)`) into this launcher's env. Confirmed live: the
+`ClaudeAgentOptions.mcp_servers` field and its stdio-server shape
+(`{"command": str, "args": list[str]}`) by introspecting the installed `claude_agent_sdk` package
+directly, not assumed from docs.
 """
 import argparse
 import asyncio
@@ -38,6 +49,7 @@ async def main() -> None:
         include_partial_messages=True,
         resume=args.resume,
         cwd=args.cwd,
+        mcp_servers={"jac": {"command": "jac", "args": ["mcp"]}},
     )
 
     try:

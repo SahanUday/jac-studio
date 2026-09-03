@@ -321,6 +321,7 @@ def:pub app(onToggleTheme: any) -> JsxElement {
     has ai_pending_prompt: str = "";
     has ai_pending_auto_send: bool = False;
     has ai_pending_nonce: int = 0;
+    has ai_chat_maximized: bool = False;
 
     async def _save_session -> None;
     async def _toggle_panel(panel_id: str) -> None;
@@ -349,6 +350,7 @@ def:pub app(onToggleTheme: any) -> JsxElement {
     def set_task_picker_open(next_open: bool) -> None;
     async def run_selected_task(label: str) -> None;
     def handle_ask_ai(promptText: str, autoSend: bool) -> None;
+    def toggle_ai_chat_maximized -> None;
 
     async can with entry {
         commands = await list_commands();
@@ -413,34 +415,44 @@ def:pub app(onToggleTheme: any) -> JsxElement {
         <TitleBarApp onOpenCommandPalette={lambda (e: any) { handle_command("workbench.action.showCommands"); }} />
         <div style={{"display": "flex", "flex": "1", "overflow": "hidden"}}>
             <ActivityBarApp activeViewId={active_view_id} onSelectView={select_view} />
-            <div style={{"width": "260px", "flexShrink": "0", "borderRight": "1px solid #2A2B2C", "overflow": "hidden", "position": "relative"}}>
-                <div style={{"display": "block" if active_view_id == "explorer" else "none", "height": "100%"}}>
-                    <FileTreeApp onOpenFile={open_tab} onCompareFiles={open_diff_tab} gitStatus={git_status_by_path} />
-                </div>
-                <div style={{"display": "block" if active_view_id == "search" else "none", "height": "100%"}}>
-                    <SearchApp onOpenResult={open_search_result} />
-                </div>
-                <div style={{"display": "block" if active_view_id == "scm" else "none", "height": "100%"}}>
-                    <ScmApp active={active_view_id == "scm"} onOpenDiff={open_scm_diff} onOpenFile={open_tab} onNotify={add_notification} onStatusChange={set_git_status} />
-                </div>
-                <div style={{"display": "block" if active_view_id == "outline" else "none", "height": "100%"}}>
-                    <OutlineApp
-                        active={active_view_id == "outline"}
-                        path={active_tab_path}
-                        onOpenLocation={open_search_result}
-                        cursorLine={active_cursor["line"]}
-                        cursorColumn={active_cursor["column"]}
-                    />
-                </div>
-                <div style={{"display": "block" if active_view_id == "ai_chat" else "none", "height": "100%"}}>
-                    <AIChatApp active={active_view_id == "ai_chat"} pendingPrompt={ai_pending_prompt} pendingAutoSend={ai_pending_auto_send} pendingNonce={ai_pending_nonce} />
-                </div>
-            </div>
-            <div style={{"flex": "1", "overflow": "hidden"}}>
-                <ResizablePanelGroup direction="horizontal">
-                    {panel_children}
-                </ResizablePanelGroup>
-            </div>
+            <ResizablePanelGroup direction="horizontal" style={{"flex": "1"}}>
+                <ResizablePanel defaultSize={18} minSize={12} maxSize={60} style={{"borderRight": "1px solid #2A2B2C", "overflow": "hidden", "position": "relative"}}>
+                    <div style={{"display": "block" if active_view_id == "explorer" else "none", "height": "100%"}}>
+                        <FileTreeApp onOpenFile={open_tab} onCompareFiles={open_diff_tab} gitStatus={git_status_by_path} />
+                    </div>
+                    <div style={{"display": "block" if active_view_id == "search" else "none", "height": "100%"}}>
+                        <SearchApp onOpenResult={open_search_result} />
+                    </div>
+                    <div style={{"display": "block" if active_view_id == "scm" else "none", "height": "100%"}}>
+                        <ScmApp active={active_view_id == "scm"} onOpenDiff={open_scm_diff} onOpenFile={open_tab} onNotify={add_notification} onStatusChange={set_git_status} />
+                    </div>
+                    <div style={{"display": "block" if active_view_id == "outline" else "none", "height": "100%"}}>
+                        <OutlineApp
+                            active={active_view_id == "outline"}
+                            path={active_tab_path}
+                            onOpenLocation={open_search_result}
+                            cursorLine={active_cursor["line"]}
+                            cursorColumn={active_cursor["column"]}
+                        />
+                    </div>
+                    <div style={{"display": "block" if active_view_id == "ai_chat" else "none", "height": "100%"}}>
+                        <AIChatApp
+                            active={active_view_id == "ai_chat"}
+                            pendingPrompt={ai_pending_prompt}
+                            pendingAutoSend={ai_pending_auto_send}
+                            pendingNonce={ai_pending_nonce}
+                            maximized={ai_chat_maximized}
+                            onToggleMaximize={toggle_ai_chat_maximized}
+                        />
+                    </div>
+                </ResizablePanel>
+                <ResizableHandle />
+                <ResizablePanel defaultSize={82} minSize={30} style={{"overflow": "hidden"}}>
+                    <ResizablePanelGroup direction="horizontal">
+                        {panel_children}
+                    </ResizablePanelGroup>
+                </ResizablePanel>
+            </ResizablePanelGroup>
         </div>
         <div style={{
             "display": "flex" if terminal_open else "none",

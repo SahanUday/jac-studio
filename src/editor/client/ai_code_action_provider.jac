@@ -64,32 +64,32 @@ def _provide_code_actions(model: any, range: any, context: any) -> dict[str, any
     markers = context.markers;
     if len(markers) > 0 {
         actions.append({
-            "title": "Fix with Claude Code",
+            "title": "Fix with AI",
             "kind": "quickfix",
             "diagnostics": markers,
             "command": {
                 "id": "jac-studio.aiFix",
-                "title": "Fix with Claude Code",
+                "title": "Fix with AI",
                 "arguments": [_fix_prompt(path, lang, code, markers), True]
             }
         });
     }
     if not range.isEmpty() {
         actions.append({
-            "title": "Explain with Claude Code",
+            "title": "Explain with AI",
             "kind": "quickfix",
             "command": {
                 "id": "jac-studio.aiExplain",
-                "title": "Explain with Claude Code",
+                "title": "Explain with AI",
                 "arguments": [_explain_prompt(path, lang, code), True]
             }
         });
         actions.append({
-            "title": "Ask Claude Code to modify this...",
+            "title": "Ask AI to modify this...",
             "kind": "quickfix",
             "command": {
                 "id": "jac-studio.aiModify",
-                "title": "Ask Claude Code to modify this...",
+                "title": "Ask AI to modify this...",
                 "arguments": [_modify_prompt(path, lang, code), False]
             }
         });

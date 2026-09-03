@@ -16,10 +16,13 @@ impl app.handle_send -> None {
     ];
     is_streaming = True;
 
+    ws = await get_current_workspace();
+    cwd = ws["root_path"] if ws is not None else None;
+
     resp = await fetch("/function/start_chat_turn", {
         "method": "POST",
         "headers": {"Content-Type": "application/json"},
-        "body": JSON.stringify({"prompt": prompt, "session_id": session_id})
+        "body": JSON.stringify({"prompt": prompt, "session_id": session_id, "cwd": cwd})
     });
     reader = resp.body.getReader();
     decoder = new(TextDecoder);
@@ -78,7 +81,8 @@ impl app.handle_event(event: dict[str, any]) -> None {
             "name": event.get("name", ""),
             "input": {},
             "status": "running",
-            "result_text": ""
+            "result_text": "",
+            "expanded": False
         };
         messages = messages + [step];
         return;
@@ -140,6 +144,18 @@ impl app.update_tool_step(tool_use_id: str, updates: dict[str, any]) -> bool {
         }
     }
     return False;
+}
+
+"""Collapsed by default (`tool_use_start` sets `expanded: False`) -- click the card's header row
+to see the full input/result. Reuses `update_tool_step` rather than a bespoke lookup, at the cost
+of one extra scan to read the current value before flipping it -- this list is at most a handful of
+entries long, not a hot path worth a second bookkeeping structure for."""
+impl app.toggle_tool_step_expanded(tool_use_id: str) -> None {
+    current = [m for m in messages if m.get("kind") == "tool_step" and m["tool_use_id"] == tool_use_id];
+    if len(current) == 0 {
+        return;
+    }
+    update_tool_step(tool_use_id, {"expanded": not current[0].get("expanded", False)});
 }
 
 """Sends the user's decision to `claude_code_client.jac`'s `approve_tool_call` (an ordinary RPC

@@ -17,12 +17,29 @@ explosion), not just a stylistic echo of the DAP client.
 for the identical reason** -- spawning `claude_code_launcher.py` is a subprocess execution, the
 same trust class already gated project-wide.
 
-**`cwd` is set to the actual open workspace root, not wherever this server process happens to
-run.** Confirmed live during the isolation spike this module is built on: without an explicit
-`cwd`, the SDK inherits the *server process's* cwd, which pulled in jac-studio's own `.claude/`
-config (hooks fired, this project's own skills/agents listed) instead of the user's actual open
-project -- the same per-project scoping real Claude Code already does, but something this client
-has to set deliberately rather than get by accident.
+**`cwd` is resolved by the *caller*, outside the SSE generator, and passed in as a plain
+argument -- never queried from inside `stream()` itself.** An earlier version called
+`get_current_workspace()` (a real graph query, `[root-->[?:Workspace]]`) from inside `stream()`,
+on the theory that a `Generator`-returning endpoint still sees the same `root`-scoped graph state
+as an ordinary call. **Confirmed live, and wrong, via real user reports (not assumed): the same
+mechanism produced two distinct failures** -- a first turn silently answered from the *server
+process's own* cwd instead of the real open workspace (`get_current_workspace()` returned `None`
+inside the generator even though `open_workspace` had genuinely succeeded moments earlier in the
+same browser session), and a second turn in the same session hit a real
+`PgWireError: connection lost mid-transaction; retry` at that exact call site. Both are one root
+cause: the two still-open tracker entries on SSE-generator isolation
+(`2026-09-01-sse-generator-endpoint-runs-in-isolated-process-no-shared-glob-state`,
+`2026-09-02-sse-generator-glob-isolation-not-reproduced-single-process-dev-run`) only tested plain
+`glob` state: this is the first confirmation the same isolation risk extends to a real
+`root`-scoped *graph query with its own DB connection/transaction*, not just an in-memory dict --
+worth its own tracker entry, see `2026-09-05-sse-generator-root-scoped-graph-query-unreliable`.
+**The fix is the exact pattern `2026-09-01-...`'s own Plan section already prescribes for
+"state needed only at spawn time": resolve it via an ordinary call, before the generator ever
+starts, and pass it in as a function argument.** `ai_chat.jac`/`inline_chat_widget.jac` now call
+`get_current_workspace()` themselves (a plain, non-generator RPC call -- the exact same call
+`file_tree.jac`'s own session restore already makes successfully) immediately before POSTing to
+`start_chat_turn`, and pass the resolved `cwd` in the request body. `stream()` itself no longer
+calls `get_current_workspace()` or imports `workspace_service` at all.
 
 **`PYTHONPATH` is built from this running process's own `sys.path`, mirroring
 `dap_client.jac`'s `_build_pythonpath`.** `_resolve_embedded_python`'s target (the shared
@@ -61,7 +78,6 @@ import os;
 import sys;
 import from typing { AsyncGenerator, Generator }
 import from jaclang.project.config { JacConfig }
-import from src.workbench.workspace.workspace_service { get_current_workspace }
 
 def _ai_enabled -> bool {
     cfg = JacConfig.discover();
@@ -109,7 +125,7 @@ SSE frame unchanged (the launcher already emits the shape the client needs -- se
 docstring), and ends the stream once the subprocess exits. Refuses to run at all when
 `[terminal] enabled = false`, matching `dap_client.jac`'s `start_debug_session` and
 `lsp_client.jac`'s equivalent gate exactly."""
-async def:pub start_chat_turn(prompt: str, session_id: str | None) -> Generator {
+async def:pub start_chat_turn(prompt: str, session_id: str | None, cwd: str | None) -> Generator {
     async def stream -> AsyncGenerator[str, None] {
         if not _ai_enabled() {
             yield json.dumps({"type": "error", "message": "AI tool integrations are disabled. Set [terminal] enabled = true in jac.toml to turn them on."});
@@ -121,9 +137,6 @@ async def:pub start_chat_turn(prompt: str, session_id: str | None) -> Generator 
             yield json.dumps({"type": "error", "message": "No Python interpreter found for the embedded Jac runtime."});
             return;
         }
-
-        ws = get_current_workspace();
-        cwd = ws["root_path"] if ws is not None else None;
 
         env = dict(os.environ);
         env["PYTHONPATH"] = _build_pythonpath(sys.path);

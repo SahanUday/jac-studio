@@ -55,6 +55,7 @@ import from "react" { useEffect }
 import from "react-dom" { createPortal }
 import from src.workbench.ai.claude_code_client { start_chat_turn, approve_tool_call }
 import from src.workbench.ai.ai_tool_diff_preview { app as AiToolDiffPreview }
+import from src.workbench.workspace.workspace_service { get_current_workspace }
 
 def:pub app(open: bool, onClose: any, editorRef: any, monacoRef: any, path: str) -> JsxElement {
     has input_text: str = "";
@@ -126,7 +127,7 @@ def:pub app(open: bool, onClose: any, editorRef: any, monacoRef: any, path: str)
                     }}
                 >
                     <div style={{"display": "flex", "justifyContent": "space-between", "alignItems": "center"}}>
-                        <span style={{"color": "#8C8C8C", "fontSize": "10px", "textTransform": "uppercase"}}>Inline Chat (Claude Code)</span>
+                        <span style={{"color": "#8C8C8C", "fontSize": "10px", "textTransform": "uppercase"}}>Inline Chat</span>
                         <span
                             role="button"
                             onClick={handle_close}
@@ -159,7 +160,7 @@ def:pub app(open: bool, onClose: any, editorRef: any, monacoRef: any, path: str)
                             value={input_text}
                             onChange={handle_input_change}
                             onKeyDown={handle_key_down}
-                            placeholder="Ask Claude Code to edit this..."
+                            placeholder="Ask AI to edit this..."
                             rows={2}
                             autoFocus={True}
                             style={{"flex": "1", "background": "#1E1E1E", "color": "#CCCCCC", "border": "1px solid #2A2B2C", "borderRadius": "3px", "padding": "0.3rem", "fontFamily": "inherit", "fontSize": "12px", "resize": "none"}}

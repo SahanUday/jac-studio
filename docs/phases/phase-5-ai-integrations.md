@@ -154,3 +154,55 @@ description and `architecture.md`'s corresponding numbered item for the full ver
 5. Per `roadmap.md`'s own ordering, **Phase 6 (extension system, Phase B: dynamic loading, a
    manifest format, the Extensions view) is next** — nothing in it depends on any of this phase's
    deferred items shipping first.
+
+## Post-closure QA round (2026-09-05)
+
+The project sponsor's own first real, hands-on testing pass of the shipped Claude Code integration
+(following the manual test guide handed off after closure) found two real bugs and three genuine
+UX gaps — appended here rather than editing "What was actually built" above, so the record of what
+shipped at closure time stays honest; see the PR for this round for the full diff.
+
+- **Bug: a chat turn could silently answer based on the server process's own launch directory
+  instead of the real open workspace, and a follow-up turn in the same conversation could hit a
+  real, uncaught `PgWireError`.** Root cause: `get_current_workspace()` (a real `root`-scoped graph
+  query) was called from inside `start_chat_turn`'s own SSE generator — the first confirmation this
+  project's known SSE-generator-isolation risk (previously only tested against plain `glob` state)
+  extends to a real graph query with its own DB connection/transaction. Fixed by resolving `cwd` in
+  the caller (`ai_chat.jac`/`inline_chat_widget.jac`, an ordinary `await`ed call) and passing it
+  into `start_chat_turn` as a plain argument — the same "state needed only at spawn time" pattern
+  `dap_client.jac`'s own tracker entry already prescribed. See `claude_code_client.jac`'s docstring
+  and tracker entry `2026-09-05-sse-generator-root-scoped-graph-query-unreliable`.
+- **UX: tool-step cards redesigned to be collapsed by default** (a one-line summary + status icon +
+  chevron, click to expand), matching real-product precedent (VS Code's own Copilot Chat) instead
+  of always showing full JSON input/result inline.
+- **UX: the primary identity is now "AI Chat" (with a small "via Claude Code" caption), not
+  "Claude Code" as the headline** — across the sidebar header, the approval card, code-action menu
+  items, and inline chat. Deliberately not a full provider-selector UI (only one real provider
+  exists today); see `ai_chat.jac`'s own docstring for the reasoning.
+- **UX: the sidebar is now resizable**, and **AI Chat has a "maximize" toggle** giving it the whole
+  workbench area on demand (a pure CSS overlay on the same mounted instance, not a second mount
+  point — see `ai_chat.jac`'s docstring for why that distinction matters: a real tab or portal would
+  have unmounted/remounted the component and lost the live conversation).
+
+**A real, unresolved environmental limitation hit while verifying this round, worth recording
+honestly rather than glossing over**: this machine's client-bundle build (`.jac/client/compiled`)
+repeatedly, deterministically failed to fully compile several files (`command_registry.jac` among
+them — its own client output stayed a two-line stub missing `list_commands`, with zero error
+reported anywhere) across many full-cache-clear rebuilds, independent of orphaned-process cleanup,
+memory headroom (retried with 1.4–2.9 GiB free and a raised `capped --mem 5G` cap), or a settling
+period — a genuinely different, more severe symptom than the already-tracked
+`2026-09-03-jac-run-kill-leaves-vite-child-process-serving-stale-state` entry (that one is about
+*stale* state surviving a bad restart; this is a *fresh*, single, clean process still silently
+under-compiling). A `jac lsp` process unrelated to this work was independently observed consuming
+2.8–3.3 GiB RSS and climbing throughout, on a shared, multi-session machine — the most likely
+contributing factor, though not confirmed to the kernel/OOM-killer level. This blocked a full
+`jac browse` live UI verification pass for this round's changes; verification instead relied on
+`jac check` (clean on every touched file) + `jac test` (477 passed, 1 known-expected failure from
+`jac.toml`'s temporarily-enabled `[terminal]` flag) + a targeted, successful diagnostic session run
+earlier in the same investigation (before the environment further degraded) that directly confirmed
+the `get_current_workspace()`-inside-the-generator mechanism using real request/response tracing.
+Not logged as a new tracker entry in its own right — the evidence doesn't yet distinguish "a real
+jaclang build-pipeline robustness gap" from "this specific machine was overloaded by concurrent,
+unrelated sessions at this specific time" cleanly enough to write a confident root-cause Plan
+section; worth a properly isolated repro (a dedicated machine/container, nothing else running) if
+this recurs.

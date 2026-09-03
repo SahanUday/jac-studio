@@ -124,6 +124,48 @@ the other six providers via `register_ai_code_action_provider` (`ai_code_action_
 See that module's own docstring for the full "Fix"/"Explain"/"Modify" design and why it routes
 through the already-shipped `AIChatApp` sidebar rather than a new UI surface.
 
+**Inline chat (2026-09-04, `docs/architecture.md`'s "Reframed 2026-09-03" AI section, item 2)** --
+`Ctrl+I` toggles `inline_chat_open`. `InlineChatWidgetApp` (`inline_chat_widget.jac`) is rendered
+unconditionally alongside `<Editor>` once `loaded`, mounting only its own portal content when
+`open` -- see that module's own docstring for the full content-widget/`createPortal` design and
+why this is a genuinely new integration pattern in this project, verified live before being relied
+on.
+
+**A real, previously-undiscovered Monaco limitation found live while wiring `Ctrl+I`, and it
+turns out to affect the pre-existing `Ctrl+S` too, not just this new command.** With more than one
+`MonacoEditorApp` instance mounted at once (any time more than one tab is open -- the normal case,
+per this module's own `keepCurrentModel` docstring above, every open tab keeps its editor mounted),
+each instance's own `editor.addCommand(chord, handler)` call does **not** scope that keybinding to
+its own editor instance the way real VS Code's workbench-level keybinding service would. Confirmed
+live, isolated from this project's own code with a fresh, minimal test command registered directly
+against both live editor instances: whichever instance's `addCommand` call happens to run *last*
+wins the chord globally, and its handler is the *only* one Monaco ever invokes for it -- regardless
+of which editor genuinely has focus (`hasTextFocus()` on the actually-focused editor still returns
+`True`, but its own registered handler never fires). Passing a `"editorTextFocus"` when-context
+string as `addCommand`'s third argument, the standard fix for this class of problem in a real VS
+Code workbench, was tried and **confirmed not to fix it** in this standalone `monaco-editor`
+embedding -- the isolated test still only ever invoked the last-registered handler. This means,
+concretely, that **before this fix, `Ctrl+S` while genuinely focused on one file could silently
+save a completely different open file's content instead** -- confirmed live: focused and typed in
+`broken.jac`, pressed the real key combo, and the server received a `save_document` call for
+`README.md`. A real, previously-unnoticed correctness bug, not a hypothetical.
+
+**The fix: one truly global keybinding registration, not one per editor instance, that looks up the
+actually-focused editor dynamically instead of trusting Monaco to route to the right closure.**
+`_focused_editor_handlers` (module-level `glob`, keyed by `path`) holds each mounted instance's own
+`{"save", "toggleInlineChat"}` callbacks, written in `handle_mount`. `_register_global_editor_keybindings`
+registers the *actual* `Ctrl+S`/`Ctrl+I` commands exactly once (guarded by `_global_keybindings_registered`,
+the same idempotent-guard shape every provider in this directory already uses) -- whichever editor's
+`handle_mount` happens to win that one registration no longer matters, since the handler body itself
+finds `monaco.editor.getEditors().find(hasTextFocus)` at invocation time and dispatches to *that*
+editor's own stored callbacks, not whichever closure Monaco's own (confirmed-unreliable) routing
+would have picked. Verified against the exact repro above: focused `broken.jac` among two open
+tabs, pressed the real key combo, `save_document` now correctly received `broken.jac`'s path.
+`_focused_editor_handlers` entries are never explicitly removed on unmount -- the same accepted-leak
+call already made for the Monaco model itself just above (a closed tab's stale entry is silently
+overwritten if that path is ever reopened, and otherwise costs nothing in this single-user, locally
+run tool).
+
 **Breadcrumb bar (2026-08-31, `docs/roadmap.md` Phase 4's native LSP client bullet, closing out its
 originally-scoped "outline/breadcrumbs" pair)** -- a thin strip above `<Editor>` showing the file
 name plus the chain of symbols (`breadcrumb_symbols.jac`'s `symbol_path_at_position`, walked over
@@ -188,12 +230,52 @@ import from src.editor.client.jac_reference_provider { register_jac_reference_pr
 import from src.editor.client.jac_rename_provider { register_jac_rename_provider }
 import from src.editor.client.git_conflict_codelens_provider { register_conflict_codelens_provider }
 import from src.editor.client.ai_code_action_provider { register_ai_code_action_provider }
+import from src.editor.client.inline_chat_widget { app as InlineChatWidgetApp }
 import from src.workbench.scm.git_service { get_line_changes }
 import from src.workbench.lsp.lsp_client { notify_document_open, notify_document_save, get_document_symbols }
 import from src.workbench.symbol_icons.symbol_icons { symbol_icon_class }
 import from src.editor.client.breadcrumb_symbols { symbol_path_at_position }
 import from src.workbench.dap.dap_client { get_breakpoints, set_breakpoints }
 import from src.editor.client.command_palette_override { register_command_palette_override }
+
+"""Keyed by `path`, one entry per currently-mounted `MonacoEditorApp` instance -- see this module's
+own docstring ("A real, previously-undiscovered Monaco limitation...") for why this registry, and
+the single global keybinding registration below, exist at all."""
+glob _focused_editor_handlers: dict[str, dict[str, any]] = {};
+glob _global_keybindings_registered: bool = False;
+
+"""Registers `Ctrl+S`/`Ctrl+I` exactly once, globally, on whichever `editor` instance happens to
+call this first -- see this module's own docstring for why per-instance `addCommand` calls don't
+work here. Both handlers look up the *actually*-focused editor dynamically at invocation time via
+`hasTextFocus()`, then dispatch to that editor's own callbacks from `_focused_editor_handlers`,
+rather than trusting Monaco to have routed the keypress to the right closure itself."""
+def _register_global_editor_keybindings(editor: any, monaco: any) -> None {
+    if _global_keybindings_registered {
+        return;
+    }
+    _global_keybindings_registered = True;
+
+    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, lambda {
+        focused = [e for e in monaco.editor.getEditors() if e.hasTextFocus()];
+        if len(focused) == 0 {
+            return;
+        }
+        handlers = _focused_editor_handlers.get(focused[0].getModel().uri.path);
+        if handlers {
+            handlers["save"]();
+        }
+    });
+    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyI, lambda {
+        focused = [e for e in monaco.editor.getEditors() if e.hasTextFocus()];
+        if len(focused) == 0 {
+            return;
+        }
+        handlers = _focused_editor_handlers.get(focused[0].getModel().uri.path);
+        if handlers {
+            handlers["toggleInlineChat"]();
+        }
+    });
+}
 
 def:pub app(path: str, onCursorChange: any, initialCursor: any, onDirtyChange: any, onOpenLocation: any, onOpenCommandPalette: any, onAskAI: any) -> JsxElement {
     has content: str = "";
@@ -206,6 +288,7 @@ def:pub app(path: str, onCursorChange: any, initialCursor: any, onDirtyChange: a
     has symbols: list[dict[str, any]] = [];
     has breadcrumb_path: list[dict[str, any]] = [];
     has breakpoint_lines: list[int] = [];
+    has inline_chat_open: bool = False;
 
     async can with entry {
         result = await open_document(path);
@@ -232,6 +315,8 @@ def:pub app(path: str, onCursorChange: any, initialCursor: any, onDirtyChange: a
     async def retry_refresh_symbols(current_content: str) -> None;
     def update_breadcrumb -> None;
     def handle_breadcrumb_click(target_line: int, target_column: int) -> None;
+    def toggle_inline_chat -> None;
+    def close_inline_chat -> None;
 
     <div style={{"height": "100%", "width": "100%", "display": "flex", "flexDirection": "column"}}>
         {(
@@ -289,6 +374,9 @@ def:pub app(path: str, onCursorChange: any, initialCursor: any, onDirtyChange: a
                     Loading...
                 </div>
             )}
+            {(
+                <InlineChatWidgetApp open={inline_chat_open} onClose={close_inline_chat} editorRef={editor_ref} monacoRef={monaco_ref} path={path} />
+            ) if loaded else None}
         </div>
     </div>
 }

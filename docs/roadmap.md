@@ -345,8 +345,15 @@ Added to this phase's scope:
   selection produced the real menu; Explain/Modify both fired correctly (auto-send vs. prefill-only
   respectively); a synthetic diagnostic marker confirmed Fix's diagnostic-plus-code prompt. See
   `architecture.md`'s item 1 for the full record.
-- **Inline chat** (a Ctrl+I popover, a Monaco content-widget anchored at cursor/selection) — medium
-  lift, same backend reuse.
+- **Inline chat — done (2026-09-04).** A `Ctrl+I` popover (`inline_chat_widget.jac`), a real Monaco
+  content widget with React content mounted via `ReactDOM.createPortal` (a genuinely new
+  integration pattern in this project), making its own independent `start_chat_turn` call and
+  handling its own tool approvals inline. Surfaced and fixed a real, previously-undiscovered bug
+  along the way: Monaco's standalone `addCommand` doesn't scope keybindings per editor instance,
+  which also affected the pre-existing `Ctrl+S` (could silently save the wrong open file) — see
+  `architecture.md`'s item 2 and tracker entry
+  `2026-09-04-monaco-addcommand-does-not-scope-per-standalone-editor-instance` for the full record.
+  Live-verified end to end via `jac browse`.
 - **A native, dependency-free agent provider** built on `by llm(tools=[...])` using jac-studio's own
   already-built Phase 4 service functions as tools (`create_file`, `run_in_terminal`,
   `search_in_files`, ...) — a fourth provider option needing no external CLI, just a model API key.

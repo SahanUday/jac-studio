@@ -311,21 +311,72 @@ without building a generic mechanism for arbitrary third-party chat/agent extens
 coding tool integrations" section for the full reasoning — this phase turns that design into a
 scoped deliverable.
 
+- **Claude Code — done (2026-09-03, PR #69).** `claude_code_client.jac` (subprocess-only, gated
+  behind `[terminal] enabled`, real streaming + multi-turn continuity via the SDK's own `resume`
+  mechanism) + `ai_chat.jac`'s sidebar panel. Live-verified end to end via a real `jac run` +
+  `jac browse` session, not just `jac check`. Meets this phase's original exit criterion below on
+  its own.
 - **GitHub Copilot** — realistic shape: the same subprocess/JSON-RPC pattern as the LSP/DAP clients
   above, since Copilot's own inline-completion path runs a bundled `copilot-language-server`
   subprocess in real VS Code too, not primarily through chat-extension APIs. Needs its own scoping
-  pass first (auth/licensing model, exact protocol surface).
-- **OpenCode** and **Claude Code** — both CLI-first, SDK/subprocess-drivable agentic tools; the
-  realistic integration shape is a spawned, capability-gated process (the terminal's own mechanism)
-  with output streamed back via the SSE/`Generator` pattern already used for LLM-token streaming.
-  Each needs its own scoping pass before implementation, same as Copilot.
+  pass first (auth/licensing model, exact protocol surface). Not started.
+- **OpenCode** — CLI-first, SDK/subprocess-drivable agentic tool; the realistic integration shape is
+  a spawned, capability-gated process (the terminal's own mechanism) with output streamed back via
+  the SSE/`Generator` pattern already used for LLM-token streaming. Needs its own scoping pass
+  before implementation, same as Copilot. Not started.
 - **`by llm()`/`sem`-based native features** (inline suggestions, a native chat panel jac-studio
   owns outright) are a legitimate parallel track here too, not superseded by the external
   integrations above — build whichever gives the fastest real signal first.
 
-Exit criteria: at least one of the three named tools is usable end to end inside jac-studio for a
-real coding task (not a mock/demo), with its own auth flow and output surfaced through the
-Output/notification infra Phase 4 already built.
+**Reframed 2026-09-03, still within this phase, not a scope change to the bullets above**: two real
+research passes (a live `microsoft/vscode` checkout's actual Copilot Chat source, and jaseci's own
+native agentic capabilities — see `architecture.md`'s "AI coding tool integrations" section, "Reframed
+2026-09-03" for the full reasoning and both linked research docs) found that VS Code's own AI UI/UX
+(the "Fix"/"Explain" quick-fix menu, inline chat, inline completions) is built entirely on generic,
+backend-agnostic Monaco/editor APIs — meaning richer AI UX in jac-studio is achievable as new *UI
+entry points* against the `start_chat_turn` mechanism already shipped, not new integrations per se.
+Added to this phase's scope:
+
+- **AI code actions** (Monaco `CodeActionProvider` contributing "Fix"/"Explain"/"Modify", same
+  category as the LSP client's existing providers) — smallest lift, total backend reuse.
+- **Inline chat** (a Ctrl+I popover, a Monaco content-widget anchored at cursor/selection) — medium
+  lift, same backend reuse.
+- **A native, dependency-free agent provider** built on `by llm(tools=[...])` using jac-studio's own
+  already-built Phase 4 service functions as tools (`create_file`, `run_in_terminal`,
+  `search_in_files`, ...) — a fourth provider option needing no external CLI, just a model API key.
+  Not a replacement for the external-tool integrations (an external agentic CLI brings permission
+  prompting, context management, and a curated tool set a from-scratch `by llm()` loop starts
+  without) — a real parallel option, per the research doc's own caveats.
+- **MCP wiring for the Claude Code provider already shipped**: `jac mcp` is a real, working MCP
+  server (confirmed: `jac mcp --inspect` lists 140 resources/19 tools/9 prompts) that
+  `claude_agent_sdk.ClaudeAgentOptions.mcp_servers` (a real, introspected field) can already point
+  at — small, cheap, backend-only change giving Claude Code structured Jac tools instead of raw
+  Bash.
+
+**A second, more systematic pass (same day) went through all 84 top-level entries in upstream's
+`chat/browser/`, not just what one screenshot led to — see the research doc's own "full audit"
+section for the complete categorized list.** Two real, currently-missing capabilities surfaced,
+higher priority than the UI items above since they're trust/safety and data-loss gaps, not just
+polish:
+
+- **Tool approval/confirmation** — Claude Code's Edit/Write/Bash tool calls run today with whatever
+  SDK permission default applies, entirely invisible in jac-studio's UI. `ClaudeAgentOptions.can_use_tool`
+  is a real, unwired SDK hook for building this.
+- **Multi-file edit review** — Claude Code's edits land on disk directly today, no diff/review/
+  rollback surface at all. Upstream's `chatEditing/` is a full checkpoint/timeline system (larger
+  than a simple accept/reject); a jac-studio v1 doesn't need that scope, even a per-file diff
+  preview reusing Phase 3's existing diff editor would close most of the real risk.
+- **A portable AI-plugin format worth supporting, not inventing**: VS Code natively parses
+  `.claude-plugin/plugin.json` bundles (`hooks`/`commands`/`skills`/`agents`/`mcpServerDefinitions`)
+  — the exact format Claude Code's own plugin system already uses. Since jac-studio's Claude Code
+  provider already talks to real Claude Code, a discovery/install feature for these bundles needs
+  no new format design.
+
+Exit criteria (unchanged, already met): at least one of the three named tools is usable end to end
+inside jac-studio for a real coding task (not a mock/demo), with its own auth flow and output
+surfaced through the Output/notification infra Phase 4 already built. The reframed items above are
+this phase's next concrete steps, not new exit-criteria — Copilot/OpenCode and the UI/native-agent
+expansion remain open work within this same phase.
 
 ## Phase 6 — Extension system, Phase B (dynamic, still trusted)
 

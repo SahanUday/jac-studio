@@ -83,6 +83,36 @@ impl app.handle_event(event: dict[str, any]) -> None {
         messages = messages + [{"role": "error", "text": str(event.get("message", ""))}];
         return;
     }
+    if event_type == "tool_approval_request" {
+        card: dict[str, any] = {
+            "tool_use_id": event.get("tool_use_id", ""),
+            "name": event.get("name", ""),
+            "input_text": JSON.stringify(event.get("input", {}))
+        };
+        pending_approvals = pending_approvals + [card];
+        return;
+    }
+}
+
+"""Sends the user's decision to `claude_code_client.jac`'s `approve_tool_call` (an ordinary RPC
+call, not part of the SSE stream -- see `app`'s own docstring for why the approval card and the
+message log are kept as separate lists) and removes the resolved card.
+
+**The decision note is appended into `messages[-1]`'s own text, the exact same pattern
+`handle_event`'s `tool_use` branch already uses -- not pushed as a new list entry.** Found live,
+not assumed: an earlier version pushed a separate `{"role": "tool", ...}` message here, which
+silently broke `text_delta`'s own `messages[-1]` append target -- Claude's turn resumes streaming
+*after* a tool call resolves, and that continuation text landed on this decision line instead of a
+fresh assistant bubble (reproduced live: `"[Allowed Write]Created ..."` concatenated with no
+break). Reusing the established in-place-note pattern keeps the last-message-is-the-live-response
+invariant every other branch already depends on."""
+impl app.handle_approval_decision(tool_use_id: str, name: str, decision: str) -> None {
+    await approve_tool_call(tool_use_id, decision);
+    pending_approvals = [a for a in pending_approvals if a["tool_use_id"] != tool_use_id];
+    verb = "Allowed" if decision == "allow" else "Denied";
+    updated_last: dict[str, str] = {**messages[-1]};
+    updated_last["text"] = updated_last["text"] + chr(10) + "[" + verb + " " + name + "]" + chr(10);
+    messages = messages[:-1] + [updated_last];
 }
 
 impl app.handle_input_change(e: any) -> None {

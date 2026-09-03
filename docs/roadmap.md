@@ -369,9 +369,15 @@ section for the complete categorized list.** Two real, currently-missing capabil
 higher priority than the UI items above since they're trust/safety and data-loss gaps, not just
 polish:
 
-- **Tool approval/confirmation** — Claude Code's Edit/Write/Bash tool calls run today with whatever
-  SDK permission default applies, entirely invisible in jac-studio's UI. `ClaudeAgentOptions.can_use_tool`
-  is a real, unwired SDK hook for building this.
+- **Tool approval/confirmation — done (2026-09-03).** `ClaudeAgentOptions.can_use_tool` is wired up
+  in `claude_code_launcher.py`, gating Edit/Write/Bash/MCP calls behind a real approve/deny card in
+  `ai_chat.jac` instead of the SDK's own silent default (confirmed live, before this change: a
+  denied-by-default `Write` and a denied-by-default MCP tool call, neither ever asking). The
+  decision crosses the same file-based cross-process channel `dap_client.jac`'s command file
+  already established, for the same reason (the launcher and the RPC handling the decision are
+  different OS processes). Live-verified end to end via `jac browse`: Allow lets a real write land
+  on disk and the turn continue; Deny blocks it. See `architecture.md`'s item 4 for the full record,
+  including a real concatenation bug found and fixed during that same live verification pass.
 - **Multi-file edit review** — Claude Code's edits land on disk directly today, no diff/review/
   rollback surface at all. Upstream's `chatEditing/` is a full checkpoint/timeline system (larger
   than a simple accept/reject); a jac-studio v1 doesn't need that scope, even a per-file diff

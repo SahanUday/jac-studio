@@ -206,3 +206,27 @@ jaclang build-pipeline robustness gap" from "this specific machine was overloade
 unrelated sessions at this specific time" cleanly enough to write a confident root-cause Plan
 section; worth a properly isolated repro (a dedicated machine/container, nothing else running) if
 this recurs.
+
+**Update, same day**: the project sponsor manually tested this round's branch directly (not this
+investigation's own broken local server) and confirmed it works — all five items above verified
+live, in a real session, by a real user. That reframes the build-failure note above: it's specific
+to this one investigation's own local sandbox/toolchain state, not a defect this round's actual
+code carries, and not something the sponsor's own working session ever hit. The manual test also
+surfaced two more real, genuine gaps, fixed in a second commit on the same branch/PR:
+
+- **UX: assistant text now renders as real markdown** (new `markdown_message.jac`, shared by the
+  sidebar and inline chat) instead of raw pre-wrap text — a response's own literal ```` ``` ````/`**`
+  markdown syntax was showing up unrendered in the panel, confirmed via a real screenshot. User's
+  own messages stay plain text.
+- **UX: a "Thinking…" status row (spinner + label) now shows for the whole duration a turn is in
+  flight** — nothing previously indicated the agent was actively working between hitting Send and
+  the first token/tool call, unlike Claude Code's own CLI or VS Code Copilot Chat, both of which
+  show a persistent working indicator for the whole turn.
+
+This second commit's own changes were verified via `jac check` (clean) and `jac test` (478 passed)
+only — the local build issue above recurred identically even with 5.2 GiB free (this investigation's
+own retry log), which weakens "memory pressure" as the primary explanation and strengthens "specific
+to this sandbox's own cache/toolchain state" instead. Given the sponsor's own environment has
+already verified the base branch works, and given this file's own scope is a UI text-rendering
+change with no new backend surface, live-verifying it there (rather than fighting this local
+environment further) is the practical path, not a gap being glossed over.

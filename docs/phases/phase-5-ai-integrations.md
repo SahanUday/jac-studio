@@ -368,3 +368,18 @@ scope can never be excluded from this ancestor-walk risk while `cwd` is home-nes
 every real jac-studio workspace — full isolation is the *minimum* setting that actually works here,
 not a broader fix than necessary. See `claude_code_launcher.py`'s own docstring for the complete,
 source-verified write-up.
+
+**Update, same day, third finding**: after confirming the fix above, the sponsor found a follow-on
+gap -- a file the agent's `Write` tool created was genuinely on disk (confirmed with their own
+terminal) but never appeared in the Explorer sidebar, even with the dev server's HMR running. Not
+an HMR gap (Vite's hot reload only concerns this app's own source recompiling, unrelated to
+workspace files) -- `file_tree.jac`'s tree is plain client-side state, fetched once per directory
+on expand and never re-fetched on its own, and an AI tool call writes to disk from a wholly
+separate OS process with no way to signal the tree. Fixed with a `refreshSignal` nonce prop
+(mirroring the existing `pendingNonce` pattern `ai_chat.jac` already uses for the reverse
+direction): `ai_chat.jac` reports a successful `Write`/`Edit` tool result up to `workbench.jac`,
+which bumps the nonce it hands to `FileTreeApp`, which re-fetches every directory it already has
+loaded (root included) rather than trying to compute which one specific directory the write landed
+in. Scoped to the sidebar only, not `inline_chat_widget.jac` -- see `ai_chat.jac`'s own docstring
+for why threading the same callback through the editor/Monaco layer to reach the inline popover is
+real follow-up work, not dropped, but out of proportion for this pass's actual finding.

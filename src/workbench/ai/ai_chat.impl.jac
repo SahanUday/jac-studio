@@ -103,10 +103,20 @@ impl app.handle_event(event: dict[str, any]) -> None {
     }
     if event_type == "tool_result" {
         is_error = event.get("is_error", False);
-        update_tool_step(event.get("tool_use_id", ""), {
+        tool_use_id = event.get("tool_use_id", "");
+        update_tool_step(tool_use_id, {
             "status": "error" if is_error else "done",
             "result_text": str(event.get("content", ""))
         });
+        if not is_error {
+            matching = [m for m in messages if m.get("kind") == "tool_step" and m["tool_use_id"] == tool_use_id];
+            if len(matching) > 0 and matching[0]["name"] in ["Write", "Edit"] {
+                file_path = matching[0]["input"].get("file_path", "");
+                if file_path != "" {
+                    onWorkspaceFileChanged(file_path);
+                }
+            }
+        }
         return;
     }
     if event_type == "done" {

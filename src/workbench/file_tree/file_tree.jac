@@ -120,8 +120,27 @@ collide with it, so `width: "100%"` applies cleanly (inline styles also simply o
 class in CSS specificity regardless) while `cn(...)`'s own `className` output -- now receiving
 `props["className"]` as `None` again, since nothing overrides it -- survives completely
 unclobbered. Makes the resize handle actually resize the visible tree, not just the empty space
-next to it, without reintroducing the text/background regression."""
+next to it, without reintroducing the text/background regression.
 
+**`refreshSignal` (2026-09-04, real-user QA) re-fetches every currently-loaded directory when it
+changes, closing a real gap: a file the AI agent created via its own `Write` tool was confirmed
+live on disk (a real user checked with their own terminal) but never appeared in this tree.** Root
+cause: an AI tool call writes directly to the filesystem from a completely separate OS process
+(`claude_code_launcher.py`'s own subprocess, see that module's docstring) -- it doesn't go through
+`workspace_service.jac`'s `create_file`, the only path that already knew to call
+`refresh_children` (`create_new_file` above). This component has no way to know a write happened
+unless told. `workbench.jac` increments `refreshSignal` (a plain nonce, the identical
+`pendingNonce` pattern `ai_chat.jac` already established for the reverse direction) whenever
+`ai_chat.jac` reports a successful `Write`/`Edit` tool result; the `useEffect([refreshSignal])`
+below refreshes every key already in `children_by_path` -- every directory a user has actually
+expanded, root included (`_open_path_into_tree` stores the root's own children there too) --
+rather than trying to compute which one specific directory the new file landed in client-side (no
+`os.path`-equivalent path-splitting needed, and correct regardless of whether the write created a
+new file in an already-open folder, overwrote an existing one, or landed several levels deep in a
+path this component happens to have expanded). A no-op, not a wasted round-trip, for any directory
+the user hasn't looked at yet -- `children_by_path` only contains what's actually been expanded."""
+
+import from "react" { useEffect }
 import from src.workbench.workspace.workspace_service {
     open_workspace, list_children_by_path, get_current_workspace,
     create_file, create_folder, rename_path, delete_path
@@ -296,6 +315,15 @@ def:pub app(props: any) -> JsxElement {
     async def create_new_folder(parent_path: str) -> None;
     async def rename_item(path: str, parent_path: str, current_name: str) -> None;
     async def delete_item(path: str, parent_path: str, is_dir: bool) -> None;
+    async def refresh_all_loaded_children -> None;
+
+    refresh_signal = props["refreshSignal"] if "refreshSignal" in props else 0;
+
+    useEffect(lambda {
+        if refresh_signal > 0 {
+            refresh_all_loaded_children();
+        }
+    }, [refresh_signal]);
 
     async can with entry {
         restored = await get_current_workspace();

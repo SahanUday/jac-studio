@@ -337,6 +337,7 @@ def:pub app(onToggleTheme: any) -> JsxElement {
     has ai_pending_auto_send: bool = False;
     has ai_pending_nonce: int = 0;
     has ai_chat_maximized: bool = False;
+    has fs_refresh_nonce: int = 0;
 
     async def _save_session -> None;
     async def _toggle_panel(panel_id: str) -> None;
@@ -366,6 +367,7 @@ def:pub app(onToggleTheme: any) -> JsxElement {
     async def run_selected_task(label: str) -> None;
     def handle_ask_ai(promptText: str, autoSend: bool) -> None;
     def toggle_ai_chat_maximized -> None;
+    def handle_workspace_file_changed(path: str) -> None;
 
     async can with entry {
         commands = await list_commands();
@@ -433,7 +435,7 @@ def:pub app(onToggleTheme: any) -> JsxElement {
             <ResizablePanelGroup direction="horizontal" style={{"flex": "1"}}>
                 <ResizablePanel defaultSize={18} minSize={12} maxSize={60} style={{"borderRight": "1px solid #2A2B2C", "overflow": "hidden", "position": "relative", "background": "#191A1B"}}>
                     <div style={{"display": "block" if active_view_id == "explorer" else "none", "height": "100%"}}>
-                        <FileTreeApp onOpenFile={open_tab} onCompareFiles={open_diff_tab} gitStatus={git_status_by_path} />
+                        <FileTreeApp onOpenFile={open_tab} onCompareFiles={open_diff_tab} gitStatus={git_status_by_path} refreshSignal={fs_refresh_nonce} />
                     </div>
                     <div style={{"display": "block" if active_view_id == "search" else "none", "height": "100%"}}>
                         <SearchApp onOpenResult={open_search_result} />
@@ -458,6 +460,7 @@ def:pub app(onToggleTheme: any) -> JsxElement {
                             pendingNonce={ai_pending_nonce}
                             maximized={ai_chat_maximized}
                             onToggleMaximize={toggle_ai_chat_maximized}
+                            onWorkspaceFileChanged={handle_workspace_file_changed}
                         />
                     </div>
                 </ResizablePanel>

@@ -74,6 +74,15 @@ impl app.refresh_children(parent_path: str) -> None {
     children_by_path = updated_children;
 }
 
+"""Re-fetches every directory already present as a key in `children_by_path` -- everything the
+user has ever expanded, root included. See `app`'s own docstring for why "refresh everything
+already loaded" rather than computing the one specific directory an external write landed in."""
+impl app.refresh_all_loaded_children -> None {
+    for loaded_path in list(children_by_path.keys()) {
+        await refresh_children(loaded_path);
+    }
+}
+
 impl app.create_new_file(parent_path: str) -> None {
     name = prompt("New file name:");
     if not name {

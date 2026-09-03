@@ -222,7 +222,25 @@ SDK/product capability, not invented from scratch:**
   `"project"` scope's own CLAUDE.md discovery walks every ancestor directory up to the filesystem
   root with no special case for `$HOME`, independently rediscovering the exact same global file a
   different way); full isolation is the only setting that's actually correct here, not a broader
-  fix than necessary."""
+  fix than necessary.
+
+**Sixth QA pass, same day: a real user confirmed the workspace-file fix above, then found a
+follow-on gap -- a file the agent's own `Write` tool created was genuinely on disk (confirmed with
+their own terminal) but never showed up in the Explorer sidebar, even with the dev server's own
+HMR running.** Not an HMR gap -- Vite's hot reload only concerns *this app's own* source files
+recompiling, unrelated to workspace files the AI writes. Root cause: `file_tree.jac`'s tree is
+plain client-side React state (`children_by_path`), fetched once per directory when it's expanded
+and never re-fetched on its own; an AI tool call writes directly to disk from a wholly separate OS
+process (`claude_code_launcher.py`'s own subprocess), so nothing tells the tree a write happened.
+`onWorkspaceFileChanged` (new prop, `workbench.jac`-owned like `onToggleMaximize`) fires from this
+component's own `tool_result` handling whenever a `Write`/`Edit` tool call succeeds -- `workbench.jac`
+bumps a nonce it hands to `FileTreeApp` as `refreshSignal`, which re-fetches every directory it
+already has loaded (see that module's own docstring for why "everything already loaded" beats
+trying to compute the one specific directory a write landed in). Scoped to the sidebar only, not
+`inline_chat_widget.jac` too -- threading the same callback down through `editor_tabs.jac` and
+`monaco_editor.jac` to reach the inline popover is real, legitimate follow-up work, not silently
+dropped, but a materially bigger plumbing change for a secondary surface than this pass's actual
+finding calls for."""
 
 import from "react" { useState, useEffect }
 import from src.workbench.ai.claude_code_client { start_chat_turn, approve_tool_call }
@@ -276,7 +294,7 @@ def _tool_step_summary(name: str, input: dict[str, any]) -> str {
     return "";
 }
 
-def:pub app(active: bool, pendingPrompt: str, pendingAutoSend: bool, pendingNonce: int, maximized: bool, onToggleMaximize: any) -> JsxElement {
+def:pub app(active: bool, pendingPrompt: str, pendingAutoSend: bool, pendingNonce: int, maximized: bool, onToggleMaximize: any, onWorkspaceFileChanged: any) -> JsxElement {
     has messages: list[dict[str, any]] = [];
     has input_text: str = "";
     has is_streaming: bool = False;

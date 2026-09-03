@@ -493,13 +493,9 @@ pipeline (not a manual `jac nacompile` on a developer's machine).
   - **OpenCode** — CLI-first, SDK/subprocess-drivable agentic tool; realistic shape is a spawned,
     capability-gated process (the terminal's own mechanism) streamed back via the same
     SSE/`Generator` pattern already used for Claude Code. Needs its own scoping pass first.
-  - **A native, dependency-free agent provider** built on `by llm(tools=[...])` using jac-studio's
-    own already-built Phase 4 service functions as tools (`create_file`, `run_in_terminal`,
-    `search_in_files`, ...) — a fourth provider option needing no external CLI, just a model API
-    key. Not a replacement for the external-tool integrations (an external agentic CLI brings
-    permission prompting, context management, and a curated tool set a from-scratch `by llm()` loop
-    starts without) — a real parallel option, per `research/jac-native-agent-capabilities.md`'s own
-    caveats. Only ever proposed, no implementation started.
+  - **"Jac Agent" — a native, dependency-free agent provider (nice to have).** Tracked separately,
+    deliberately outside this phase-numbered structure — see [`jac-agent.md`](jac-agent.md) for
+    the idea and why it's kept apart. Only ever proposed, no implementation started.
   - **`.claude-plugin/` bundle discovery/install** — VS Code natively parses
     `.claude-plugin/plugin.json` bundles (`hooks`/`commands`/`skills`/`agents`/
     `mcpServerDefinitions`), the exact format Claude Code's own plugin system already uses. Since

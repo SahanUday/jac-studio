@@ -877,6 +877,10 @@ to be a drop-in replacement for what an external agentic CLI already brings (per
 context management, a large curated tool set, safety guardrails refined over real usage starts from
 zero here) — see the research doc's own "what this does NOT get for free" section.
 
+**Nice to have, tracked separately as "Jac Agent"** — see [`jac-agent.md`](jac-agent.md). Idea-stage
+only (no architecture spike, no implementation), deliberately kept out of this document's own
+numbered decisions and out of `roadmap.md`'s phase sequence until it's actually picked up.
+
 **MCP wiring for the Claude Code integration — done (2026-09-03).** `jac mcp` is a real, working
 MCP server (confirmed live: `jac mcp --inspect` lists 140 resources, 19 tools, 9 prompts covering
 Jac validation/formatting/transpilation/docs-search) that `claude_agent_sdk.ClaudeAgentOptions`

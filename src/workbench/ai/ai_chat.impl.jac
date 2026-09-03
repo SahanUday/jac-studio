@@ -84,10 +84,16 @@ impl app.handle_event(event: dict[str, any]) -> None {
         return;
     }
     if event_type == "tool_approval_request" {
+        has_diff = event.get("modified_text") is not None;
+        tool_input = event.get("input", {});
         card: dict[str, any] = {
             "tool_use_id": event.get("tool_use_id", ""),
             "name": event.get("name", ""),
-            "input_text": JSON.stringify(event.get("input", {}))
+            "input_text": JSON.stringify(tool_input),
+            "has_diff": has_diff,
+            "file_path": tool_input.get("file_path", ""),
+            "original_text": event.get("original_text", ""),
+            "modified_text": event.get("modified_text", "")
         };
         pending_approvals = pending_approvals + [card];
         return;

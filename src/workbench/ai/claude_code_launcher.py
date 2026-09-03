@@ -54,7 +54,23 @@ resolves). No staleness/reset handling is needed here unlike `_DAP_COMMAND_FILE`
 Every tool call gets its own explicit approve/deny; a persisted per-tool trust store (VS Code's
 own `IAutoConfirmEntry`) is real, legitimate follow-up work, not silently dropped, once this
 core mechanism is in place and used for real.
-"""
+
+**`Edit`/`Write` approval requests carry a real before/after diff, not just the raw tool input.**
+Closes the multi-file-edit-review gap `docs/architecture.md` flags right alongside tool approval --
+before this, a file edit had no preview at all; the generic JSON dump (still what every other tool
+gets) doesn't tell a user what a `Write` call is about to overwrite, or what an `Edit` call's
+`old_string`/`new_string` actually changes in context. Both tool input shapes confirmed live, not
+assumed (`{"file_path", "content"}` for `Write`; `{"file_path", "old_string", "new_string",
+"replace_all"}` for `Edit`) -- `_diff_preview_for_tool_call` reads the file's current on-disk
+content (empty string for a not-yet-existing file, `Write`'s own new-file case) as `original_text`,
+and derives `modified_text` the same way the real tool would apply it (`Write`: the given content
+outright; `Edit`: one `str.replace` call, `count=-1` only when `replace_all` is set, otherwise
+exactly one occurrence -- matching the real tool's own documented single-replacement default so the
+preview doesn't over- or under-represent what will actually change). Every other tool name (`Bash`,
+the `jac mcp` tools, ...) gets neither field, and the client falls back to its existing generic
+card -- no attempt made here to guess at a shape for a tool this project hasn't verified live (a
+possible `MultiEdit` tool included; a probe for it timed out inconclusively rather than confirming
+a real shape, so it deliberately isn't special-cased)."""
 import argparse
 import asyncio
 import json
@@ -105,14 +121,42 @@ async def _wait_for_tool_approval(tool_use_id: str) -> str | None:
     return None
 
 
+def _read_file_safe(path: str) -> str:
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read()
+    except Exception:  # noqa: BLE001 -- missing/unreadable/binary all collapse to "no prior content"
+        return ""
+
+
+def _diff_preview_for_tool_call(tool_name: str, tool_input: dict) -> tuple[str, str] | None:
+    file_path = tool_input.get("file_path")
+    if not file_path:
+        return None
+    if tool_name == "Write":
+        return (_read_file_safe(file_path), tool_input.get("content", ""))
+    if tool_name == "Edit":
+        original = _read_file_safe(file_path)
+        old_string = tool_input.get("old_string", "")
+        new_string = tool_input.get("new_string", "")
+        count = -1 if tool_input.get("replace_all", False) else 1
+        return (original, original.replace(old_string, new_string, count))
+    return None
+
+
 async def _can_use_tool(tool_name, tool_input, context):
     tool_use_id = context.tool_use_id or ""
-    _emit({
+    event = {
         "type": "tool_approval_request",
         "tool_use_id": tool_use_id,
         "name": tool_name,
         "input": tool_input,
-    })
+    }
+    diff = _diff_preview_for_tool_call(tool_name, tool_input)
+    if diff is not None:
+        event["original_text"] = diff[0]
+        event["modified_text"] = diff[1]
+    _emit(event)
     decision = await _wait_for_tool_approval(tool_use_id)
     if decision == "allow":
         return PermissionResultAllow()

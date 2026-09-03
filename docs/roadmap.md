@@ -378,10 +378,14 @@ polish:
   different OS processes). Live-verified end to end via `jac browse`: Allow lets a real write land
   on disk and the turn continue; Deny blocks it. See `architecture.md`'s item 4 for the full record,
   including a real concatenation bug found and fixed during that same live verification pass.
-- **Multi-file edit review** — Claude Code's edits land on disk directly today, no diff/review/
-  rollback surface at all. Upstream's `chatEditing/` is a full checkpoint/timeline system (larger
-  than a simple accept/reject); a jac-studio v1 doesn't need that scope, even a per-file diff
-  preview reusing Phase 3's existing diff editor would close most of the real risk.
+- **Multi-file edit review — done (2026-09-03), v1-scoped as this bullet already named.** A real
+  Monaco diff (new `ai_tool_diff_preview.jac`) now renders inside each `Edit`/`Write` approval card
+  from the tool-approval item above, computed in `claude_code_launcher.py` before the tool call ever
+  runs. Not upstream's checkpoint/timeline scope, deliberately, per this bullet's own original call
+  — a per-file before/after preview closes the actual risk (a silent overwrite) without it.
+  Live-verified end to end via `jac browse`: both a `Write` and a chained `Edit` produced a correct
+  diff card, confirmed by screenshot against what actually landed on disk. See `architecture.md`'s
+  item 5 for the full record.
 - **A portable AI-plugin format worth supporting, not inventing**: VS Code natively parses
   `.claude-plugin/plugin.json` bundles (`hooks`/`commands`/`skills`/`agents`/`mcpServerDefinitions`)
   — the exact format Claude Code's own plugin system already uses. Since jac-studio's Claude Code

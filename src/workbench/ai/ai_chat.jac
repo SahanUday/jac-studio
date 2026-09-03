@@ -31,10 +31,17 @@ than widening `messages`' `dict[str, str]` shape to carry a mix of types) keeps 
 there (`"[Approved Write]"`/`"[Denied Bash]"`) once decided. `tool_use_id` is the join key between
 a card and the `approve_tool_call` RPC call it fires -- concurrent approval requests (the SDK can
 ask for several tool calls in one turn) are handled correctly since each card tracks its own id
-independently."""
+independently.
+
+**`Edit`/`Write` cards render a real diff (`ai_tool_diff_preview.jac`), not the generic JSON dump.**
+`claude_code_launcher.py` includes `original_text`/`modified_text` on the event only for those two
+tool names (see that module's own docstring for how they're computed) -- every other tool (`Bash`,
+the `jac mcp` tools, ...) has neither key, and `a["has_diff"]` (set in `handle_event`) is `False`,
+so the card falls back to the same plain input-JSON `<pre>` block PR #72 already shipped."""
 
 import from "react" { useState }
 import from src.workbench.ai.claude_code_client { start_chat_turn, approve_tool_call }
+import from src.workbench.ai.ai_tool_diff_preview { app as AiToolDiffPreview }
 
 def:pub app(active: bool) -> JsxElement {
     has messages: list[dict[str, str]] = [];
@@ -74,7 +81,11 @@ def:pub app(active: bool) -> JsxElement {
             {[
                 <div key={a["tool_use_id"]} style={{"margin": "0 0.6rem 0.5rem", "border": "1px solid #f0883e", "borderRadius": "3px", "background": "#2A1F14", "padding": "0.4rem 0.5rem", "display": "flex", "flexDirection": "column", "gap": "0.3rem", "flexShrink": "0"}}>
                     <span style={{"fontSize": "11px", "color": "#f0883e"}}>{"Claude Code wants to use " + a["name"]}</span>
-                    <pre style={{"margin": "0", "fontSize": "11px", "whiteSpace": "pre-wrap", "wordBreak": "break-word", "maxHeight": "6rem", "overflow": "auto", "color": "#CCCCCC", "fontFamily": "monospace"}}>{a["input_text"]}</pre>
+                    {(
+                        <AiToolDiffPreview toolUseId={a["tool_use_id"]} filePath={a["file_path"]} originalText={a["original_text"]} modifiedText={a["modified_text"]} />
+                    ) if a["has_diff"] else (
+                        <pre style={{"margin": "0", "fontSize": "11px", "whiteSpace": "pre-wrap", "wordBreak": "break-word", "maxHeight": "6rem", "overflow": "auto", "color": "#CCCCCC", "fontFamily": "monospace"}}>{a["input_text"]}</pre>
+                    )}
                     <div style={{"display": "flex", "gap": "0.4rem"}}>
                         <button
                             onClick={lambda (e: any) { handle_approval_decision(a["tool_use_id"], a["name"], "allow"); }}

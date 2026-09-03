@@ -755,13 +755,33 @@ the three above because they're gaps in trust/safety and data-loss risk, not jus
    this tool" persistence in this slice, deliberately** — every call gets its own explicit decision;
    a persisted per-tool trust store (VS Code's own `IAutoConfirmEntry`) is real follow-up work, not
    something this slice's core trust-boundary fix needed to include.
-5. **Multi-file edit review.** Claude Code's file edits land on disk directly today, with no diff,
-   review, or rollback surface inside jac-studio at all. Upstream's `chatEditing/` (20 files) is
-   larger and more capable than a simple diff-accept-reject would suggest — a checkpoint/timeline
-   mechanism (rollback points across a whole editing session, not just per-file undo). A v1 for
-   jac-studio doesn't need that full scope; even a per-file diff-preview-before-write, reusing the
-   two-way diff editor Phase 3 already shipped, would close most of the actual risk (an agent
-   silently overwriting a file the user didn't expect).
+5. **Multi-file edit review — done (2026-09-03), scoped to the v1 this section already named.**
+   Upstream's `chatEditing/` (20 files, a full checkpoint/timeline mechanism) stays out of scope,
+   as this section already said it should — what shipped instead is exactly the smaller v1 named
+   above: a real per-file diff preview shown *before* an `Edit`/`Write` call is approved, closing
+   the actual risk (an agent silently overwriting a file the user didn't expect) without the
+   larger rollback-timeline machinery. Built directly on item 4's `can_use_tool` interception point
+   — `claude_code_launcher.py`'s `_diff_preview_for_tool_call` computes a real before/after (reads
+   the file's current on-disk content for `original_text`; derives `modified_text` the same way the
+   real tool would apply it — `Write`'s given content outright, `Edit`'s one `str.replace` with the
+   same single-vs-`replace_all` semantics the real tool documents) and attaches it to the same
+   `tool_approval_request` event item 4 already sends. Both tool input shapes (`Write`:
+   `{"file_path", "content"}`; `Edit`: `{"file_path", "old_string", "new_string", "replace_all"}`)
+   confirmed live, not assumed — a possible `MultiEdit` tool was probed for but the probe timed out
+   inconclusively, so it's deliberately left unspecialized (falls back to the generic card) rather
+   than guessed at.
+
+   New `ai_tool_diff_preview.jac` renders this with a real Monaco `DiffEditor` (not a `<pre>` text
+   dump), reusing `scm_diff_editor.jac`'s already-established synthetic-model-URI pattern for free
+   language auto-detection without risking a collision with a real open tab's live model — extended
+   one step further than that precedent needed: keyed by the SDK's own `tool_use_id`, not just the
+   file path, since this card (unlike a single git diff view) can have multiple concurrent pending
+   requests against the very same file. Renders inline/unified (`renderSideBySide: False`), not the
+   two-pane view the existing diff components use in a full editor group — this card lives in
+   `ai_chat.jac`'s already-narrow sidebar, where two side-by-side panes would each be unreadably
+   cramped. **Live-verified end to end** (`jac browse`, real credentials): asked Claude Code to
+   `Write` a new file then `Edit` it — both approval cards rendered a real, correct diff (confirmed
+   by screenshot, not just DOM inspection) matching exactly what landed on disk after Allow.
 
 **The single strongest finding from the follow-up audit: VS Code natively parses a portable,
 non-Copilot AI-plugin format that already includes Claude Code's own format**, confirmed by reading

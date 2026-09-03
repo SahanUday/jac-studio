@@ -686,6 +686,67 @@ keybinding context-evaluation system, and a genuinely surprising finding — VS 
 subsystem is now larger than its entire editor core) that are tracked there rather than folded
 into every section of this document.
 
+### Reframed 2026-09-03: UI/UX patterns and native-Jac options, not just three subprocess clients
+
+**The first integration (Claude Code) is done** — `claude_code_client.jac` + `claude_code_launcher.py`
++ `ai_chat.jac`'s sidebar panel, shipped and live-verified (PR #69). That confirmed the core
+mechanism above works end to end: subprocess-only (never importing `claude_agent_sdk` into `.jac`
+code — see tracker entry `2026-09-02-python-interop-import-explodes-compiler-on-large-dependency-closure`
+for why that's load-bearing, not stylistic), gated behind `[terminal] enabled`, real streaming, real
+multi-turn continuity. What's reframed here is the *ambition* for the rest of this phase, prompted
+by two research passes: a real `microsoft/vscode` checkout's actual Copilot Chat source (now merged
+in-tree, not a separate closed extension — see
+[`research/vscode-copilot-architecture.md`](research/vscode-copilot-architecture.md)), and jaseci's
+own native agentic capabilities (see
+[`research/jac-native-agent-capabilities.md`](research/jac-native-agent-capabilities.md)). Read both
+in full before touching this area again; only the conclusions are summarized here.
+
+**Finding that reframes the plan**: Copilot's own "Fix"/"Explain"/"Review" quick-fix menu, inline
+chat (Ctrl+I), and inline completions all turn out to be built on generic, backend-agnostic VS
+Code/Monaco APIs (`CodeActionProvider`, a `ZoneWidget`, `InlineCompletionItemProvider`) — none of
+them are Copilot-specific mechanisms. Since jac-studio embeds real Monaco, every one of these APIs
+is already reachable, and every one of them ultimately just constructs a prompt and hands it to a
+generic "start a chat turn" entry point — exactly the shape `start_chat_turn` already is. This means
+building richer AI UX is not "build three more integrations," it's "build a few new *UI entry
+points* against the *same* provider interface already in place":
+
+1. **AI code actions** (the lightbulb "Fix"/"Explain"/"Modify" menu) — smallest lift. A new Monaco
+   `CodeActionProvider` (same category as the LSP client's existing completion/hover/definition
+   providers), each action building a prompt and calling the existing `start_chat_turn`. No new
+   backend concept.
+2. **Inline chat** (a Ctrl+I popover for targeted edits without leaving the editor) — medium lift.
+   New UI surface (a Monaco content-widget/zone-widget anchored at cursor/selection), but total
+   backend reuse — same `start_chat_turn` stream, different presentation.
+3. **Richer agent-session visualization** (step-by-step tool-call/file-change display) — lowest
+   priority; `ai_chat.jac` already streams `tool_use` events, this is a rendering enhancement to an
+   existing surface, not a new mechanism.
+
+**A genuinely jac-native agent option is now on the table, not just external CLI clients.**
+`by llm(tools=[...])` is a real, working ReAct tool-calling loop with native streaming and
+multi-turn support (see the native-agent-capabilities research doc) — nothing about it needs a
+subprocess or hits the Python-interop compiler restriction, since it's a first-class Jac construct.
+Wiring `tools=[create_file, run_in_terminal, search_in_files, ...]` — the **already-built** Phase 4
+service functions — makes a fourth provider option, distinguished from Claude Code/Copilot/OpenCode
+by needing no external CLI installed, just a model API key. Real and worth building; **not** assumed
+to be a drop-in replacement for what an external agentic CLI already brings (permission prompting,
+context management, a large curated tool set, safety guardrails refined over real usage starts from
+zero here) — see the research doc's own "what this does NOT get for free" section.
+
+**A concrete, cheap, near-term improvement to the Claude Code integration already shipped**:
+`jac mcp` is a real, working MCP server (confirmed live: `jac mcp --inspect` lists 140 resources, 19
+tools, 9 prompts covering Jac validation/formatting/transpilation/docs-search) that `claude_agent_sdk.
+ClaudeAgentOptions` can already point at (`mcp_servers`, a real, introspected field — not assumed).
+Wiring `mcp_servers={"jac": {"command": "jac", "args": ["mcp"]}}` into `claude_code_client.jac`
+would give Claude Code structured Jac-specific tools (`validate_jac`, `explain_error`, `jac_to_js`)
+instead of shelling out through Bash — small, self-contained, doesn't touch the UI at all.
+
+**Not decided yet, deliberately**: whether the `ChatProvider` shape should eventually split into two
+layers the way VS Code's `chat.createChatParticipant` / `lm.registerLanguageModelChatProvider` do
+(agent-behavior identity vs. model backend, fully decoupled) — worth watching for once a *second*
+external-tool provider (Copilot or OpenCode) is actually built and there's a real second data point,
+not before. Splitting now, with only one provider shipped, would be exactly the premature
+generalization this project's own implementation discipline warns against.
+
 ## Open questions this document deliberately does not resolve
 
 - ~~Root-graph-as-service-registry: validated or replaced with `glob` singletons?~~ **Resolved in

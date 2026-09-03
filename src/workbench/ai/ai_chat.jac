@@ -37,13 +37,23 @@ independently.
 `claude_code_launcher.py` includes `original_text`/`modified_text` on the event only for those two
 tool names (see that module's own docstring for how they're computed) -- every other tool (`Bash`,
 the `jac mcp` tools, ...) has neither key, and `a["has_diff"]` (set in `handle_event`) is `False`,
-so the card falls back to the same plain input-JSON `<pre>` block PR #72 already shipped."""
+so the card falls back to the same plain input-JSON `<pre>` block PR #72 already shipped.
 
-import from "react" { useState }
+**`pendingPrompt`/`pendingAutoSend`/`pendingNonce` are the receiving half of
+`ai_code_action_provider.jac`'s "Fix"/"Explain"/"Modify" lightbulb menu (`docs/architecture.md`'s
+"Reframed 2026-09-03" AI section, item 1) -- `workbench.jac`'s own docstring covers the sending
+half.** `useEffect([pendingNonce])`, not `useEffect([pendingPrompt])` -- keying off the text itself
+would silently no-op a second identical request (React's own dependency-array equality check sees
+no change), where the nonce increments on every call regardless of the text. Sets `input_text` to
+the constructed prompt always; calls `handle_send()` immediately only when `pendingAutoSend` is
+`True` ("Fix"/"Explain", self-contained requests) -- "Modify..." leaves it in the box unsent so the
+user can finish describing the change before submitting."""
+
+import from "react" { useState, useEffect }
 import from src.workbench.ai.claude_code_client { start_chat_turn, approve_tool_call }
 import from src.workbench.ai.ai_tool_diff_preview { app as AiToolDiffPreview }
 
-def:pub app(active: bool) -> JsxElement {
+def:pub app(active: bool, pendingPrompt: str, pendingAutoSend: bool, pendingNonce: int) -> JsxElement {
     has messages: list[dict[str, str]] = [];
     has input_text: str = "";
     has is_streaming: bool = False;
@@ -55,6 +65,15 @@ def:pub app(active: bool) -> JsxElement {
     def handle_key_down(e: any) -> None;
     def handle_event(event: dict[str, any]) -> None;
     async def handle_approval_decision(tool_use_id: str, name: str, decision: str) -> None;
+
+    useEffect(lambda {
+        if pendingNonce > 0 {
+            input_text = pendingPrompt;
+            if pendingAutoSend {
+                handle_send();
+            }
+        }
+    }, [pendingNonce]);
 
     can_send = input_text.strip() != "" and not is_streaming;
 

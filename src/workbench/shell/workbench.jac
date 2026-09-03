@@ -262,7 +262,19 @@ container its own positioned stacking context above `z-index: 10` fixes it witho
 vendored `Sidebar` primitive (which `jac install --shadcn sidebar` would silently regenerate over
 any hand-patch anyway, the same regeneration pitfall Phase 3's icon-set migration already hit). See
 tracker entry `2026-08-31-fixed-sidebar-overlaps-and-intercepts-clicks-on-bottom-panel`.
-"""
+
+**AI code actions (2026-09-04, `docs/architecture.md`'s "Reframed 2026-09-03" AI section, item 1)**
+-- `handle_ask_ai` is the receiving end of `ai_code_action_provider.jac`'s "Fix"/"Explain"/"Modify"
+lightbulb commands, threaded down to `MonacoEditorApp` as `onAskAI` the same way as
+`onOpenLocation`/`onOpenCommandPalette` above. It switches `active_view_id` to `"ai_chat"` (so
+triggering a code action while a different sidebar view is showing actually reveals the result) and
+hands `AIChatApp` a `pendingPrompt`/`pendingAutoSend` pair plus a monotonically incrementing
+`pendingNonce` -- the nonce, not the prompt text, is what `AIChatApp`'s own `useEffect` keys off,
+so triggering the same action twice in a row still fires (a same-value `useEffect([pendingPrompt])`
+would silently no-op the second time). `ai_pending_prompt`/`ai_pending_auto_send`/`ai_pending_nonce`
+are deliberately **not** persisted, same call already made for `dirty_paths`/`active_bottom_panel`
+above -- a one-shot request to open the chat panel with a prompt has no meaning to restore after a
+reload."""
 
 import from "react" { useEffect }
 import from "sonner" { Toaster, toast }
@@ -306,6 +318,9 @@ def:pub app(onToggleTheme: any) -> JsxElement {
     has notification_panel_open: bool = False;
     has git_status_by_path: dict[str, str] = {};
     has task_picker_open: bool = False;
+    has ai_pending_prompt: str = "";
+    has ai_pending_auto_send: bool = False;
+    has ai_pending_nonce: int = 0;
 
     async def _save_session -> None;
     async def _toggle_panel(panel_id: str) -> None;
@@ -333,6 +348,7 @@ def:pub app(onToggleTheme: any) -> JsxElement {
     def set_git_status(status_map: dict[str, str]) -> None;
     def set_task_picker_open(next_open: bool) -> None;
     async def run_selected_task(label: str) -> None;
+    def handle_ask_ai(promptText: str, autoSend: bool) -> None;
 
     async can with entry {
         commands = await list_commands();
@@ -380,6 +396,7 @@ def:pub app(onToggleTheme: any) -> JsxElement {
                     onDirtyChange={handle_dirty_change}
                     onOpenLocation={open_search_result}
                     onOpenCommandPalette={lambda (e: any) { handle_command("workbench.action.showCommands"); }}
+                    onAskAI={handle_ask_ai}
                 />
             </ResizablePanel>
         );
@@ -416,7 +433,7 @@ def:pub app(onToggleTheme: any) -> JsxElement {
                     />
                 </div>
                 <div style={{"display": "block" if active_view_id == "ai_chat" else "none", "height": "100%"}}>
-                    <AIChatApp active={active_view_id == "ai_chat"} />
+                    <AIChatApp active={active_view_id == "ai_chat"} pendingPrompt={ai_pending_prompt} pendingAutoSend={ai_pending_auto_send} pendingNonce={ai_pending_nonce} />
                 </div>
             </div>
             <div style={{"flex": "1", "overflow": "hidden"}}>

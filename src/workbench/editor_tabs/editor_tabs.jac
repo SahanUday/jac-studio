@@ -96,6 +96,10 @@ for "open or activate this file's tab and jump to a line/column"), which is what
 in a file whose tab isn't currently open or active still navigate correctly -- see
 `jac_definition_provider.jac`'s own docstring for why Monaco needs this threaded in at all.
 
+**AI code actions (2026-09-04)** -- `onAskAI` is forwarded the same unmodified way, ultimately
+`workbench.jac`'s own handler that switches to the Claude Code sidebar and hands it a prompt. See
+`ai_code_action_provider.jac`'s own docstring for the full design.
+
   **Opacity-based, not `display`-based -- caught live, not by reading either library's docs.**
   The first version used Tailwind's `hidden`/`group-hover:inline-flex` (toggling `display`), which
   compiled and rendered with no error but never actually hid anything: `@vscode/codicons`' own
@@ -153,6 +157,7 @@ def:pub app(props: any) -> JsxElement {
     on_dirty_change = props["onDirtyChange"];
     on_open_location = props["onOpenLocation"];
     on_open_command_palette = props["onOpenCommandPalette"];
+    on_ask_ai = props["onAskAI"];
 
     <div style={{"display": "flex", "flexDirection": "column", "height": "100%", "overflow": "hidden"}}>
         <div role="tablist" aria-label="Open editors" style={{"display": "flex", "alignItems": "center", "borderBottom": "1px solid #2A2B2C", "background": "#191A1B", "flexShrink": "0"}}>
@@ -227,6 +232,7 @@ def:pub app(props: any) -> JsxElement {
                                 onDirtyChange={on_dirty_change}
                                 onOpenLocation={on_open_location}
                                 onOpenCommandPalette={on_open_command_palette}
+                                onAskAI={on_ask_ai}
                             />
                         )}
                     </div>

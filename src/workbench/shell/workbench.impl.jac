@@ -238,6 +238,18 @@ impl app.select_view(view_id: str) -> None {
     active_view_id = view_id;
 }
 
+"""Switches to the Claude Code sidebar and hands it `promptText` -- the receiving half of
+`ai_code_action_provider.jac`'s "Fix"/"Explain"/"Modify" commands. `ai_pending_nonce` increments
+on every call (not just when `promptText` changes) so `AIChatApp`'s own `useEffect([pendingNonce])`
+fires even if the same code action is triggered twice in a row with identical text -- a plain
+`useEffect([pendingPrompt])` would silently no-op on the second identical request."""
+impl app.handle_ask_ai(promptText: str, autoSend: bool) -> None {
+    active_view_id = "ai_chat";
+    ai_pending_prompt = promptText;
+    ai_pending_auto_send = autoSend;
+    ai_pending_nonce += 1;
+}
+
 """Maps `severity` onto `sonner`'s own per-severity call (`toast.error`/`toast.warning`/plain
 `toast` for info) rather than always calling the bare `toast(message)` form -- `sonner` uses that
 to pick the toast's icon/accent color, the same severity vocabulary `diagnostics.jac` already

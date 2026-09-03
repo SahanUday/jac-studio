@@ -337,8 +337,14 @@ backend-agnostic Monaco/editor APIs — meaning richer AI UX in jac-studio is ac
 entry points* against the `start_chat_turn` mechanism already shipped, not new integrations per se.
 Added to this phase's scope:
 
-- **AI code actions** (Monaco `CodeActionProvider` contributing "Fix"/"Explain"/"Modify", same
-  category as the LSP client's existing providers) — smallest lift, total backend reuse.
+- **AI code actions — done (2026-09-04).** A new Monaco `CodeActionProvider`
+  (`ai_code_action_provider.jac`, registered for every language) contributes "Fix"/"Explain"/
+  "Modify" to the real Quick Fix lightbulb menu, routing through the already-shipped `AIChatApp`
+  sidebar via a new `onAskAI` callback threaded down from `workbench.jac` — total backend reuse, no
+  new endpoint. Live-verified end to end via `jac browse` (screenshots at each step): a real
+  selection produced the real menu; Explain/Modify both fired correctly (auto-send vs. prefill-only
+  respectively); a synthetic diagnostic marker confirmed Fix's diagnostic-plus-code prompt. See
+  `architecture.md`'s item 1 for the full record.
 - **Inline chat** (a Ctrl+I popover, a Monaco content-widget anchored at cursor/selection) — medium
   lift, same backend reuse.
 - **A native, dependency-free agent provider** built on `by llm(tools=[...])` using jac-studio's own

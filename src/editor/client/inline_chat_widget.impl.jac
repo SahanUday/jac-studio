@@ -27,10 +27,13 @@ impl app.handle_submit -> None {
     response_text = "";
     is_streaming = True;
 
+    ws = await get_current_workspace();
+    cwd = ws["root_path"] if ws is not None else None;
+
     resp = await fetch("/function/start_chat_turn", {
         "method": "POST",
         "headers": {"Content-Type": "application/json"},
-        "body": JSON.stringify({"prompt": prompt, "session_id": session_id})
+        "body": JSON.stringify({"prompt": prompt, "session_id": session_id, "cwd": cwd})
     });
     reader = resp.body.getReader();
     decoder = new(TextDecoder);

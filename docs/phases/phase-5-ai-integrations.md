@@ -154,3 +154,114 @@ description and `architecture.md`'s corresponding numbered item for the full ver
 5. Per `roadmap.md`'s own ordering, **Phase 6 (extension system, Phase B: dynamic loading, a
    manifest format, the Extensions view) is next** — nothing in it depends on any of this phase's
    deferred items shipping first.
+
+## Post-closure QA round (2026-09-05)
+
+The project sponsor's own first real, hands-on testing pass of the shipped Claude Code integration
+(following the manual test guide handed off after closure) found two real bugs and three genuine
+UX gaps — appended here rather than editing "What was actually built" above, so the record of what
+shipped at closure time stays honest; see the PR for this round for the full diff.
+
+- **Bug: a chat turn could silently answer based on the server process's own launch directory
+  instead of the real open workspace, and a follow-up turn in the same conversation could hit a
+  real, uncaught `PgWireError`.** Root cause: `get_current_workspace()` (a real `root`-scoped graph
+  query) was called from inside `start_chat_turn`'s own SSE generator — the first confirmation this
+  project's known SSE-generator-isolation risk (previously only tested against plain `glob` state)
+  extends to a real graph query with its own DB connection/transaction. Fixed by resolving `cwd` in
+  the caller (`ai_chat.jac`/`inline_chat_widget.jac`, an ordinary `await`ed call) and passing it
+  into `start_chat_turn` as a plain argument — the same "state needed only at spawn time" pattern
+  `dap_client.jac`'s own tracker entry already prescribed. See `claude_code_client.jac`'s docstring
+  and tracker entry `2026-09-05-sse-generator-root-scoped-graph-query-unreliable`.
+- **UX: tool-step cards redesigned to be collapsed by default** (a one-line summary + status icon +
+  chevron, click to expand), matching real-product precedent (VS Code's own Copilot Chat) instead
+  of always showing full JSON input/result inline.
+- **UX: the primary identity is now "AI Chat" (with a small "via Claude Code" caption), not
+  "Claude Code" as the headline** — across the sidebar header, the approval card, code-action menu
+  items, and inline chat. Deliberately not a full provider-selector UI (only one real provider
+  exists today); see `ai_chat.jac`'s own docstring for the reasoning.
+- **UX: the sidebar is now resizable**, and **AI Chat has a "maximize" toggle** giving it the whole
+  workbench area on demand (a pure CSS overlay on the same mounted instance, not a second mount
+  point — see `ai_chat.jac`'s docstring for why that distinction matters: a real tab or portal would
+  have unmounted/remounted the component and lost the live conversation).
+
+**A real, unresolved environmental limitation hit while verifying this round, worth recording
+honestly rather than glossing over**: this machine's client-bundle build (`.jac/client/compiled`)
+repeatedly, deterministically failed to fully compile several files (`command_registry.jac` among
+them — its own client output stayed a two-line stub missing `list_commands`, with zero error
+reported anywhere) across many full-cache-clear rebuilds, independent of orphaned-process cleanup,
+memory headroom (retried with 1.4–2.9 GiB free and a raised `capped --mem 5G` cap), or a settling
+period — a genuinely different, more severe symptom than the already-tracked
+`2026-09-03-jac-run-kill-leaves-vite-child-process-serving-stale-state` entry (that one is about
+*stale* state surviving a bad restart; this is a *fresh*, single, clean process still silently
+under-compiling). A `jac lsp` process unrelated to this work was independently observed consuming
+2.8–3.3 GiB RSS and climbing throughout, on a shared, multi-session machine — the most likely
+contributing factor, though not confirmed to the kernel/OOM-killer level. This blocked a full
+`jac browse` live UI verification pass for this round's changes; verification instead relied on
+`jac check` (clean on every touched file) + `jac test` (477 passed, 1 known-expected failure from
+`jac.toml`'s temporarily-enabled `[terminal]` flag) + a targeted, successful diagnostic session run
+earlier in the same investigation (before the environment further degraded) that directly confirmed
+the `get_current_workspace()`-inside-the-generator mechanism using real request/response tracing.
+Not logged as a new tracker entry in its own right — the evidence doesn't yet distinguish "a real
+jaclang build-pipeline robustness gap" from "this specific machine was overloaded by concurrent,
+unrelated sessions at this specific time" cleanly enough to write a confident root-cause Plan
+section; worth a properly isolated repro (a dedicated machine/container, nothing else running) if
+this recurs.
+
+**Update, same day**: the project sponsor manually tested this round's branch directly (not this
+investigation's own broken local server) and confirmed it works — all five items above verified
+live, in a real session, by a real user. That reframes the build-failure note above: it's specific
+to this one investigation's own local sandbox/toolchain state, not a defect this round's actual
+code carries, and not something the sponsor's own working session ever hit. The manual test also
+surfaced two more real, genuine gaps, fixed in a second commit on the same branch/PR:
+
+- **UX: assistant text now renders as real markdown** (new `markdown_message.jac`, shared by the
+  sidebar and inline chat) instead of raw pre-wrap text — a response's own literal ```` ``` ````/`**`
+  markdown syntax was showing up unrendered in the panel, confirmed via a real screenshot. User's
+  own messages stay plain text.
+- **UX: a "Thinking…" status row (spinner + label) now shows for the whole duration a turn is in
+  flight** — nothing previously indicated the agent was actively working between hitting Send and
+  the first token/tool call, unlike Claude Code's own CLI or VS Code Copilot Chat, both of which
+  show a persistent working indicator for the whole turn.
+
+This second commit's own changes were verified via `jac check` (clean) and `jac test` (478 passed)
+only — the local build issue above recurred identically even with 5.2 GiB free (this investigation's
+own retry log), which weakens "memory pressure" as the primary explanation and strengthens "specific
+to this sandbox's own cache/toolchain state" instead. Given the sponsor's own environment has
+already verified the base branch works, and given this file's own scope is a UI text-rendering
+change with no new backend surface, live-verifying it there (rather than fighting this local
+environment further) is the practical path, not a gap being glossed over.
+
+**Update, same day, twice more**: the sponsor's own live testing of the second commit found two
+real regressions of its own, each fixed and pushed as its own commit on the same branch/PR:
+
+1. A genuine compile error (`thinking_indicator.jac`'s `Math.floor()` needed an explicit `as int`
+   cast) reached the sponsor's browser before this investigation's own `jac check` pass had been
+   committed — a real timing gap, not a false negative in `jac check` itself. Also surfaced,
+   immediately following that error in the sponsor's own terminal log, a cascading
+   `E7001: no export named 'create_file'` for a completely unrelated file
+   (`workspace_service.jac`) — much stronger, causally-linked evidence than anything gathered
+   earlier that this investigation's whole "silent partial client-bundle compile" saga above was
+   never about memory pressure at all: **a genuine compile error in one file appears to leave the
+   client bundler's build in a state where unrelated files silently lose their own exports too,
+   with no error reported for those other files.** That's a materially better, more actionable
+   root cause than the memory-pressure theory this doc originally recorded — worth a real tracker
+   entry if it's confirmed to recur cleanly (a deliberately-broken file plus a clean, isolated
+   rebuild, checking whether an unrelated file's exports vanish too), not yet written up formally
+   here since this round's own evidence, while strong, is still one incident, not a controlled
+   repro.
+2. A second real error: `react-markdown`'s own `.d.ts` type declarations disagree with its actual
+   runtime export shape (`export function Markdown(...)` is real in `lib/index.js`, but the
+   package's actual resolved entry point, `index.js`, re-exports it only as `Markdown as default`)
+   — `jac check` trusts the `.d.ts` and passes; the browser's real module linker only sees the
+   runtime shape and fails. Fixed via `{ default as Markdown }`, the documented pattern for exactly
+   this shape (`jac guide jac-types`'s own `mermaid` example) — confirmed correct afterward by
+   directly inspecting the compiled output on the sponsor's own still-running server, not assumed.
+
+A third live-testing round (screenshots of the same conversation before/after a follow-up message)
+found two more real UI bugs, both fixed in the same commit: **tool-step cards visibly collapsed to
+razor-thin bars once the message list grew** (root cause: each card's `overflow: hidden` wrapper
+makes its automatic flex min-height `0` per the CSS flexbox spec, the first thing squeezed under
+content pressure in a `flexDirection: column` list — fixed with an explicit `flexShrink: "0"` on
+every message entry), and **a visible OS-chrome scrollbar** in the narrow message column (fixed
+with `styles/global.css`'s own `no-scrollbar` Tailwind utility, defined at some earlier point but
+never actually applied anywhere in this project until now).

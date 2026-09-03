@@ -238,7 +238,7 @@ impl app.select_view(view_id: str) -> None {
     active_view_id = view_id;
 }
 
-"""Switches to the Claude Code sidebar and hands it `promptText` -- the receiving half of
+"""Switches to the AI Chat sidebar and hands it `promptText` -- the receiving half of
 `ai_code_action_provider.jac`'s "Fix"/"Explain"/"Modify" commands. `ai_pending_nonce` increments
 on every call (not just when `promptText` changes) so `AIChatApp`'s own `useEffect([pendingNonce])`
 fires even if the same code action is triggered twice in a row with identical text -- a plain
@@ -248,6 +248,17 @@ impl app.handle_ask_ai(promptText: str, autoSend: bool) -> None {
     ai_pending_prompt = promptText;
     ai_pending_auto_send = autoSend;
     ai_pending_nonce += 1;
+}
+
+"""Flips whether `AIChatApp` renders docked in its normal sidebar column or maximized to cover the
+whole workbench area -- see `ai_chat.jac`'s own docstring for why this is a pure CSS/style toggle
+on the *same* mounted instance (a `position: fixed` overlay when maximized) rather than moving the
+component to a second mount point (a real tab, a portal, ...): the point is more room for the exact
+same live conversation, and anything that unmounts/remounts the component to get there would lose
+`messages`/`session_id`/`pending_approvals` in the process. Real VS Code's own "maximize panel"
+(double-click a panel tab) is the precedent this borrows from, not a novel interaction."""
+impl app.toggle_ai_chat_maximized -> None {
+    ai_chat_maximized = not ai_chat_maximized;
 }
 
 """Maps `severity` onto `sonner`'s own per-severity call (`toast.error`/`toast.warning`/plain

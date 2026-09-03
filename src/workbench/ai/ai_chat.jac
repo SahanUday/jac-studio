@@ -69,24 +69,153 @@ via a direct `can_use_tool`-denial probe: a decision -- allow or deny -- always 
 shape from a real execution's result), which updates the matching `tool_step` card with the
 authentic outcome. A separate optimistic local note was redundant with, and could race, that
 authoritative update -- `handle_approval_decision` now only forwards the decision and clears the
-pending-approval card; the step card itself carries the result."""
+pending-approval card; the step card itself carries the result.
+
+**First real-user QA pass (2026-09-05, post-Phase-5-closure), a real fix + polish round, not new
+scope** -- see `docs/phases/phase-5-ai-integrations.md`'s own addendum for the full record:
+
+- **`cwd` is now resolved by the caller and passed into `start_chat_turn` as a plain argument,
+  never queried from inside its generator.** A real user hit two failures from the same root cause:
+  a turn silently answered based on the *server process's own* cwd instead of the real open
+  workspace, and a follow-up turn in the same conversation hit a genuine, uncaught
+  `PgWireError: connection lost mid-transaction`. Both trace to `get_current_workspace()` (a real
+  `root`-scoped graph query) having been called from inside `start_chat_turn`'s own SSE generator --
+  see `claude_code_client.jac`'s docstring and tracker entry
+  `2026-09-05-sse-generator-root-scoped-graph-query-unreliable` for the full root-cause writeup.
+  This component now calls `get_current_workspace()` itself, as a plain `await`ed RPC call, right
+  before `fetch`ing `/function/start_chat_turn`.
+- **Tool-step cards are collapsed by default** (`m["expanded"]`, set `False` at `tool_use_start`,
+  toggled by clicking the card's header row) -- a one-line summary (`_tool_step_summary`, the most
+  relevant single input value: `command`/`file_path`/`pattern`/`path`, whichever the tool actually
+  has) plus a status icon and a chevron, matching how VS Code's own Copilot Chat renders a
+  collapsed tool call rather than always showing full JSON input/result inline.
+- **The primary identity is "AI Chat," with a small "via Claude Code" caption, not "Claude Code" as
+  the headline.** A real user flagged that hardcoding the specific provider's name everywhere reads
+  oddly given `roadmap.md`'s own stated intent to eventually support more than one (Copilot,
+  OpenCode, a native `by llm()` "Jac Agent" -- see `jac-agent.md`). **Deliberately not a full
+  provider-selector UI** -- with only one working provider today, a dropdown with nothing real to
+  switch to would be premature, not helpful; this is a light naming fix, not new provider-selection
+  infrastructure. The pending-approval card's "Claude Code wants to use X" and the input
+  placeholder also dropped the specific provider name for the same reason, as did the "Fix"/
+  "Explain"/"Modify" Quick Fix menu items (`ai_code_action_provider.jac`) and inline chat's own
+  header/placeholder (`inline_chat_widget.jac`).
+- **The sidebar is now resizable** (wrapped in a `ResizablePanel`/`ResizableHandle`, the same
+  primitive editor-group splitting already uses) -- applies to every sidebar view (Explorer/Search/
+  SCM/Outline/AI Chat), not just this one, since they all share the same column.
+- **A "maximize" toggle gives this panel the whole workbench area on demand** (the
+  `codicon-screen-full`/`codicon-screen-normal` button next to the header, `maximized`/
+  `onToggleMaximize` props owned by `workbench.jac`) -- real VS Code's own "maximize panel"
+  (double-click a panel tab) is the precedent, not upstream's separate auxiliary-bar Chat panel
+  (still Phase 6 scope, unbuilt). **Deliberately a pure CSS/style toggle on this same mounted
+  instance** (`position: fixed; inset: 0 0 0 48px` when maximized, covering everything right of the
+  activity bar), **not a second mount point (a real tab, a portal, ...)** -- the point is more room
+  for the exact same live conversation a user might already be mid-turn in; anything that
+  unmounts/remounts this component to get there would lose `messages`/`session_id`/
+  `pending_approvals` in the process. `zIndex: 30` -- above ordinary in-flow content (the sidebar's
+  own `zIndex: 20`) but below dialogs/menus/toasts (Radix's own `z-50` convention throughout this
+  project), so the command palette and other overlays still correctly sit on top even while this
+  panel is maximized.
+
+**Second QA pass on the same branch (2026-09-05), after manually testing the first round above --
+two more real, live-found gaps:**
+
+- **Assistant text now renders as real markdown** (`markdown_message.jac`, shared with
+  `inline_chat_widget.jac`) instead of raw pre-wrap text. Found live: a response's own literal
+  ```` ``` ````/`**` markdown syntax was showing up unrendered in the panel, not interpreted --
+  confirmed via a real screenshot, not assumed. User's own messages stay plain text (matching real
+  chat UIs -- markdown rendering is for the *assistant's* formatted output, not literal
+  interpretation of what a user typed).
+- **A `ThinkingIndicator` (spinner + a rotating status word + elapsed seconds, e.g.
+  "Pondering… (7s)") now shows for the whole duration `is_streaming` is true**, docked at the
+  bottom of the message list -- found live: nothing in the UI indicated the agent was actively
+  working between hitting Send and the first token/tool call arriving. **Refined twice on the same
+  day, both from live feedback**: a first version was a single static "Thinking…" label; shown a
+  real screenshot of Claude Code's own extension UI (a rotating whimsical verb next to its own
+  spinner, not a fixed word), `thinking_indicator.jac` now cycles through a similarly-spirited word
+  list every 2.5s and counts elapsed seconds, shared with `inline_chat_widget.jac`'s own popover
+  rather than duplicated. Not a byte-for-byte reproduction of Anthropic's own exact internal word
+  list (unverifiable from here) -- see that module's own docstring.
+
+**Third QA pass (2026-09-05), two more small but real UI bugs found live, both fixed here:**
+
+- **Tool-step cards (and, defensively, plain text entries too) now carry an explicit
+  `flexShrink: "0"`.** Found live via two screenshots of the same conversation before/after a
+  follow-up message: tool-step cards visibly collapsed to razor-thin bars once the message list
+  grew past the visible area, while plain text bubbles didn't. Root cause: each tool-step card's
+  outer wrapper has `overflow: "hidden"` (needed for its own collapse/expand animation-adjacent
+  clipping) -- per the CSS flexbox spec, a flex item's *automatic* minimum size in the main axis is
+  0 when it has `overflow` other than `visible`, instead of its content size. In a `flexDirection:
+  column` list under real content pressure, that makes exactly the entries with `overflow: hidden`
+  (the tool-step cards, not the plain-text ones) the first to get squeezed toward zero height. Not
+  a guess -- confirmed against the exact styles below and the spec's own "automatic minimum size"
+  rule. `pending_approvals`' own cards already had `flexShrink: "0"` from PR #72; this extends the
+  same guard to every entry in the main `messages` list, which never had it.
+- **The message list no longer shows a visible scrollbar** (`className="no-scrollbar"`, an
+  existing Tailwind `@utility` in `styles/global.css` that was defined but never actually applied
+  anywhere in this project until now) -- `overflow: "auto"` still scrolls via wheel/touch/keyboard,
+  it just doesn't reserve a visible OS-chrome scrollbar gutter in a column this narrow. Same
+  treatment applied to `inline_chat_widget.jac`'s own scrollable response area for consistency.
+
+**Fourth QA pass (2026-09-05), two more real gaps found live against a real VS Code Claude Code
+extension screenshot for direct comparison:**
+
+- **The message list now auto-scrolls to the latest content.** Found live: without scrolling
+  manually, the panel stayed pinned at the top of the conversation as new turns/tool steps/text
+  streamed in below the visible area -- real chat UIs (the reference screenshot included) always
+  keep the latest content in view. `messages_list_ref` (a plain `Ref[any]` on the message-list
+  container) plus a `useEffect` keyed on `[messages, is_streaming, pending_approvals]` sets
+  `scrollTop = scrollHeight` on every change that could add content -- covers a new/updated
+  message, the thinking indicator appearing, and a new approval card, not just `messages` alone.
+  Same fix applied to `inline_chat_widget.jac`'s own response area.
+- **User messages now render inside a distinct card** (`background: "#2A2B2C"`, rounded), instead
+  of a plain-text line with only a small uppercase "user" label above it -- found live via a direct
+  side-by-side screenshot comparison against the real Claude Code VS Code extension's own chat UI,
+  where the user's own prompt is visually boxed and the assistant's response flows as plain
+  markdown-rendered text below it, unboxed. Matches that same asymmetry here: only `role == "user"`
+  gets the card treatment (and drops its own now-redundant role label, since the card itself
+  signals "this is what you typed"); assistant/error entries are unchanged."""
 
 import from "react" { useState, useEffect }
 import from src.workbench.ai.claude_code_client { start_chat_turn, approve_tool_call }
 import from src.workbench.ai.ai_tool_diff_preview { app as AiToolDiffPreview }
+import from src.workbench.ai.markdown_message { app as MarkdownMessage }
+import from src.workbench.ai.thinking_indicator { app as ThinkingIndicator }
+import from src.workbench.workspace.workspace_service { get_current_workspace }
 
-def:pub app(active: bool, pendingPrompt: str, pendingAutoSend: bool, pendingNonce: int) -> JsxElement {
+"""One-line summary for a collapsed tool-step card's header -- the single input value most useful
+to see at a glance without expanding, matching how VS Code's own Copilot Chat renders a collapsed
+tool call (`Read file.ts`, not the full JSON args). Falls back to nothing (just the icon+name) for
+a tool shape this hasn't special-cased -- no attempt to guess a summary from an arbitrary shape."""
+def _tool_step_summary(name: str, input: dict[str, any]) -> str {
+    if "command" in input {
+        return str(input["command"]);
+    }
+    if "file_path" in input {
+        return str(input["file_path"]);
+    }
+    if "pattern" in input {
+        return str(input["pattern"]);
+    }
+    if "path" in input {
+        return str(input["path"]);
+    }
+    return "";
+}
+
+def:pub app(active: bool, pendingPrompt: str, pendingAutoSend: bool, pendingNonce: int, maximized: bool, onToggleMaximize: any) -> JsxElement {
     has messages: list[dict[str, any]] = [];
     has input_text: str = "";
     has is_streaming: bool = False;
     has session_id: str | None = None;
     has pending_approvals: list[dict[str, any]] = [];
+    has messages_list_ref: Ref[any] = Ref();
 
     async def handle_send -> None;
     def handle_input_change(e: any) -> None;
     def handle_key_down(e: any) -> None;
     def handle_event(event: dict[str, any]) -> None;
     def update_tool_step(tool_use_id: str, updates: dict[str, any]) -> bool;
+    def toggle_tool_step_expanded(tool_use_id: str) -> None;
     async def handle_approval_decision(tool_use_id: str, decision: str) -> None;
 
     useEffect(lambda {
@@ -98,49 +227,101 @@ def:pub app(active: bool, pendingPrompt: str, pendingAutoSend: bool, pendingNonc
         }
     }, [pendingNonce]);
 
+    useEffect(lambda {
+        if messages_list_ref.current {
+            messages_list_ref.current.scrollTop = messages_list_ref.current.scrollHeight;
+        }
+    }, [messages, is_streaming, pending_approvals]);
+
     can_send = input_text.strip() != "" and not is_streaming;
 
-    <div style={{"display": "block" if active else "none", "height": "100%", "flexDirection": "column", "fontFamily": "system-ui, sans-serif", "fontSize": "12px", "color": "#CCCCCC"}}>
+    <div style={{
+        "display": "block" if active else "none",
+        "height": "100%" if not maximized else "auto",
+        "flexDirection": "column",
+        "fontFamily": "system-ui, sans-serif",
+        "fontSize": "12px",
+        "color": "#CCCCCC",
+        "position": "fixed" if maximized else "static",
+        "top": "0" if maximized else "auto",
+        "right": "0" if maximized else "auto",
+        "bottom": "0" if maximized else "auto",
+        "left": "48px" if maximized else "auto",
+        "zIndex": "30" if maximized else "auto",
+        "background": "#181818"
+    }}>
         <div style={{"height": "100%", "display": "flex", "flexDirection": "column"}}>
-            <div style={{"padding": "0.3rem 0.6rem", "color": "#8C8C8C", "fontSize": "11px", "textTransform": "uppercase", "borderBottom": "1px solid #2A2B2C", "flexShrink": "0"}}>
-                Claude Code
+            <div style={{"padding": "0.3rem 0.6rem", "borderBottom": "1px solid #2A2B2C", "flexShrink": "0", "display": "flex", "alignItems": "center", "gap": "0.4rem"}}>
+                <span style={{"color": "#8C8C8C", "fontSize": "11px", "textTransform": "uppercase"}}>AI Chat</span>
+                <span style={{"color": "#5A5A5A", "fontSize": "10px", "flex": "1"}}>via Claude Code</span>
+                <span
+                    role="button"
+                    title={"Restore to sidebar" if maximized else "Maximize"}
+                    onClick={onToggleMaximize}
+                    className={"codicon " + ("codicon-screen-normal" if maximized else "codicon-screen-full")}
+                    style={{"fontSize": "13px", "color": "#8C8C8C", "cursor": "pointer", "opacity": "0.8"}}
+                />
             </div>
-            <div style={{"flex": "1", "overflow": "auto", "padding": "0.5rem 0.6rem", "display": "flex", "flexDirection": "column", "gap": "0.6rem"}}>
+            <div ref={messages_list_ref} className="no-scrollbar" style={{"flex": "1", "overflow": "auto", "padding": "0.5rem 0.6rem", "display": "flex", "flexDirection": "column", "gap": "0.6rem"}}>
                 {[
                     (
-                        <div key={str(i)} style={{"border": "1px solid " + ("#3A3A3A" if m["status"] == "running" else ("#f48771" if m["status"] == "error" else "#2A2B2C")), "borderRadius": "3px", "background": "#1E1E1E", "padding": "0.35rem 0.5rem", "display": "flex", "flexDirection": "column", "gap": "0.25rem"}}>
-                            <div style={{"display": "flex", "alignItems": "center", "gap": "0.35rem"}}>
+                        <div key={str(i)} style={{"border": "1px solid #2A2B2C", "borderRadius": "4px", "background": "#1E1E1E", "overflow": "hidden", "flexShrink": "0"}}>
+                            <div
+                                role="button"
+                                onClick={lambda (e: any) { toggle_tool_step_expanded(m["tool_use_id"]); }}
+                                style={{"display": "flex", "alignItems": "center", "gap": "0.4rem", "padding": "0.3rem 0.45rem", "cursor": "pointer"}}
+                            >
                                 <span
-                                    className={"codicon " + ("codicon-loading codicon-modifier-spin" if m["status"] == "running" else ("codicon-error" if m["status"] == "error" else "codicon-check"))}
-                                    style={{"fontSize": "12px", "color": "#8C8C8C" if m["status"] == "running" else ("#f48771" if m["status"] == "error" else "#89D185")}}
+                                    className={"codicon " + ("codicon-loading codicon-modifier-spin" if m["status"] == "running" else ("codicon-error" if m["status"] == "error" else "codicon-pass"))}
+                                    style={{"fontSize": "12px", "flexShrink": "0", "color": "#8C8C8C" if m["status"] == "running" else ("#f48771" if m["status"] == "error" else "#89D185")}}
                                 />
-                                <span style={{"fontSize": "11px", "color": "#569CD6"}}>{m["name"]}</span>
+                                <span style={{"fontSize": "11px", "color": "#569CD6", "flexShrink": "0"}}>{m["name"]}</span>
+                                <span style={{"fontSize": "11px", "color": "#8C8C8C", "overflow": "hidden", "textOverflow": "ellipsis", "whiteSpace": "nowrap", "flex": "1"}}>
+                                    {_tool_step_summary(m["name"], m["input"])}
+                                </span>
+                                <span
+                                    className={"codicon " + ("codicon-chevron-down" if m.get("expanded") else "codicon-chevron-right")}
+                                    style={{"fontSize": "12px", "flexShrink": "0", "color": "#5A5A5A"}}
+                                />
                             </div>
                             {(
-                                <pre style={{"margin": "0", "fontSize": "10px", "whiteSpace": "pre-wrap", "wordBreak": "break-word", "maxHeight": "4rem", "overflow": "auto", "color": "#8C8C8C", "fontFamily": "monospace"}}>{JSON.stringify(m["input"])}</pre>
-                            ) if m["input"] else None}
-                            {(
-                                <pre style={{"margin": "0", "fontSize": "10px", "whiteSpace": "pre-wrap", "wordBreak": "break-word", "maxHeight": "6rem", "overflow": "auto", "color": "#f48771" if m["status"] == "error" else "#CCCCCC", "fontFamily": "monospace"}}>{m["result_text"]}</pre>
-                            ) if m["result_text"] != "" else None}
+                                <div style={{"padding": "0 0.45rem 0.4rem", "display": "flex", "flexDirection": "column", "gap": "0.3rem", "borderTop": "1px solid #2A2B2C"}}>
+                                    {(
+                                        <pre style={{"margin": "0.3rem 0 0", "fontSize": "10px", "whiteSpace": "pre-wrap", "wordBreak": "break-word", "maxHeight": "6rem", "overflow": "auto", "color": "#8C8C8C", "fontFamily": "monospace"}}>{JSON.stringify(m["input"])}</pre>
+                                    ) if m["input"] else None}
+                                    {(
+                                        <pre style={{"margin": "0", "fontSize": "10px", "whiteSpace": "pre-wrap", "wordBreak": "break-word", "maxHeight": "8rem", "overflow": "auto", "color": "#f48771" if m["status"] == "error" else "#CCCCCC", "fontFamily": "monospace"}}>{m["result_text"]}</pre>
+                                    ) if m["result_text"] != "" else None}
+                                </div>
+                            ) if m.get("expanded") else None}
                         </div>
                     ) if m.get("kind") == "tool_step" else (
-                        <div key={str(i)} style={{"display": "flex", "flexDirection": "column", "gap": "0.15rem"}}>
-                            <span style={{
-                                "fontSize": "10px",
-                                "textTransform": "uppercase",
-                                "color": "#f48771" if m["role"] == "error" else ("#9CDCFE" if m["role"] == "user" else "#8C8C8C")
-                            }}>
-                                {m["role"]}
-                            </span>
-                            <span style={{"whiteSpace": "pre-wrap", "wordBreak": "break-word"}}>{m["text"]}</span>
+                        <div key={str(i)} style={{"display": "flex", "flexDirection": "column", "gap": "0.15rem", "flexShrink": "0"}}>
+                            {(
+                                <div style={{"background": "#2A2B2C", "borderRadius": "6px", "padding": "0.4rem 0.55rem"}}>
+                                    <span style={{"whiteSpace": "pre-wrap", "wordBreak": "break-word"}}>{m["text"]}</span>
+                                </div>
+                            ) if m["role"] == "user" else (
+                                <>
+                                    <span style={{"fontSize": "10px", "textTransform": "uppercase", "color": "#f48771" if m["role"] == "error" else "#8C8C8C"}}>
+                                        {m["role"]}
+                                    </span>
+                                    {(
+                                        <MarkdownMessage text={m["text"]} />
+                                    ) if m["role"] == "assistant" else (
+                                        <span style={{"whiteSpace": "pre-wrap", "wordBreak": "break-word"}}>{m["text"]}</span>
+                                    )}
+                                </>
+                            )}
                         </div>
                     )
                     for (i, m) in enumerate(messages)
                 ]}
+                <ThinkingIndicator active={is_streaming} />
             </div>
             {[
                 <div key={a["tool_use_id"]} style={{"margin": "0 0.6rem 0.5rem", "border": "1px solid #f0883e", "borderRadius": "3px", "background": "#2A1F14", "padding": "0.4rem 0.5rem", "display": "flex", "flexDirection": "column", "gap": "0.3rem", "flexShrink": "0"}}>
-                    <span style={{"fontSize": "11px", "color": "#f0883e"}}>{"Claude Code wants to use " + a["name"]}</span>
+                    <span style={{"fontSize": "11px", "color": "#f0883e"}}>{"Wants to use " + a["name"]}</span>
                     {(
                         <AiToolDiffPreview toolUseId={a["tool_use_id"]} filePath={a["file_path"]} originalText={a["original_text"]} modifiedText={a["modified_text"]} />
                     ) if a["has_diff"] else (
@@ -168,7 +349,7 @@ def:pub app(active: bool, pendingPrompt: str, pendingAutoSend: bool, pendingNonc
                     value={input_text}
                     onChange={handle_input_change}
                     onKeyDown={handle_key_down}
-                    placeholder="Ask Claude Code..."
+                    placeholder="Ask AI..."
                     rows={2}
                     style={{
                         "flex": "1",

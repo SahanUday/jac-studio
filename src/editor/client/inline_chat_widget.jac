@@ -55,6 +55,9 @@ import from "react" { useEffect }
 import from "react-dom" { createPortal }
 import from src.workbench.ai.claude_code_client { start_chat_turn, approve_tool_call }
 import from src.workbench.ai.ai_tool_diff_preview { app as AiToolDiffPreview }
+import from src.workbench.ai.markdown_message { app as MarkdownMessage }
+import from src.workbench.ai.thinking_indicator { app as ThinkingIndicator }
+import from src.workbench.workspace.workspace_service { get_current_workspace }
 
 def:pub app(open: bool, onClose: any, editorRef: any, monacoRef: any, path: str) -> JsxElement {
     has input_text: str = "";
@@ -64,6 +67,7 @@ def:pub app(open: bool, onClose: any, editorRef: any, monacoRef: any, path: str)
     has pending_approvals: list[dict[str, any]] = [];
     has widget_node_ref: Ref[any] = Ref();
     has content_widget_ref: Ref[any] = Ref();
+    has response_area_ref: Ref[any] = Ref();
 
     async def handle_submit -> None;
     def handle_input_change(e: any) -> None;
@@ -106,6 +110,12 @@ def:pub app(open: bool, onClose: any, editorRef: any, monacoRef: any, path: str)
         }
     }, [open]);
 
+    useEffect(lambda {
+        if response_area_ref.current {
+            response_area_ref.current.scrollTop = response_area_ref.current.scrollHeight;
+        }
+    }, [response_text, is_streaming, pending_approvals]);
+
     <>
         {(
             createPortal(
@@ -126,7 +136,7 @@ def:pub app(open: bool, onClose: any, editorRef: any, monacoRef: any, path: str)
                     }}
                 >
                     <div style={{"display": "flex", "justifyContent": "space-between", "alignItems": "center"}}>
-                        <span style={{"color": "#8C8C8C", "fontSize": "10px", "textTransform": "uppercase"}}>Inline Chat (Claude Code)</span>
+                        <span style={{"color": "#8C8C8C", "fontSize": "10px", "textTransform": "uppercase"}}>Inline Chat</span>
                         <span
                             role="button"
                             onClick={handle_close}
@@ -135,10 +145,11 @@ def:pub app(open: bool, onClose: any, editorRef: any, monacoRef: any, path: str)
                         />
                     </div>
                     {(
-                        <div style={{"whiteSpace": "pre-wrap", "wordBreak": "break-word", "maxHeight": "10rem", "overflow": "auto", "padding": "0.3rem", "background": "#1E1E1E", "borderRadius": "3px"}}>
-                            {response_text}
+                        <div ref={response_area_ref} className="no-scrollbar" style={{"maxHeight": "10rem", "overflow": "auto", "padding": "0.3rem", "background": "#1E1E1E", "borderRadius": "3px"}}>
+                            <MarkdownMessage text={response_text} />
                         </div>
                     ) if response_text != "" else None}
+                    <ThinkingIndicator active={is_streaming} />
                     {[
                         <div key={a["tool_use_id"]} style={{"border": "1px solid #f0883e", "borderRadius": "3px", "background": "#2A1F14", "padding": "0.3rem", "display": "flex", "flexDirection": "column", "gap": "0.25rem"}}>
                             <span style={{"fontSize": "10px", "color": "#f0883e"}}>{"Wants to use " + a["name"]}</span>
@@ -159,7 +170,7 @@ def:pub app(open: bool, onClose: any, editorRef: any, monacoRef: any, path: str)
                             value={input_text}
                             onChange={handle_input_change}
                             onKeyDown={handle_key_down}
-                            placeholder="Ask Claude Code to edit this..."
+                            placeholder="Ask AI to edit this..."
                             rows={2}
                             autoFocus={True}
                             style={{"flex": "1", "background": "#1E1E1E", "color": "#CCCCCC", "border": "1px solid #2A2B2C", "borderRadius": "3px", "padding": "0.3rem", "fontFamily": "inherit", "fontSize": "12px", "resize": "none"}}

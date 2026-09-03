@@ -16,9 +16,20 @@ that doesn't blow out a ~260-500px column, code blocks matching Monaco's own dar
 **Not `dangerouslySetInnerHTML` + a separate sanitizer** -- `react-markdown` parses to a real AST
 and renders real React elements itself, so there's no raw-HTML injection step to sanitize in the
 first place; a message containing literal `<script>` text renders as inert text, not markup, by
-construction."""
+construction.
 
-import from "react-markdown" { Markdown }
+**`{ default as Markdown }`, not a plain `{ Markdown }` -- found live, via a real browser error
+(`E7001: has no export named 'Markdown'`), not assumed from the package's own `.d.ts`.**
+`react-markdown`'s `lib/index.js` genuinely has `Markdown` as a named export, but the package's
+actual `exports` entry point (`index.js`, what `"react-markdown"` resolves to) re-exports it only
+as `Markdown as default` alongside a few others as real named exports (`MarkdownAsync`,
+`MarkdownHooks`) -- so a plain named import compiles fine (the `.d.ts` shows a named `Markdown`
+declaration) but fails to link at runtime, since there's no such binding at the actual resolved
+entry point. The fix matches this project's own documented pattern for exactly this shape
+(`jac guide jac-types`'s own `mermaid` example): bind the default export to a local name via
+`{ default as Markdown }`, inside the same `import from` block."""
+
+import from "react-markdown" { default as Markdown }
 
 glob _HEADING_STYLE: dict[str, str] = {
     "margin": "0.5rem 0 0.2rem",

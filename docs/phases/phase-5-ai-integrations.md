@@ -265,3 +265,58 @@ content pressure in a `flexDirection: column` list — fixed with an explicit `f
 every message entry), and **a visible OS-chrome scrollbar** in the narrow message column (fixed
 with `styles/global.css`'s own `no-scrollbar` Tailwind utility, defined at some earlier point but
 never actually applied anywhere in this project until now).
+
+A fourth round, comparing directly against a real VS Code Claude Code extension screenshot, found
+two more gaps: **the message list didn't auto-scroll to the latest content** (fixed with a `Ref`
+on the scrollable container plus a `useEffect` keyed on everything that can add visible content —
+`messages`, `is_streaming`, `pending_approvals` — setting `scrollTop = scrollHeight`, applied to
+both `ai_chat.jac` and `inline_chat_widget.jac`), and **user and assistant messages were hard to
+tell apart at a glance** (fixed by giving only the user's own prompt a distinct boxed card,
+matching the reference screenshot's own asymmetry — the assistant's response stays unboxed,
+flowing markdown text).
+
+## Second QA round (2026-09-04) — PRs #71–73
+
+Testing MCP wiring, tool approval, and multi-file edit review turned up five more real, unrelated
+findings — two genuine bugs and three feature requests grounded in real product/SDK capability,
+not invented from scratch. Full detail lives in each touched module's own docstring; summarized
+here for the phase-level record.
+
+- **Bug: the sidebar's resize handle showed real white space, not this app's dark theme, when
+  dragged wider than the active view's content** — two separate gaps in the vendored shadcn
+  `Sidebar` primitive's `collapsible="none"` branch, both in the Explorer view specifically but
+  latent in every sidebar view: (1) `Sidebar` hardcodes a `16rem` width regardless of its resizable
+  container, so dragging wider left the resize handle's own extra space uncovered — fixed with
+  `className="w-full min-w-0"` (Tailwind's `cn()`/`tailwind-merge` resolves the class conflict in
+  the caller's favor); (2) none of `file_tree.jac`/`scm.jac`/`outline.jac`'s plain-`<div>` roots
+  set an explicit background, so any area they didn't cover fell through the app's `.dark`-class
+  scoping (applied to a div *inside* `body`, not `body` itself — see `main.jac`'s own docstring) to
+  `body`'s genuinely still-light `--background` — fixed with one `#191A1B` fallback on the shared
+  `ResizablePanel` all five sidebar views sit inside, matching this file's own chrome color.
+- **Bug: asking the agent to create a file named `scratch_test.txt` wrote it to
+  `~/.claude-scratch/<session-id>/` instead of the open workspace**, even though `cwd` was
+  confirmed correct in the server's own request log. Root cause: `claude_code_launcher.py` runs as
+  the same OS user as whoever's own, separate Claude Code CLI session has a personal global
+  `~/.claude/CLAUDE.md` — `ClaudeAgentOptions.setting_sources` defaults to loading every filesystem
+  settings source, `"user"` included, so this in-app launcher was reading and obeying that
+  unrelated, machine-owner-specific config (a real rule about naming a file literally "scratch").
+  Fixed with `setting_sources=["project", "local"]`, excluding `"user"` while keeping the two
+  sources genuinely scoped to the open workspace itself. See `claude_code_launcher.py`'s own
+  docstring for the full finding — this generalizes beyond this one developer's machine to any
+  future jac-studio user with their own unrelated global Claude Code config.
+- **Feature: model/permission-mode/effort pickers** in `ai_chat.jac`'s composer, all three backed
+  by real `ClaudeAgentOptions` fields the installed SDK already exposes (`model`, `permission_mode`,
+  `effort` — confirmed by reading the dataclass directly). `permission_mode`'s four options map
+  one-to-one onto the real extension's own "Manual/Edit automatically/Plan/Auto" mode switcher, per
+  a side-by-side reference screenshot. `model` still defaults to `"haiku"` on mount — a picker to
+  move *off* the cheap default when needed, not a reversal of it.
+- **Feature: an `@`-triggered file-attachment picker**, investigated against real VS Code's own
+  file-reference mechanism first (`chatDynamicVariables.ts`/`chatAttachmentModel.ts` in a real
+  `microsoft/vscode` checkout) before building a proportionate equivalent: file content is resolved
+  and prepended to the prompt server-side before the request goes out (`claude_code_client.jac`'s
+  new `_build_prompt_with_attachments`), the same "resolve to real content before sending" approach
+  VS Code's own attachment model uses, rather than hoping raw `@text` gets parsed downstream. Reuses
+  `workspace_service.jac`'s existing `list_all_files` (the same RPC `quick_open.jac`'s Ctrl+P
+  switcher already calls) through a `CommandDialog` picker. One-shot per turn, not persisted pinned
+  context across a conversation — a deliberate v1 scope cut to avoid silently re-sending the same
+  file's content (and cost) on every follow-up.

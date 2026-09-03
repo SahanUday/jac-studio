@@ -274,7 +274,22 @@ so triggering the same action twice in a row still fires (a same-value `useEffec
 would silently no-op the second time). `ai_pending_prompt`/`ai_pending_auto_send`/`ai_pending_nonce`
 are deliberately **not** persisted, same call already made for `dirty_paths`/`active_bottom_panel`
 above -- a one-shot request to open the chat panel with a prompt has no meaning to restore after a
-reload."""
+reload.
+
+**The sidebar `ResizablePanel` now carries an explicit `#191A1B` fallback background (2026-09-04,
+real-user QA).** Found live: dragging the sidebar's resize handle wider than the active view's own
+content showed real, stark white, not this app's dark theme -- traced to `styles/global.css`'s
+`:root`/`.dark` split (`main.jac`'s own docstring covers why): `.dark` is applied to a div *inside*
+`body`, so `--background` only flips to its dark value for that div's descendants, while `body`
+itself, an ancestor, keeps `:root`'s light `oklch(1 0 0)` (pure white). Every visible pixel in this
+app is normally covered by some descendant's own explicit dark background (this file's chrome, the
+editor, `ai_chat.jac`'s own `#181818` root, ...) -- but `file_tree.jac`/`scm.jac`/`outline.jac`'s
+plain `<div>` roots never set one of their own, so any area they don't otherwise cover (the file
+tree's own fixed-width bug, see that module's own docstring for the other half of this finding; a
+short result list in Search/SCM/Outline) fell all the way through to that true white `body`. One
+line on the shared container these five views already sit inside, matching the `#191A1B` this
+file's own tab bar/status bar/title bar already use, closes the gap for all of them at once rather
+than patching each view's own root individually."""
 
 import from "react" { useEffect }
 import from "sonner" { Toaster, toast }
@@ -416,7 +431,7 @@ def:pub app(onToggleTheme: any) -> JsxElement {
         <div style={{"display": "flex", "flex": "1", "overflow": "hidden"}}>
             <ActivityBarApp activeViewId={active_view_id} onSelectView={select_view} />
             <ResizablePanelGroup direction="horizontal" style={{"flex": "1"}}>
-                <ResizablePanel defaultSize={18} minSize={12} maxSize={60} style={{"borderRight": "1px solid #2A2B2C", "overflow": "hidden", "position": "relative"}}>
+                <ResizablePanel defaultSize={18} minSize={12} maxSize={60} style={{"borderRight": "1px solid #2A2B2C", "overflow": "hidden", "position": "relative", "background": "#191A1B"}}>
                     <div style={{"display": "block" if active_view_id == "explorer" else "none", "height": "100%"}}>
                         <FileTreeApp onOpenFile={open_tab} onCompareFiles={open_diff_tab} gitStatus={git_status_by_path} />
                     </div>

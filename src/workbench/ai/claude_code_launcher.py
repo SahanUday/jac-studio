@@ -13,15 +13,36 @@ forwarding raw SDK messages (which aren't JSON-serializable as-is: AssistantMess
 are dataclasses, not dicts).
 
 Usage: claude_code_launcher.py <prompt> [--resume <session_id>] [--cwd <path>]
+       [--model <name>] [--permission-mode <mode>] [--effort <level>]
 
-**`ClaudeAgentOptions.model` is pinned to `"haiku"`, a deliberate standing choice, not a
-leftover from one PR's live-verification pass.** Every feature built against this integration
-gets exercised for real (`jac browse`, a genuine running server, genuine API calls -- this
-project's own "verify empirically" discipline), which means real API spend on every session, not
-just this one. Pinning to the cheapest model keeps that discipline affordable across the whole
-run of AI-integration work, not only while implementing it -- correctness of the plumbing this
-launcher owns (event shapes, streaming, tool approval, MCP wiring) doesn't depend on which model
-answers, so there's no accuracy tradeoff being made here worth trading back for.
+**`ClaudeAgentOptions.model` still *defaults* to `"haiku"` when `--model` is omitted -- the
+standing choice from this launcher's first version is unchanged, only now overridable, not
+reversed.** Every feature built against this integration gets exercised for real (`jac browse`, a
+genuine running server, genuine API calls -- this project's own "verify empirically" discipline),
+which means real API spend on every session, not just this one; defaulting to the cheapest model
+keeps that discipline affordable. **A real model picker in `ai_chat.jac` (2026-09-04, real-user
+QA) now sends an explicit `--model` on every turn** -- a user asked for the same model-selection
+UI real Claude Code/Copilot chat surfaces have, rather than a silently fixed choice with no way to
+reach for a stronger model on a harder question. `haiku`/`sonnet`/`opus` are passed through
+verbatim as the CLI's own documented short model aliases (confirmed: `"haiku"` already worked as
+exactly this kind of alias before this change existed, not a full versioned model id) -- this
+launcher does no alias resolution of its own, the same "don't reinvent what the tool already does"
+call `mcp_servers` above already makes.
+
+**`--permission-mode`/`--effort` (2026-09-04, real-user QA) thread straight through to
+`ClaudeAgentOptions.permission_mode`/`.effort` -- both real fields the installed SDK already
+exposes (confirmed by reading `ClaudeAgentOptions`'s own dataclass fields directly, not assumed),
+not new behavior invented here.** A user, comparing against a real Claude Code extension
+screenshot, asked for its "Manual / Edit automatically / Plan / Auto" mode switcher and its effort
+selector. `permission_mode`'s four values used by `ai_chat.jac`'s picker map onto the SDK's own
+documented semantics one-to-one: `"default"` (Manual -- every dangerous call still reaches
+`can_use_tool` below, this launcher's original, only behavior before this change), `"acceptEdits"`
+(Edit automatically), `"plan"` (Plan -- no tool execution at all), `"auto"` (Auto -- the SDK's own
+broadest bypass). Modes other than `"default"` mean some or all tool calls never reach
+`can_use_tool` at all (the SDK's own permission-mode check short-circuits it, not something this
+launcher special-cases) -- so fewer or no approval cards is the *correct*, expected result of
+picking one of those modes, not a regression of the approval flow PR #72 built. `effort` is passed
+through as one of the SDK's own five documented literal levels unchanged.
 
 `mcp_servers` points Claude Code at `jac mcp` (a real, working first-party MCP server --
 confirmed live via `jac mcp --inspect`, 140 resources/19 tools/9 prompts) over stdio, giving it
@@ -80,6 +101,32 @@ the `jac mcp` tools, ...) gets neither field, and the client falls back to its e
 card -- no attempt made here to guess at a shape for a tool this project hasn't verified live (a
 possible `MultiEdit` tool included; a probe for it timed out inconclusively rather than confirming
 a real shape, so it deliberately isn't special-cased).
+
+**`setting_sources=["project", "local"]` -- deliberately excludes `"user"`, a real, live-reproduced
+bug fix, not a defensive default (2026-09-04, real-user QA).** A real user asked this launcher to
+"Create a new file called scratch_test.txt", with `--cwd` correctly pointing at their own open
+workspace (confirmed live in the server's own request log) -- yet the file landed under
+`~/.claude-scratch/<session-id>/`, nowhere near that workspace. Root cause, confirmed by reading
+`ClaudeAgentOptions.setting_sources`'s own docstring in the installed SDK directly: this field
+defaults to `None`, which "matches CLI defaults" -- every filesystem settings source, `"user"`
+(`~/.claude/settings.json` and `~/.claude/CLAUDE.md`) included, gets loaded. This launcher runs on
+the *same machine, same OS user* as whoever is developing jac-studio itself with their own,
+separate Claude Code CLI session -- so a query spawned here was reading that developer's own
+personal global `CLAUDE.md`, not anything jac-studio ships or controls. That file's own real
+standing rule (verbatim: "Anything throwaway ... goes in `$HOME/.claude-scratch/<session-id>/`,
+never inside a project repo") is exactly what fired: the requested file was *literally named*
+"scratch_test.txt", and the agent, correctly following instructions it had no way to know weren't
+meant for it, obeyed. This isn't specific to that one rule or that one developer's machine --
+*any* end user of jac-studio's shipped AI Chat feature could have their own unrelated global
+`CLAUDE.md` (a different tool's config, a different project's conventions, anything) silently
+steering this in-app assistant's behavior on a completely unrelated project, purely because both
+happen to run as the same OS user. `setting_sources=["project", "local"]` keeps the two sources
+that are genuinely scoped to the *opened workspace* (`.claude/settings.json`,
+`.claude/settings.local.json`, and -- per the field's own docstring, "Must include `'project'` to
+load CLAUDE.md files" -- that workspace's own `CLAUDE.md` if it has one, which is legitimate,
+expected context for a project-specific assistant) while dropping the one source
+(`"user"`) that reflects the *host machine owner's* personal, unrelated tooling preferences rather
+than anything about the project actually open in jac-studio.
 
 **A tool call's full lifecycle is now three separate events, not one bare name, closing item 6 of
 `docs/architecture.md`'s "Reframed 2026-09-03" AI section (richer agent-session visualization).**
@@ -213,6 +260,9 @@ async def main() -> None:
     parser.add_argument("prompt")
     parser.add_argument("--resume", default=None)
     parser.add_argument("--cwd", default=None)
+    parser.add_argument("--model", default=None)
+    parser.add_argument("--permission-mode", default=None)
+    parser.add_argument("--effort", default=None)
     args = parser.parse_args()
 
     options = ClaudeAgentOptions(
@@ -221,7 +271,10 @@ async def main() -> None:
         cwd=args.cwd,
         mcp_servers={"jac": {"command": "jac", "args": ["mcp"]}},
         can_use_tool=_can_use_tool,
-        model="haiku",
+        model=args.model or "haiku",
+        permission_mode=args.permission_mode,
+        effort=args.effort,
+        setting_sources=["project", "local"],
     )
 
     try:

@@ -13,7 +13,8 @@ impl app.handle_before_mount(monaco: any) -> None {
 impl app.handle_mount(editor: any, monaco: any) -> None {
     editor_ref.current = editor;
     monaco_ref.current = monaco;
-    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, handle_save);
+    _focused_editor_handlers[path] = {"save": handle_save, "toggleInlineChat": toggle_inline_chat};
+    _register_global_editor_keybindings(editor, monaco);
     editor.onDidChangeCursorPosition(handle_cursor_change);
     if initialCursor {
         restored_position = {"lineNumber": initialCursor["line"], "column": initialCursor["column"]};
@@ -154,4 +155,12 @@ impl app.handle_content_change(e: any) -> None {
         dirty = True;
         onDirtyChange(path, True);
     }
+}
+
+impl app.toggle_inline_chat -> None {
+    inline_chat_open = not inline_chat_open;
+}
+
+impl app.close_inline_chat -> None {
+    inline_chat_open = False;
 }

@@ -731,9 +731,42 @@ points* against the *same* provider interface already in place":
    box without sending; a synthetic diagnostic marker (standing in for a real `jac lsp` one — see
    the PR for why) made "Fix with Claude Code" appear and send the diagnostic-plus-code prompt
    correctly.
-2. **Inline chat** (a Ctrl+I popover for targeted edits without leaving the editor) — medium lift.
-   New UI surface (a Monaco content-widget/zone-widget anchored at cursor/selection), but total
-   backend reuse — same `start_chat_turn` stream, different presentation.
+2. **Inline chat — done (2026-09-04).** A `Ctrl+I` popover (`inline_chat_widget.jac`) for targeted
+   edits without leaving the editor, anchored at the cursor/selection via a real Monaco content
+   widget (`editor.addContentWidget`) — a deliberate, documented scope cut from upstream's actual
+   `ZoneWidget` (real VS Code's own internal contrib class, confirmed **not** part of the public
+   `monaco-editor` npm package's exported API surface this project embeds), so it can overlap
+   nearby lines rather than pushing them apart. Total backend reuse: makes its own direct
+   `start_chat_turn` call — the identical stream `ai_chat.jac`'s sidebar already uses — as a fully
+   independent session (closing the popover ends that context; no shared state with the sidebar).
+   Tool approval is handled inline too, reusing `AiToolDiffPreview`/`approve_tool_call` rather than
+   a second approval UI, since this popover's own `tool_approval_request` events arrive on a
+   separate SSE stream the sidebar would never see. **React content reaches Monaco's own
+   externally-owned DOM node via `ReactDOM.createPortal`** — a genuinely new integration pattern in
+   this project (every other Monaco-facing provider goes the opposite direction), verified live
+   before being relied on.
+
+   **A real, previously-undiscovered Monaco limitation surfaced while wiring this, and it turned
+   out to affect the pre-existing `Ctrl+S` too.** With more than one tab open (every open tab keeps
+   its editor mounted, per `keepCurrentModel`), each `MonacoEditorApp` instance's own
+   `editor.addCommand(chord, handler)` does not scope that keybinding to its own instance —
+   confirmed live with an isolated minimal test, independent of this project's code, that only the
+   *last-registered* handler for a chord ever fires, regardless of which editor genuinely has
+   focus. Passing `"editorTextFocus"` as the standard context argument (the correct fix in a real
+   VS Code workbench) was tried and confirmed **not** to fix it in this standalone embedding.
+   Concretely, before the fix: focusing and editing `broken.jac`, then pressing `Ctrl+S`, could
+   silently save `README.md`'s content instead — a real, previously-unnoticed correctness bug, not
+   hypothetical. **Fixed** by no longer trusting Monaco's own per-instance routing at all: a
+   module-level registry (`_focused_editor_handlers`, keyed by file path) holds every mounted
+   instance's own save/toggle callbacks; `Ctrl+S`/`Ctrl+I` are registered exactly once, globally,
+   and the shared handler finds the actually-focused editor dynamically
+   (`monaco.editor.getEditors().find(hasTextFocus)`) before dispatching. Verified against the exact
+   repro: two tabs open, focused `broken.jac`, `Ctrl+S` now correctly saves `broken.jac`. See
+   tracker entry `2026-09-04-monaco-addcommand-does-not-scope-per-standalone-editor-instance` for
+   the full investigation. **Live-verified end to end** (`jac browse`, real credentials,
+   screenshots): `Ctrl+I` opened a correctly-positioned popover; a real turn streamed a real
+   response, including a real inline tool-approval card that resolved correctly and let the
+   response continue streaming afterward.
 3. **Richer agent-session visualization** (step-by-step tool-call/file-change display) — lowest
    priority; `ai_chat.jac` already streams `tool_use` events, this is a rendering enhancement to an
    existing surface, not a new mechanism.

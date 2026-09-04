@@ -122,25 +122,37 @@ class in CSS specificity regardless) while `cn(...)`'s own `className` output --
 unclobbered. Makes the resize handle actually resize the visible tree, not just the empty space
 next to it, without reintroducing the text/background regression.
 
-**`refreshSignal` (2026-09-04, real-user QA) re-fetches every currently-loaded directory when it
-changes, closing a real gap: a file the AI agent created via its own `Write` tool was confirmed
-live on disk (a real user checked with their own terminal) but never appeared in this tree.** Root
-cause: an AI tool call writes directly to the filesystem from a completely separate OS process
+**Watches the open workspace for external changes and refreshes affected directories, closing a
+real gap: a file the AI agent created via its own `Write` tool was confirmed live on disk (a real
+user checked with their own terminal) but never appeared in this tree.** Root cause: an AI tool
+call writes directly to the filesystem from a completely separate OS process
 (`claude_code_launcher.py`'s own subprocess, see that module's docstring) -- it doesn't go through
 `workspace_service.jac`'s `create_file`, the only path that already knew to call
 `refresh_children` (`create_new_file` above). This component has no way to know a write happened
-unless told. `workbench.jac` increments `refreshSignal` (a plain nonce, the identical
-`pendingNonce` pattern `ai_chat.jac` already established for the reverse direction) whenever
-`ai_chat.jac` reports a successful `Write`/`Edit` tool result; the `useEffect([refreshSignal])`
-below refreshes every key already in `children_by_path` -- every directory a user has actually
-expanded, root included (`_open_path_into_tree` stores the root's own children there too) --
-rather than trying to compute which one specific directory the new file landed in client-side (no
-`os.path`-equivalent path-splitting needed, and correct regardless of whether the write created a
-new file in an already-open folder, overwrote an existing one, or landed several levels deep in a
-path this component happens to have expanded). A no-op, not a wasted round-trip, for any directory
-the user hasn't looked at yet -- `children_by_path` only contains what's actually been expanded."""
+unless told.
 
-import from "react" { useEffect }
+**A first fix wired a dedicated `refreshSignal` nonce prop straight from `ai_chat.jac`'s own
+`tool_result` handling -- correct, but special-cased to *this app's own AI tool calls* as the only
+possible cause of an external change.** Asked to check how real VS Code handles the general
+version of this problem: `IFileService.onDidFilesChange` (`explorerService.ts` in a real
+`microsoft/vscode` checkout) is one general, workspace-wide file-change stream that Explorer (and
+everything else that cares) subscribes to, regardless of *why* something changed -- an AI tool, a
+terminal command, `git checkout`, another program entirely. `start_watching` below is that same
+idea: `workspace_watcher.jac`'s `watch_workspace_changes` (a polling-based watcher, not a native
+OS one -- see that module's own docstring for why that's a deliberate choice, not a missing
+dependency, matching two existing polling precedents already in this codebase) streams
+`{"dirs": [...]}` events for any directory whose own immediate entry list changed; `handle_watch_event`
+below refreshes only the ones this component actually has loaded (`refresh_children` per matching
+key in `children_by_path`), root included. Started once, from `_open_path_into_tree`, right after
+`root_path` is known -- and re-started (aborting the previous connection first) if the user opens a
+*different* root, since an old watch left running against a folder that's no longer open would be
+pure waste. `watch_abort_controller` (a `Ref[any]`, not `has` state, since it holds a mutable
+`AbortController` this component's own lifecycle owns, not something a re-render should ever
+recreate) is what makes that abort possible -- there's no other precedent for canceling an in-flight
+SSE `fetch` anywhere in this codebase (`terminal.jac`/`dap_client.jac`'s own long-lived streams
+never needed to stop themselves this way), so this is a genuinely new, standard-`fetch`-`signal`
+pattern, not an existing one reused."""
+
 import from src.workbench.workspace.workspace_service {
     open_workspace, list_children_by_path, get_current_workspace,
     create_file, create_folder, rename_path, delete_path
@@ -302,6 +314,7 @@ def:pub app(props: any) -> JsxElement {
     has selected_path: str = "";
     has compare_pending_path: str = "";
     has compare_pending_name: str = "";
+    has watch_abort_controller: Ref[any] = Ref();
 
     git_status = props["gitStatus"] if "gitStatus" in props else {};
 
@@ -315,15 +328,8 @@ def:pub app(props: any) -> JsxElement {
     async def create_new_folder(parent_path: str) -> None;
     async def rename_item(path: str, parent_path: str, current_name: str) -> None;
     async def delete_item(path: str, parent_path: str, is_dir: bool) -> None;
-    async def refresh_all_loaded_children -> None;
-
-    refresh_signal = props["refreshSignal"] if "refreshSignal" in props else 0;
-
-    useEffect(lambda {
-        if refresh_signal > 0 {
-            refresh_all_loaded_children();
-        }
-    }, [refresh_signal]);
+    async def start_watching(path: str) -> None;
+    async def handle_watch_event(event: dict[str, any]) -> None;
 
     async can with entry {
         restored = await get_current_workspace();

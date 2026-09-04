@@ -261,15 +261,6 @@ impl app.toggle_ai_chat_maximized -> None {
     ai_chat_maximized = not ai_chat_maximized;
 }
 
-"""`path` isn't used yet (see `file_tree.jac`'s own docstring for why a plain nonce bump is enough
-to refresh every already-loaded directory, root included, without needing to compute which one the
-write actually landed in) -- kept as a parameter anyway since `ai_chat.jac` already has it on hand
-at the call site, and a future, more targeted refresh (e.g. also reloading an open editor tab
-showing this exact path) would need it without a signature change."""
-impl app.handle_workspace_file_changed(path: str) -> None {
-    fs_refresh_nonce = fs_refresh_nonce + 1;
-}
-
 """Maps `severity` onto `sonner`'s own per-severity call (`toast.error`/`toast.warning`/plain
 `toast` for info) rather than always calling the bare `toast(message)` form -- `sonner` uses that
 to pick the toast's icon/accent color, the same severity vocabulary `diagnostics.jac` already

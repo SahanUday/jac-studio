@@ -375,11 +375,25 @@ terminal) but never appeared in the Explorer sidebar, even with the dev server's
 an HMR gap (Vite's hot reload only concerns this app's own source recompiling, unrelated to
 workspace files) -- `file_tree.jac`'s tree is plain client-side state, fetched once per directory
 on expand and never re-fetched on its own, and an AI tool call writes to disk from a wholly
-separate OS process with no way to signal the tree. Fixed with a `refreshSignal` nonce prop
-(mirroring the existing `pendingNonce` pattern `ai_chat.jac` already uses for the reverse
-direction): `ai_chat.jac` reports a successful `Write`/`Edit` tool result up to `workbench.jac`,
-which bumps the nonce it hands to `FileTreeApp`, which re-fetches every directory it already has
-loaded (root included) rather than trying to compute which one specific directory the write landed
-in. Scoped to the sidebar only, not `inline_chat_widget.jac` -- see `ai_chat.jac`'s own docstring
-for why threading the same callback through the editor/Monaco layer to reach the inline popover is
-real follow-up work, not dropped, but out of proportion for this pass's actual finding.
+separate OS process with no way to signal the tree. A first fix wired a dedicated callback
+straight from `ai_chat.jac`'s own `tool_result` handling -- correct, but special-cased to this
+app's own AI tool calls as the only possible cause of an external change.
+
+**Update, same day, fourth finding**: asked to check how real VS Code handles the general version
+of this problem (a file changing on disk for *any* reason -- an AI tool, a terminal command,
+`git checkout`, another program), and it doesn't special-case causes either:
+`IFileService.onDidFilesChange` (confirmed by reading `explorerService.ts` in a real
+`microsoft/vscode` checkout) is one general, workspace-wide file-change stream every interested
+part of the workbench subscribes to. Superseded the AI-specific callback with the same idea, scoped
+to what this project needs today: a new `workspace_watcher.jac` module streams
+`{"dirs": [...]}` change events by polling a directory-entry-set snapshot of the open workspace
+once a second (a deliberate choice over a native OS watcher/new dependency -- this codebase already
+has two working precedents for polling-based cross-process coordination, see that module's own
+docstring), and `file_tree.jac` now owns its own persistent watch connection (opened when a
+workspace opens, aborted and re-opened if a different one does, via a genuinely new
+`AbortController` pattern this codebase hadn't needed before), refreshing only the directories it
+actually has loaded among whichever ones changed. Verified directly against the running server with
+`curl`, not just `jac check` -- creating a file mid-stream produced the expected `changed` event
+within the poll interval. Still scoped to the sidebar only, not `inline_chat_widget.jac` or
+auto-reloading already-open editor tabs -- both real, legitimate follow-up work, not dropped, but
+bigger, separate changes than this pass's actual finding calls for.

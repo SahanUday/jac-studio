@@ -17,6 +17,74 @@ impl app._open_path_into_tree(path: str) -> None {
     fresh_children_by_path[root_path] = top_children;
     children_by_path = fresh_children_by_path;
     opened = True;
+    start_watching(root_path);
+}
+
+"""Opens (or re-opens, aborting whatever connection was already running) a persistent watch on
+`path` -- see `app`'s own docstring for the general, VS-Code-style design this replaces the earlier
+AI-specific signal with. Fire-and-forget from the caller's side (`_open_path_into_tree` never
+`await`s this): the loop below runs for as long as the connection stays open, which is the whole
+remaining lifetime of this mounted component under normal use, not something a caller should block
+on."""
+impl app.start_watching(path: str) -> None {
+    if watch_abort_controller.current {
+        watch_abort_controller.current.abort();
+    }
+    controller = new(AbortController);
+    watch_abort_controller.current = controller;
+
+    try {
+        resp = await fetch("/function/watch_workspace_changes", {
+            "method": "POST",
+            "headers": {"Content-Type": "application/json"},
+            "body": JSON.stringify({"root_path": path}),
+            "signal": controller.signal
+        });
+        reader = resp.body.getReader();
+        decoder = new(TextDecoder);
+        nl = chr(10);
+        buf = "";
+        feeding = True;
+        while feeding {
+            part = await reader.read();
+            if part.done {
+                feeding = False;
+                continue;
+            }
+            buf = buf + decoder.decode(part.value, {"stream": True});
+            raw_frames = buf.split(nl + nl);
+            buf = raw_frames.pop();
+            for frame in raw_frames {
+                for line in frame.split(nl) {
+                    if line.startswith("data: ") and not frame.startswith("event:") {
+                        chunk = JSON.parse(line[6:]) as str;
+                        event = JSON.parse(chunk) as dict[str, any];
+                        await handle_watch_event(event);
+                    }
+                }
+            }
+        }
+    } except Exception {
+        # Either an intentional abort (a new root was opened, see the guard above) or the
+        # connection genuinely dropped -- neither is a real error to surface. An intentional
+        # abort already has its replacement watch starting right after it; an unintentional drop
+        # just means external changes go unnoticed until the folder is reopened, not a crash.
+    }
+}
+
+"""Refreshes only the directories this component actually has loaded (`children_by_path`) among
+whichever ones changed -- a directory this tree has never expanded gets its fresh listing for free
+the first time it *is* expanded, so refreshing it now would be a wasted round-trip for content
+nobody's looking at yet."""
+impl app.handle_watch_event(event: dict[str, any]) -> None {
+    if event.get("type", "") != "changed" {
+        return;
+    }
+    for d in event.get("dirs", []) {
+        if d in children_by_path {
+            await refresh_children(d);
+        }
+    }
 }
 
 impl app.open_folder -> None {
@@ -72,15 +140,6 @@ impl app.refresh_children(parent_path: str) -> None {
     updated_children = {**children_by_path};
     updated_children[parent_path] = fetched;
     children_by_path = updated_children;
-}
-
-"""Re-fetches every directory already present as a key in `children_by_path` -- everything the
-user has ever expanded, root included. See `app`'s own docstring for why "refresh everything
-already loaded" rather than computing the one specific directory an external write landed in."""
-impl app.refresh_all_loaded_children -> None {
-    for loaded_path in list(children_by_path.keys()) {
-        await refresh_children(loaded_path);
-    }
 }
 
 impl app.create_new_file(parent_path: str) -> None {

@@ -479,11 +479,25 @@ was right: `"auto"` mode has a real fast-path (skip the prompt if the same actio
 allowed under `"acceptEdits"`) and, failing that, an AI-classifier call, both gated behind a
 `TRANSCRIPT_CLASSIFIER` feature flag -- nothing like Manual's unconditional prompting.
 `"bypassPermissions"` is a different, blunter, classifier-free mode. Reverted the picker back to
-`"auto"`. **What's still genuinely open, not papered over**: this app's own `can_use_tool` callback
-was still reached under `"auto"` in the same live test, which the fast-path logic above says
-shouldn't happen -- most likely explanation (not yet confirmed live) is that `TRANSCRIPT_CLASSIFIER`
-is off for whatever account/auth context this launcher's headless `query()` call runs under, versus
-the subscription-linked interactive session the user's own past experience comes from. See
-`claude_code_launcher.py`'s own docstring for the full, two-correction record -- kept visible
-rather than quietly rewritten, since the wrong conclusion and how it was caught are as much the
-finding here as the eventual right answer.
+`"auto"`. See `claude_code_launcher.py`'s own docstring for the full, two-correction record -- kept
+visible rather than quietly rewritten, since the wrong conclusion and how it was caught are as much
+the finding here as the eventual right answer.
+
+**Update, same day, eleventh finding -- resolved, not left open**: whether `"auto"` mode's own
+fast-path/classifier actually engages through this app's headless SDK invocation. Static analysis of
+the bundled `claude` CLI binary (`claude_agent_sdk`'s own `_bundled/claude`, confirmed this is the
+one actually spawned -- no `claude` exists on this machine's `PATH`) came back ambiguous (the
+`TRANSCRIPT_CLASSIFIER` feature-flag string itself is absent, but `.mode==="auto"` comparisons
+aren't -- inconclusive on minified code alone). Rather than draw a third conclusion from static
+inference after getting the first one wrong, ran a real, isolated, three-way controlled test: a bare
+`claude_agent_sdk.query()` script with no jac-studio code involved, same instrumented `can_use_tool`
+callback, same "create a new file" prompt, varying only `permission_mode` -- `"acceptEdits"` and
+`"bypassPermissions"` both correctly skipped the callback entirely (0 invocations each, the SDK's
+own shadowing warning even confirms it for the latter); `"auto"` invoked it once. This cleanly
+isolates the gap to `"auto"` mode specifically, in this exact installed CLI build -- every other
+mode's fast-path logic works correctly through the identical SDK invocation shape, ruling out any
+general "headless can't do fast-paths" theory and any jac-studio-side bug. `"auto"` remains the
+correct value to send (its intended design, confirmed by source, really is different from Manual);
+it just doesn't behave that way with the currently-bundled CLI build, for reasons outside this
+project's control. Closed the open tracker entry with this conclusive finding rather than leave it
+open on a guess.

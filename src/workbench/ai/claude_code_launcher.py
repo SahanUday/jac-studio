@@ -70,22 +70,34 @@ nothing at all like Manual mode's unconditional prompt-every-time behavior. `"by
 is a different, blunter, classifier-free, unconditional bypass -- reverted `ai_chat.jac`'s
 `PERMISSION_MODE_OPTIONS` back to `"auto"`.
 
-**What's still genuinely open**: this app's own `can_use_tool` callback below still received an
-approval request for a plain `Write` call under `permission_mode="auto"` in the same live test that
-surfaced this whole mistake -- which, per the fast-path logic just described, should have been
-auto-allowed without ever reaching this callback. The installed Python SDK's own shadowing-warning
-logic (`_get_can_use_tool_shadowed_warning` in the SDK's `types.py`) only special-cases
-`"bypassPermissions"` and whole-tool `allowed_tools` entries as things that auto-approve *before*
-`can_use_tool` is consulted -- it says nothing about `"auto"` mode's own fast-path/classifier at
-all, which is consistent with (but doesn't prove) that logic either not running, or not being
-reachable, in this headless SDK-driven invocation path. The most likely explanation not yet
-confirmed live: `TRANSCRIPT_CLASSIFIER` is a feature flag, and this launcher's `query()` call may
-authenticate through a different mechanism (e.g. a bare API key) than the interactive `claude` CLI
-session the user's own past experience comes from (an authenticated, subscription-linked session)
--- if that flag is off for whatever account context this launcher runs under, the fast-path/
-classifier code the correction above describes may simply never engage here, independent of
-anything this codebase controls. Not confirmed either way yet -- left as a real, open question
-rather than papered over with another guess.
+**RESOLVED, same day, a few hours later: confirmed live, not by more source-reading, that the
+`TRANSCRIPT_CLASSIFIER`-gated fast-path is simply inert in this installed CLI build -- not a bug in
+this launcher, this SDK's plumbing, or how it's invoked.** Static analysis of the bundled CLI binary
+(`claude_agent_sdk`'s own `_bundled/claude`, the one this launcher actually spawns -- confirmed via
+`_find_bundled_cli()` in the SDK's `subprocess_cli.py`, and confirmed no `claude` exists on this
+machine's `PATH` for it to fall back to) was tried first and came back ambiguous (the literal string
+`"TRANSCRIPT_CLASSIFIER"` doesn't appear anywhere in the binary, but `.mode==="auto"` comparisons
+do -- inconclusive on its own, since a minifier can rename/strip flag names without necessarily
+removing the surrounding logic). Rather than draw a *third* conclusion from static inference after
+getting it wrong once already this same day, ran a real, isolated, three-way controlled test
+instead: a bare `claude_agent_sdk.query()` script (no jac-studio code involved at all), same
+`can_use_tool` callback instrumented to count invocations, same `Write`-a-new-file prompt, three
+runs differing only in `permission_mode`:
+
+- `"acceptEdits"` -> `can_use_tool` invoked **0** times (correctly auto-allowed, matching source)
+- `"bypassPermissions"` -> `can_use_tool` invoked **0** times (correctly auto-allowed, matching
+  source; the SDK's own `CanUseToolShadowedWarning` fires here too, confirming the SDK's own
+  bookkeeping agrees)
+- `"auto"` -> `can_use_tool` invoked **1** time (the callback fires; no shadowing warning)
+
+This cleanly isolates the problem to `"auto"` mode specifically -- every *other* mode's
+fast-path/bypass logic works correctly through this exact SDK invocation shape, ruling out "headless
+SDK usage can't do fast-paths in general" as an explanation. `"auto"` mode remains the correct value
+to send (per the earlier correction, its *intended* design is real and not equivalent to Manual) --
+it just doesn't behave that way in the specific CLI build currently bundled by the installed
+`claude-agent-sdk` version, for reasons outside this codebase's control (most likely a feature still
+being rolled out, gated off in this build/account context). Nothing further to fix here -- this is
+an accepted, documented limitation of the current dependency, not an open question anymore.
 
 `mcp_servers` points Claude Code at `jac mcp` (a real, working first-party MCP server --
 confirmed live via `jac mcp --inspect`, 140 resources/19 tools/9 prompts) over stdio, giving it

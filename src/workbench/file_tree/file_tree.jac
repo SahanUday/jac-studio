@@ -150,16 +150,26 @@ run isolated from ordinary `def:pub` calls in ways that corrupt shared, `root`-k
 was a *short-lived* stream (one chat turn, one debug session) that disconnects on its own; this was
 the first *indefinite* one, and it looks like that made the same known risk far more damaging.
 
-**Fixed by not streaming at all -- `workspace_watcher.jac`'s `check_workspace_changes` is a plain,
-ordinary `def:pub` function, the same request/response shape `list_children_by_path` itself already
-uses safely.** `poll_workspace_changes` below calls it on a `setInterval`, passing back the snapshot
-it got last time (`watch_snapshot`) so the server side stays completely stateless -- no lingering
-task, no connection to clean up, nothing to abort when a different workspace opens. The
-`useEffect([root_path])` below starts a fresh `setInterval` (and resets `watch_snapshot`) whenever
-the open root changes, `clearInterval`-ing the previous one via the effect's own cleanup return --
-simpler than the streaming version's own `AbortController` needed, one more real advantage of this
-design over the one it replaced, not just a workaround for the regression. `poll_workspace_changes`
-below refreshes only the
+**Fixed that day by not streaming at all -- polling a plain, ordinary `def:pub` function instead,
+the same request/response shape `list_children_by_path` itself already uses safely -- but the first
+version of that polled function did a fresh, full `os.walk` of the entire tree on every single
+call, every second, forever, to figure out what (if anything) changed.** Flagged the same day in
+follow-up QA as real, wasted CPU for a signal that's usually "nothing happened" -- asked again to
+check how VS Code's own production architecture handles this. It doesn't poll at all:
+`IFileService`'s watcher is backed by a real OS-level notification mechanism (inotify and
+equivalents), so the OS itself reports a change instead of something walking the tree on a timer to
+discover one. **`workspace_watcher.jac` now does the same** (`watchdog`, a new but small
+dependency, confirmed safe to import at `.jac` module scope by an actual `jac run` probe, not
+assumed -- see that module's own docstring for the full finding) -- a real, per-directory,
+`DEFAULT_EXCLUDED_DIRS`-aware OS watch, started once per open workspace and swapped when a different
+one opens, feeding a small in-memory dirty-directory set in the background. **The poll transport
+here is unchanged, and deliberately still not a push** -- going back to a live connection per client
+would reopen the exact SSE-isolation risk two paragraphs up describes; what changed is that
+answering a poll is now an O(1) read of that set instead of an O(files) disk walk. Because the
+state moved fully server-side, `check_workspace_changes` dropped its `last_snapshot`
+parameter/`snapshot` return value, and this component no longer carries a `watch_snapshot` field at
+all -- `_open_path_into_tree` calls `start_or_switch_watch(root_path)` once, up front, and
+`poll_workspace_changes` below just asks what changed since last time. It still only refreshes the
 directories this component actually has loaded (`refresh_children` per matching key in
 `children_by_path`) among whichever the poll reports changed, root included."""
 
@@ -168,7 +178,9 @@ import from src.workbench.workspace.workspace_service {
     open_workspace, list_children_by_path, get_current_workspace,
     create_file, create_folder, rename_path, delete_path
 }
-import from src.workbench.workspace.workspace_watcher { check_workspace_changes }
+import from src.workbench.workspace.workspace_watcher {
+    check_workspace_changes, start_or_switch_watch
+}
 import from src.workbench.file_icons.file_icons { file_icon_class }
 
 import from components.ui.sidebar {
@@ -326,7 +338,6 @@ def:pub app(props: any) -> JsxElement {
     has selected_path: str = "";
     has compare_pending_path: str = "";
     has compare_pending_name: str = "";
-    has watch_snapshot: dict[str, list[str]] = {};
 
     git_status = props["gitStatus"] if "gitStatus" in props else {};
 
@@ -346,7 +357,6 @@ def:pub app(props: any) -> JsxElement {
         if root_path == "" {
             return;
         }
-        watch_snapshot = {};
         poll = lambda { poll_workspace_changes(); };
         timer = setInterval(poll, 1000);
         return lambda { clearInterval(timer); };

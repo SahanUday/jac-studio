@@ -153,7 +153,43 @@ string arrives here as `is_error=True` content, not as a separate mechanism) car
 All three share the same `tool_use_id` as the join key, exactly like the pre-existing
 `tool_approval_request`/`approve_tool_call` pairing. Replaces the old single `{"type": "tool_use",
 "name": ...}` event, which gave a client no way to show anything beyond "a tool started" -- no id to
-correlate a later outcome against, no input, no result."""
+correlate a later outcome against, no input, no result.
+
+**`system_prompt={"type": "preset", "preset": "claude_code"}` (2026-09-04, real-user QA) -- a real,
+live-reproduced bug, found investigating a report that looked at first like a *file-tree* bug and
+wasn't.** A user asked the in-app AI Chat to "Create a new file called scratch_test.txt" with a
+workspace open; the assistant reported success, but the file never appeared in the Explorer tree.
+The natural suspect was `workspace_watcher.jac`, but the terminal log told a different story: the
+file had been written to `/tmp/scratch_test.txt`, nowhere near the open workspace `--cwd` pointed
+at -- so the watcher (and the tree) were correctly reporting no change *inside the workspace*, since
+none had happened there. The real bug was this launcher never setting `system_prompt` at all,
+leaving it at the SDK's own default of `None`.
+
+Traced into the installed SDK's own source (`subprocess_cli.py`, not assumed from the dataclass
+docstring alone): `system_prompt=None` doesn't mean "use Claude Code's normal default prompt" --
+`if self._options.system_prompt is None: cmd.extend(["--system-prompt", ""])`, an *explicit empty
+string*, sent to the real CLI as a custom prompt. Confirmed against the real `claude` CLI's own
+TypeScript source (the same `/home/sahan/dev/coder/src` checkout used to diagnose the earlier
+`setting_sources` leak): `fetchSystemPromptParts` in `utils/queryContext.ts` treats
+`customSystemPrompt !== undefined` (true for `""`, same as any other string) as "skip the default
+entirely" -- both `getSystemPrompt()` (Claude Code's whole default behavioral prompt) and
+`getSystemContext()` are replaced with nothing. Confirmed further, in `constants/prompts.ts`, that
+`getSystemPrompt()` is exactly where the `<env>Working directory: ${getCwd()}...</env>` block lives
+(`computeEnvInfo`/`computeSimpleEnvInfo`, wired in as the `env_info_simple` section). So this
+launcher was running every single turn with the model told nothing at all about where it was
+running -- not even its own working directory -- `cwd` only ever set the OS-level subprocess
+directory tool calls resolve relative paths against, never anything the model itself could read.
+Asked for a file with no explicit path and a name that sounds like a scratch/temp file, and given
+zero anchoring context saying otherwise, the model reasonably fell back to its own pretrained
+instinct (a `/tmp`-shaped path) rather than the actual open workspace.
+
+**Fix is the preset, not a hand-written prompt** -- `{"type": "preset", "preset": "claude_code"}`
+restores the real default prompt (env info, working-directory framing, every built-in behavioral
+instruction Claude Code normally ships with) without writing a parallel, driftable copy of it here.
+This does **not** reopen the `setting_sources=[]` leak fixed earlier the same day: confirmed via the
+same source reading that CLAUDE.md loading is a completely separate CLI flag
+(`--setting-sources`, `subprocess_cli.py`) from `--system-prompt`, independent knobs, and
+`setting_sources=[]` above is untouched by this change."""
 import argparse
 import asyncio
 import json
@@ -288,6 +324,7 @@ async def main() -> None:
         permission_mode=args.permission_mode,
         effort=args.effort,
         setting_sources=[],
+        system_prompt={"type": "preset", "preset": "claude_code"},
     )
 
     try:

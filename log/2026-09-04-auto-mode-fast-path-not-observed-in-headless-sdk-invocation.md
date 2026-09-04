@@ -3,7 +3,7 @@ id: 2026-09-04-auto-mode-fast-path-not-observed-in-headless-sdk-invocation
 date: 2026-09-04
 category: missing-feature
 severity: minor
-status: open
+status: resolved
 phase: 5
 subsystem: extensions
 jac_version: "0.37.1 (dev build, compiler source at /home/sahan/dev/jaseci/jac)"
@@ -54,21 +54,41 @@ context" from "some other precondition in the fast-path isn't met for a `Write` 
 different reason; `Write` doesn't appear to be excluded the same way, but this hasn't been
 independently verified against the actual `Write` tool's own `checkPermissions` implementation).
 
-## Plan
+## Resolution (2026-09-04, same day, a few hours later)
 
-Two possible next steps, neither attempted yet:
-1. Add temporary debug logging in `claude_code_launcher.py`'s `_can_use_tool` (or find an SDK-level
-   trace/verbose flag) to see whether the underlying CLI subprocess logs anything about
-   `TRANSCRIPT_CLASSIFIER` or the auto-mode fast-path being skipped, which would confirm the
-   feature-flag theory directly rather than by inference.
-2. If confirmed to be feature-flag-gated by auth context, there is likely nothing to fix at the
-   jac-studio level -- this would be an inherent limitation of driving the CLI via a bare API key
-   rather than an interactive, subscription-linked session, and worth documenting as a known,
-   accepted gap in `ai_chat.jac`'s own docstring (the "Auto" option requests the real mode, but its
-   fast-path speed-up may not always engage depending on how the underlying session is
-   authenticated) rather than something this project can independently close.
+Tried step 1's static-analysis idea first, on the actual bundled CLI binary rather than debug
+logging: `claude_agent_sdk`'s own `_bundled/claude` (confirmed via `_find_bundled_cli()` in the
+SDK's `subprocess_cli.py` that this is genuinely what gets spawned -- no `claude` exists on this
+machine's `PATH` for it to fall back to). Came back ambiguous: `strings` against the binary shows
+zero occurrences of the literal `"TRANSCRIPT_CLASSIFIER"` flag name, but `.mode==="auto"`
+comparisons *do* appear -- inconclusive on its own, since minification can rename/strip a flag's
+name without necessarily removing the code around it.
 
-Until either step happens, `"auto"` mode remains correctly wired (the right value is sent, and it
-is confirmed to behave differently from Manual whenever the fast-path/classifier *does* engage --
-not independently reproduced yet in this app specifically), but a user may still see more approval
-prompts under "Auto" here than they're used to from the real extension.
+Rather than draw a third conclusion from inference (the second one, in the sibling entry, was
+already wrong once), ran a real, isolated, controlled test instead -- the actual "verify
+empirically" standard this project holds itself to, applied properly this time. A bare
+`claude_agent_sdk.query()` script, no jac-studio code involved at all, `can_use_tool` instrumented
+to just count invocations, same "create a new file" prompt, three runs differing only in
+`permission_mode`:
+
+```
+mode='acceptEdits':      can_use_tool called 0 times
+mode='bypassPermissions': can_use_tool called 0 times (SDK's own CanUseToolShadowedWarning fires too)
+mode='auto':              can_use_tool called 1 time
+```
+
+This conclusively isolates the gap to `"auto"` mode specifically, in this exact installed CLI
+build. `"acceptEdits"` and `"bypassPermissions"` both correctly skip the callback through the
+identical SDK invocation shape `"auto"` uses -- ruling out "headless SDK usage can't do fast-paths
+in general" (the original theory in this entry) and ruling out any bug in this codebase's own
+`can_use_tool` wiring, prompt, or auth. `"auto"` mode's fast-path/classifier is simply inert in the
+currently-bundled CLI build, for reasons outside this project's control (most plausibly a feature
+still being rolled out and gated off for whatever build/account context `claude-agent-sdk` bundles
+right now).
+
+**Closing as resolved, not because the underlying gap is fixed (it isn't, and can't be from this
+codebase), but because the investigation itself is genuinely done**: `"auto"` is confirmed to be
+the correct value to send (per the sibling entry's correction), and this entry's own open question
+-- whether jac-studio's integration is somehow suppressing the fast-path -- is answered: no, it
+isn't. A future `claude-agent-sdk` release bundling a CLI build with this feature active would
+likely just start working without any change needed here.

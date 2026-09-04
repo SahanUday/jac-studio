@@ -420,3 +420,38 @@ it's server-side Python execution, not the client bundle Vite's `--dev` hot-relo
 Still scoped to the sidebar only, not `inline_chat_widget.jac` or auto-reloading already-open
 editor tabs -- both real, legitimate follow-up work, not dropped, but bigger, separate changes than
 this pass's actual finding calls for.
+
+**Update, same day, seventh finding**: a follow-up report that looked at first like another
+file-tree bug wasn't one. The sponsor asked the AI Chat to create `scratch_test.txt`; it reported
+success, but the file never appeared in the Explorer -- and the terminal log showed why: it had
+actually been written to `/tmp/scratch_test.txt`, nowhere near the open workspace, so there was
+nothing wrong with the tree or the watcher to find. Root cause was in `claude_code_launcher.py`:
+it never set `system_prompt`, and the installed SDK's own source (`subprocess_cli.py`) shows
+`system_prompt=None` sends the real CLI `--system-prompt ""` -- an *explicit* empty prompt, not
+"use the default." Cross-checked against a real `claude` CLI source checkout
+(`utils/queryContext.ts`, `constants/prompts.ts`): an empty custom prompt makes the CLI skip its
+entire default system prompt, including the `<env>Working directory: ...</env>` block baked into
+it. With no context at all about where it was running, the model fell back to its own pretrained
+instinct for a scratch-sounding filename. Fixed with `system_prompt={"type": "preset", "preset":
+"claude_code"}`, confirmed (via the same source) not to reopen the earlier `setting_sources`
+CLAUDE.md leak -- independent CLI flags.
+
+**Update, same day, eighth finding**: separately, asked to check how VS Code's production
+architecture handles file watching efficiently, since `check_workspace_changes` (the polling
+function from the fifth finding above) did a full recursive `os.walk` every second, forever,
+regardless of whether anything had changed. VS Code's `IFileService` doesn't poll at all -- a real
+OS-level notification mechanism (inotify and equivalents) reports changes, and
+`files.watcherExclude` prunes exactly the directories (`node_modules`, `.git`) this project's own
+`DEFAULT_EXCLUDED_DIRS` already prunes from `os.walk`, for the identical resource reason.
+`workspace_watcher.jac` now does the same, using `watchdog` (a new but small dependency, confirmed
+safe to import at `.jac` module scope by an actual `jac run` probe before committing to the design
+-- unlike `claude-agent-sdk`'s documented compiler-choking dependency closure) -- scheduled
+per-directory, non-recursively, matching `files.watcherExclude`'s own reasoning rather than
+watching everything and filtering afterward. The client-side poll transport is unchanged
+deliberately (a push/stream design would reopen the fifth finding's SSE-isolation risk); what
+changed is that answering a poll is now an O(1) in-memory read instead of an O(files) disk walk.
+Caught one real bug live-testing this before it shipped: a directory's own `modified` event (fired
+because its mtime changes when something inside it changes) was being misattributed to its
+*parent* via a naive `dirname()`, marking the wrong directory dirty -- fixed by dropping `modified`
+events entirely, since they carry no signal beyond what the `created`/`deleted` event that caused
+them already provides.

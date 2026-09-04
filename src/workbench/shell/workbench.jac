@@ -289,7 +289,32 @@ tree's own fixed-width bug, see that module's own docstring for the other half o
 short result list in Search/SCM/Outline) fell all the way through to that true white `body`. One
 line on the shared container these five views already sit inside, matching the `#191A1B` this
 file's own tab bar/status bar/title bar already use, closes the gap for all of them at once rather
-than patching each view's own root individually."""
+than patching each view's own root individually.
+
+**Auto-reload an open, undirtied tab when its own file changes on disk externally (2026-09-04,
+real-user QA), matching real VS Code's own `TextFileEditorModelManager.onDidFilesChange` policy --
+"never reload dirty models," confirmed against a real `microsoft/vscode` checkout, not assumed.**
+Reported live: asking the AI Chat to edit a file that was already open in a tab showed "Done" in
+chat, but the open tab kept showing the old content -- `file_tree.jac`'s general watcher
+(`workspace_watcher.jac`) already covered the Explorer tree by this point, but nothing told an
+*already-open editor* its own displayed content was stale. `handle_files_changed_externally` is the
+new receiving end of `FileTreeApp`'s `onFilesChangedExternally` (fed by `workspace_watcher.jac`'s
+own `changed_files`, drawn from real `modified` file-system events, the same OS-level watch the
+Explorer tree already relies on -- see that module's own docstring for why file-level granularity
+was added there specifically for this). VS Code's own policy, read directly from source rather than
+guessed: `TextFileEditorModelManager.onDidFilesChange` reloads a model from disk automatically **only
+if it isn't dirty** -- `if (model.isDirty()) { continue; // never reload dirty models }`, verbatim,
+twice, in that file. This project's own `dirty_paths` (already tracked, see above) is the exact
+equivalent check: `handle_files_changed_externally` cross-references every reported changed path
+against both `groups`' currently-open plain-file tabs *and* `dirty_paths`, and only bumps
+`files_pending_reload[path]` (a per-path monotonic nonce, the same "nonce, not the value itself, is
+what a `useEffect` should key off" convention `ai_pending_nonce` above already establishes) for a
+path that's open and clean. A dirty tab is left completely alone -- the user's own in-progress,
+unsaved edit is never silently clobbered by an external write, matching VS Code's stance exactly
+rather than inventing a different one. `MonacoEditorApp`'s own docstring covers the client-side half
+(the actual `setValue` call, and why it has to suppress its own dirty-tracking `onChange` handler
+while doing it) -- deliberately scoped to plain file tabs only for this pass, not diff/gitdiff tab
+kinds, which don't have a single "this path's own live buffer" the same way."""
 
 import from "react" { useEffect }
 import from "sonner" { Toaster, toast }
@@ -320,6 +345,8 @@ def:pub app(onToggleTheme: any) -> JsxElement {
     has next_group_id: int = 2;
     has cursor_positions: dict[str, dict[str, int]] = {};
     has dirty_paths: dict[str, bool] = {};
+    has files_pending_reload: dict[str, int] = {};
+    has next_reload_nonce: int = 1;
     has terminal_open: bool = False;
     has active_bottom_panel: str = "terminal";
     has quick_open_open: bool = False;
@@ -351,6 +378,7 @@ def:pub app(onToggleTheme: any) -> JsxElement {
     async def handle_command(command_id: str) -> None;
     def handle_cursor_change(path: str, line: int, column: int) -> None;
     def handle_dirty_change(path: str, is_dirty: bool) -> None;
+    def handle_files_changed_externally(paths: list[str]) -> None;
     def set_context(key: str, value: bool) -> None;
     def context_matches(when: str) -> bool;
     def handle_keydown(e: any) -> None;
@@ -411,6 +439,7 @@ def:pub app(onToggleTheme: any) -> JsxElement {
                     initialCursors={cursor_positions}
                     dirtyPaths={dirty_paths}
                     onDirtyChange={handle_dirty_change}
+                    filesPendingReload={files_pending_reload}
                     onOpenLocation={open_search_result}
                     onOpenCommandPalette={lambda (e: any) { handle_command("workbench.action.showCommands"); }}
                     onAskAI={handle_ask_ai}
@@ -433,7 +462,7 @@ def:pub app(onToggleTheme: any) -> JsxElement {
             <ResizablePanelGroup direction="horizontal" style={{"flex": "1"}}>
                 <ResizablePanel defaultSize={18} minSize={12} maxSize={60} style={{"borderRight": "1px solid #2A2B2C", "overflow": "hidden", "position": "relative", "background": "#191A1B"}}>
                     <div style={{"display": "block" if active_view_id == "explorer" else "none", "height": "100%"}}>
-                        <FileTreeApp onOpenFile={open_tab} onCompareFiles={open_diff_tab} gitStatus={git_status_by_path} />
+                        <FileTreeApp onOpenFile={open_tab} onCompareFiles={open_diff_tab} gitStatus={git_status_by_path} onFilesChangedExternally={handle_files_changed_externally} />
                     </div>
                     <div style={{"display": "block" if active_view_id == "search" else "none", "height": "100%"}}>
                         <SearchApp onOpenResult={open_search_result} />

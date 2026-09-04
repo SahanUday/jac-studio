@@ -101,6 +101,7 @@ import from src.workbench.workspace.workspace_service { DEFAULT_EXCLUDED_DIRS }
 glob _watch_lock: threading.Lock = threading.Lock();
 glob _watched_root: str = "";
 glob _dirty_dirs: set[str] = set();
+glob _modified_files: set[str] = set();
 glob _observer: any = None;
 glob _scheduled_dirs: set[str] = set();
 
@@ -109,34 +110,79 @@ every access to the shared globals above goes through `_watch_lock`, the same co
 `workspace_service.jac`'s `_workspace_lock` already establishes for cross-thread access in this
 codebase.
 
-**`modified` events are ignored outright -- confirmed live this is correct, not an oversight.** A
-first version handled every event type uniformly (`dirname(event.src_path)`) and, live-tested
-against a real create inside `testing-workspace/src/`, wrongly marked the *workspace root* dirty
-too: creating a file inside a directory makes that directory's own mtime change, which `watchdog`
-separately reports as a `modified` event *on the directory itself*
+**A `modified` event on a *directory* is ignored outright -- confirmed live this is correct, not an
+oversight.** A first version handled every event type uniformly (`dirname(event.src_path)`) and,
+live-tested against a real create inside `testing-workspace/src/`, wrongly marked the *workspace
+root* dirty too: creating a file inside a directory makes that directory's own mtime change, which
+`watchdog` separately reports as a `modified` event *on the directory itself*
 (`src_path=".../src"`, `is_directory=True`) -- `dirname` of a directory's own path is its *parent*,
 not itself, so this seemingly-generic handling silently computed the wrong level one directory
 name too high. Since `created`/`deleted`/`moved` already mark the correct directory via the
-*file's own* event (whose `dirname` is genuinely its containing directory), and this module only
+*file's own* event (whose `dirname` is genuinely its containing directory), and `_dirty_dirs` only
 ever cares about the *set of names* in a directory changing (matching the old `os.walk`-diffing
-version's own `sorted(dirnames + filenames)` semantics, never file content), a `modified` event
-carries no signal this module needs at all -- dropping it entirely closes the bug rather than
-special-casing `is_directory` to paper over it."""
+version's own `sorted(dirnames + filenames)` semantics, never file content), a directory-level
+`modified` event carries no signal `_dirty_dirs` needs at all.
+
+**A `modified` event on a *file*, though, is now real signal -- `_modified_files` (2026-09-04,
+real-user QA), not dropped.** Added for a second consumer this module didn't originally serve: an
+already-*open* editor tab whose file changed on disk out from under it (an AI tool write being the
+concrete, live-reported case) had no way to know its own displayed content was now stale --
+`_dirty_dirs` alone can't answer "did *this specific open file's own content* change," only "did
+some directory's *listing* change," and a file being overwritten in place never touches its
+parent's listing at all. `on_any_event` now branches on file vs. directory *before* deciding
+whether an event is signal or noise, rather than one blanket `event_type == "modified"` check for
+everything.
+
+**The directory branch is an explicit allowlist (`in ["created", "deleted", "moved"]`), not a
+`!= "modified"` blocklist -- a second real bug caught live while verifying the file-level tracking
+above, not by inspection.** Instrumenting this handler directly against a real served `jac run
+--dev` process (not the earlier `jac run --no-serve` script probes, which never happened to surface
+this) showed `watchdog` emitting `opened`/`closed`/`closed_no_write` events too, in addition to the
+four this module was originally built against (`created`/`deleted`/`modified`/`moved`) -- a real,
+newly-confirmed fact about this installed `watchdog` version's actual event coverage, not assumed
+from its docs. The blocklist form only ever excluded `"modified"`, so any of these three new types
+on a *directory* (e.g. simply listing one, which does not change what it contains) would have fallen
+through to the unconditional `_dirty_dirs.add(...)` below it, marking that directory's *parent*
+spuriously dirty for no real change at all. The file branch already used the correct allowlist shape
+for its own `_dirty_dirs` marking (`in ["created", "deleted", "moved"]`); the directory branch now
+matches it exactly, closing the same class of gap in the one place it was still open. `opened`/
+`closed`/`closed_no_write` need no explicit handling of their own here -- they carry no signal
+either `_dirty_dirs` or `_modified_files` needs, on a file or a directory, and now correctly fall
+through as pure no-ops on both branches rather than being handled by accident via exclusion."""
 obj _DirtyDirHandler(FileSystemEventHandler) {
     def on_any_event(event: any) {
-        if event.event_type == "modified" {
+        if event.is_directory {
+            if event.event_type not in ["created", "deleted", "moved"] {
+                return;
+            }
+            with _watch_lock {
+                dirs_to_mark = [os.path.dirname(event.src_path)];
+                if event.event_type == "moved" {
+                    dirs_to_mark.append(os.path.dirname(event.dest_path));
+                }
+                for d in dirs_to_mark {
+                    _dirty_dirs.add(d);
+                }
+                if event.event_type == "created" {
+                    _schedule_dir_locked(event.src_path);
+                }
+            }
             return;
         }
         with _watch_lock {
-            dirs_to_mark = [os.path.dirname(event.src_path)];
-            if event.event_type == "moved" {
-                dirs_to_mark.append(os.path.dirname(event.dest_path));
+            if event.event_type in ["created", "deleted", "moved"] {
+                dirs_to_mark = [os.path.dirname(event.src_path)];
+                if event.event_type == "moved" {
+                    dirs_to_mark.append(os.path.dirname(event.dest_path));
+                }
+                for d in dirs_to_mark {
+                    _dirty_dirs.add(d);
+                }
             }
-            for d in dirs_to_mark {
-                _dirty_dirs.add(d);
-            }
-            if event.is_directory and event.event_type == "created" {
-                _schedule_dir_locked(event.src_path);
+            if event.event_type == "modified" {
+                _modified_files.add(event.src_path);
+            } elif event.event_type == "moved" {
+                _modified_files.add(event.dest_path);
             }
         }
     }
@@ -165,6 +211,7 @@ def _stop_watch_locked {
     _observer = None;
     _watched_root = "";
     _dirty_dirs.clear();
+    _modified_files.clear();
     _scheduled_dirs.clear();
 }
 
@@ -197,19 +244,23 @@ def:pub start_or_switch_watch(root_path: str) -> None {
     }
 }
 
-"""One poll tick's worth of work: drains and returns whichever directories changed since the last
-call, for the workspace currently being watched. Returns no changes (rather than erroring) if
-`root_path` doesn't match what's currently watched -- a stale poll from a workspace that's since
-been switched away from, which `file_tree.jac`'s own `useEffect([root_path])` cleanup already
-guards against in the common case, but a request already in flight when a switch happens could still
-land here after the fact."""
+"""One poll tick's worth of work: drains and returns whichever directories changed (`changed_dirs`,
+for the Explorer tree -- names added/removed from a directory's own listing) and whichever *files'*
+own content changed in place (`changed_files`, for reloading an already-open editor tab -- 2026-09-04,
+real-user QA) since the last call, for the workspace currently being watched. Returns no changes
+(rather than erroring) if `root_path` doesn't match what's currently watched -- a stale poll from a
+workspace that's since been switched away from, which `file_tree.jac`'s own
+`useEffect([root_path])` cleanup already guards against in the common case, but a request already in
+flight when a switch happens could still land here after the fact."""
 def:pub check_workspace_changes(root_path: str) -> dict[str, any] {
     with _watch_lock {
         if _watched_root != root_path {
-            return {"changed_dirs": []};
+            return {"changed_dirs": [], "changed_files": []};
         }
         changed = list(_dirty_dirs);
         _dirty_dirs.clear();
-        return {"changed_dirs": changed};
+        changed_files = list(_modified_files);
+        _modified_files.clear();
+        return {"changed_dirs": changed, "changed_files": changed_files};
     }
 }

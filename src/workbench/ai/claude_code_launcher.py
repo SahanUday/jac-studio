@@ -263,6 +263,7 @@ import json
 import os
 import sys
 import time
+import warnings
 
 from claude_agent_sdk import query, ClaudeAgentOptions
 from claude_agent_sdk.types import (
@@ -275,7 +276,18 @@ from claude_agent_sdk.types import (
     ToolResultBlock,
     PermissionResultAllow,
     PermissionResultDeny,
+    CanUseToolShadowedWarning,
 )
+
+# The SDK's own suggested suppression (its docstring names this exact call) -- this launcher always
+# registers can_use_tool, and permission_mode="bypassPermissions" ("Auto", 2026-09-04) deliberately
+# means it won't be invoked for most calls. That's the intended behavior, not a crash: without this
+# filter, Python's default warning print goes to stderr, which claude_code_client.jac's stdout
+# reader (stderr merged into the same stream) treats as a non-JSON line and relays to the chat panel
+# as a red error card -- confirmed live, a real user saw exactly this and reasonably read it as
+# something broken. Real launcher-side bugs still raise real exceptions, caught and emitted as a
+# proper `error` event further down; this only silences the one specific, expected-by-design warning.
+warnings.filterwarnings("ignore", category=CanUseToolShadowedWarning)
 
 _TOOL_APPROVAL_FILE = "/tmp/jac_studio_tool_approval_decisions.json"
 _TOOL_APPROVAL_TIMEOUT_SECONDS = 300.0

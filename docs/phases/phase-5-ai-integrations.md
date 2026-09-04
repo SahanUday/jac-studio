@@ -513,3 +513,51 @@ also skips Bash and every MCP tool call, not just file writes, with no per-call 
 confirmed with the user before shipping. `PERMISSION_MODE_OPTIONS`'s "Auto" entry keeps its label
 but now sends `"bypassPermissions"`. Re-verified live with a fresh isolated probe combining a file
 write and a Bash command in one turn: both ran with zero approval interruptions.
+
+**Update, same day, thirteenth finding: `CanUseToolShadowedWarning` was leaking into the chat panel
+as a red error card.** Real, live-reported: the "Auto" mode change above is exactly what triggers
+this Python warning (it fires precisely because `bypassPermissions` shadows `can_use_tool`, the
+intended behavior), but nothing suppressed it -- `claude_code_client.jac`'s stdout reader (stderr
+merged into the same stream) treats any non-JSON line as a crash and relays it to the client as an
+error, and Python's default warning handler prints straight to stderr. The SDK's own docstring on
+that warning class names the exact fix: `warnings.filterwarnings("ignore",
+category=CanUseToolShadowedWarning)`, added once at launcher module scope. Confirmed live (a direct
+subprocess probe) that the clean JSON event stream has zero trace of it now, while a real
+launcher-side crash still raises a real exception and still surfaces as a genuine `error` event --
+this only silences the one specific, by-design warning.
+
+**Update, same day, fourteenth finding: auto-reloading an already-open, undirtied editor tab when
+its file changes on disk externally, matching real VS Code's own policy.** Reported live: asking
+the AI Chat to edit a file that was already open in a tab showed "Done" in chat, but the tab kept
+showing stale content -- the general watcher (`workspace_watcher.jac`) already covered the Explorer
+tree by this point, but nothing told an *already-open editor* its own content was stale. Read real
+VS Code source (`TextFileEditorModelManager.onDidFilesChange`) rather than guessing: the policy is
+"reload a clean model automatically, never touch a dirty one" (`if (model.isDirty()) { continue; //
+never reload dirty models }`, verbatim, twice, in that file). Implemented the same policy end to
+end: `workspace_watcher.jac` now also tracks individual `modified` *file* events (not just
+directory-listing changes -- see that module's own docstring for why this needed a second,
+file-level allowlist, separate from the directory one), `file_tree.jac`'s existing poll surfaces
+`changed_files` to a new `onFilesChangedExternally` callback, `workbench.jac` cross-references
+every changed path against open tabs and `dirty_paths` (already tracked) and bumps a per-path
+reload nonce only for a clean, open tab, threaded down through `editor_tabs.jac` to
+`MonacoEditorApp`'s new `reloadNonce` prop. `monaco_editor.jac`'s own `reload_from_disk` re-checks
+`dirty` itself right before touching the buffer (closing a real, if narrow, race the parent's own
+filter alone can't close), preserves cursor position across the reload, and suppresses its own
+dirty-tracking `onChange` handler while calling `editor.setValue(...)` (confirmed live that
+`setValue` fires the identical event a real keystroke does, which would otherwise immediately
+re-mark a just-synced tab dirty).
+
+**A second, real bug caught live while verifying the above, unrelated to the reload feature
+itself** -- instrumenting the watcher directly against a real served process (not the earlier
+`jac run --no-serve` script probes) showed this installed `watchdog` version emitting
+`opened`/`closed`/`closed_no_write` events too, beyond the four the module was originally built
+against. The directory-event branch was a `!= "modified"` blocklist, not an allowlist, so any of
+these three new types on a directory would have spuriously marked its parent dirty. Fixed by
+matching the file branch's own already-correct allowlist shape.
+
+Verified the whole feature live, end to end, not just `jac check`: a clean tab auto-reloads on a
+real external edit with zero manual action and no dirty flag set; a genuinely dirty tab (a real
+edit applied via Monaco's own `executeEdits` API, not simulated) is left completely untouched by a
+second external edit -- the user's in-progress change survives intact and the dirty indicator stays
+lit, confirmed via the live DOM and the live Monaco model's own content, matching VS Code's policy
+exactly rather than a guessed approximation of it.

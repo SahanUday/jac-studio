@@ -27,13 +27,22 @@ disk walk per call) and refreshes only the directories this component actually h
 (`children_by_path`) among whichever ones a real OS-level watch reported changed since the last
 tick. A directory this tree has never expanded gets its fresh listing for free the first time it
 *is* expanded, so refreshing it now would be a wasted round-trip for content nobody's looking at
-yet."""
+yet.
+
+**`changed_files` (2026-09-04) forwards to `on_files_changed_externally` unmodified, if a caller
+provided it** -- this component owns the one poll loop and is the natural place to surface the
+signal, but has no reason to know or care what a changed *file's own content* means to anything
+else; that's `workbench.jac`'s job (deciding which changed paths are actually open, undirtied
+tabs), the same "leaf reports, parent owns state" shape `onOpenFile`/`onCompareFiles` already use."""
 impl app.poll_workspace_changes -> None {
     result = await check_workspace_changes(root_path);
     for d in result["changed_dirs"] {
         if d in children_by_path {
             await refresh_children(d);
         }
+    }
+    if on_files_changed_externally and len(result["changed_files"]) > 0 {
+        on_files_changed_externally(result["changed_files"]);
     }
 }
 

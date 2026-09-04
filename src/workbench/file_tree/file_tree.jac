@@ -329,6 +329,7 @@ def:pub FileTreeNode(props: any) -> JsxElement {
 def:pub app(props: any) -> JsxElement {
     has on_open_file: any = props["onOpenFile"];
     has on_compare_files: any = props["onCompareFiles"];
+    has on_files_changed_externally: any = props["onFilesChangedExternally"] if "onFilesChangedExternally" in props else None;
     has opened: bool = False;
     has root_path: str = "";
     has root_name: str = "";

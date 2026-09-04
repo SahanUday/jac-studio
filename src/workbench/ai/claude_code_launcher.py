@@ -37,12 +37,32 @@ screenshot, asked for its "Manual / Edit automatically / Plan / Auto" mode switc
 selector. `permission_mode`'s four values used by `ai_chat.jac`'s picker map onto the SDK's own
 documented semantics one-to-one: `"default"` (Manual -- every dangerous call still reaches
 `can_use_tool` below, this launcher's original, only behavior before this change), `"acceptEdits"`
-(Edit automatically), `"plan"` (Plan -- no tool execution at all), `"auto"` (Auto -- the SDK's own
-broadest bypass). Modes other than `"default"` mean some or all tool calls never reach
-`can_use_tool` at all (the SDK's own permission-mode check short-circuits it, not something this
-launcher special-cases) -- so fewer or no approval cards is the *correct*, expected result of
+(Edit automatically), `"plan"` (Plan -- no tool execution at all), `"bypassPermissions"` (Auto --
+the SDK's own broadest bypass). Modes other than `"default"` mean some or all tool calls never
+reach `can_use_tool` at all (the SDK's own permission-mode check short-circuits it, not something
+this launcher special-cases) -- so fewer or no approval cards is the *correct*, expected result of
 picking one of those modes, not a regression of the approval flow PR #72 built. `effort` is passed
 through as one of the SDK's own five documented literal levels unchanged.
+
+**CORRECTION, 2026-09-04, later the same day: the picker's "Auto" option originally sent `"auto"`
+as the literal `permission_mode` value, not `"bypassPermissions"` -- a real, live-reproduced bug, a
+wrong assumption never checked against source until a user reported "Auto" still asking for
+approval on every tool call.** `"auto"` genuinely is one of the six string values the installed
+SDK's own `PermissionMode` type literal accepts (confirmed directly, not the mistake), which is
+exactly why picking it silently "worked" instead of erroring -- but accepting a value and giving it
+the *intended* meaning turned out to be two different things. Traced into the real `claude` CLI's
+own TypeScript source (`utils/permissions/PermissionMode.ts`) to find out what `"auto"` actually
+does there: it's gated behind a `TRANSCRIPT_CLASSIFIER` feature flag and `USER_TYPE === 'ant'`
+(Anthropic-internal-only, per that file's own `isExternalPermissionMode` -- "External users can't
+have auto"), and even when active, its own config entry maps `external: 'default'` -- the *exact
+same* external, wire-level behavior as Manual mode. So this app's "Auto" option was, in practice,
+silently behaving like Manual the entire time, which is exactly the "still asks for approval on
+every tool call" symptom reported live. `"bypassPermissions"` is the real, external, always-on
+full-bypass mode (`PermissionMode.ts`'s own `title: 'Bypass Permissions'`, and the mode
+`permissions.ts` checks directly wherever it needs to skip every other gate) -- the actual SDK-level
+equivalent of what a "Auto" toggle modeled on the real extension's own switcher is supposed to mean.
+Fixed in `ai_chat.jac`'s `PERMISSION_MODE_OPTIONS` (the value sent, not the "Auto" label a user
+sees, which was already correct).
 
 `mcp_servers` points Claude Code at `jac mcp` (a real, working first-party MCP server --
 confirmed live via `jac mcp --inspect`, 140 resources/19 tools/9 prompts) over stdio, giving it

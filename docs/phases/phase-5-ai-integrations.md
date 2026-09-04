@@ -455,3 +455,24 @@ because its mtime changes when something inside it changes) was being misattribu
 *parent* via a naive `dirname()`, marking the wrong directory dirty -- fixed by dropping `modified`
 events entirely, since they carry no signal beyond what the `created`/`deleted` event that caused
 them already provides.
+
+**Update, same day, ninth finding**: separately, live-tested a genuine re-recurrence of the
+`'Workspace' object has no attribute 'path'` crash (sixth finding above) -- confirmed the existing
+`hasattr` guard in `list_children_by_path` was still solid (re-verified `isinstance` vs `hasattr`
+directly), found and closed one more genuinely unguarded instance of the same gap in
+`ensure_path_reachable` (not confirmed as this occurrence's actual cause -- the live browser stack
+trace only named `list_children_by_path`), and asked the user to restart their server so a real
+next occurrence (if any) could be cleanly attributed to persisted-vs-in-memory corruption. The
+restart cleared it.
+
+**Update, same day, tenth finding**: the "Auto" permission-mode picker option (fourth QA pass) was
+still prompting for every tool call despite sending `permission_mode: "auto"` correctly end to end
+-- confirmed live via the server's own request log. Traced into the real `claude` CLI's own source
+(`utils/permissions/PermissionMode.ts`) rather than re-guessing: `"auto"` is a real, accepted
+`PermissionMode` value (which is why it never errored), but it's gated
+Anthropic-internal-only behind a feature flag and a `USER_TYPE === 'ant'` check, and even when
+active its own config maps to the *identical external behavior as `"default"`* (Manual) -- so this
+app's "Auto" option had been silently behaving like Manual since the picker was first added. The
+correct value for a real full-bypass "Auto" mode is `"bypassPermissions"` -- fixed in `ai_chat.jac`'s
+`PERMISSION_MODE_OPTIONS`, and `claude_code_launcher.py`'s docstring corrected in place rather than
+left stale.

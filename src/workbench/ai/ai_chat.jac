@@ -256,11 +256,19 @@ glob MODEL_OPTIONS: list[dict[str, str]] = [
     {"value": "opus", "label": "Opus"}
 ];
 
+"""**`bypassPermissions`, not `auto`, is the real SDK-level value for "Auto" (corrected 2026-09-04,
+same day as this list was first added) -- see `claude_code_launcher.py`'s own docstring for the
+full, source-verified finding.** `"auto"` is a real, accepted `PermissionMode` value, which is
+exactly why sending it never errored -- but per the real `claude` CLI's own source, it's an
+Anthropic-internal-only mode gated behind a feature flag, and even then maps to the identical
+external behavior as `"default"` (Manual). `"bypassPermissions"` is the actual full-bypass mode a
+"Manual / Edit automatically / Plan / Auto" switcher modeled on the real extension is supposed to
+send for its last option."""
 glob PERMISSION_MODE_OPTIONS: list[dict[str, str]] = [
     {"value": "default", "label": "Manual"},
     {"value": "acceptEdits", "label": "Edit automatically"},
     {"value": "plan", "label": "Plan"},
-    {"value": "auto", "label": "Auto"}
+    {"value": "bypassPermissions", "label": "Auto"}
 ];
 
 glob EFFORT_OPTIONS: list[dict[str, str]] = [

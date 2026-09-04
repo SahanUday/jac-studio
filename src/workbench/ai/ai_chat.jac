@@ -256,26 +256,34 @@ glob MODEL_OPTIONS: list[dict[str, str]] = [
     {"value": "opus", "label": "Opus"}
 ];
 
-"""**CORRECTION, 2026-09-04, hours after the note below was first written: `"auto"` is the right
-value here after all -- reverted back from a wrong same-day "fix" that swapped it for
-`"bypassPermissions"`.** That swap was based on one field in the real CLI's own
-`PermissionMode.ts` (`external: 'default'`) read in isolation, without checking the actual
-enforcement code -- a real user, testing this app, reported that in their own experience with the
-real Claude Code extension, Auto mode genuinely does *not* prompt for every call, directly
-contradicting that "fix." Reading `permissions.ts`'s `hasPermissionsToUseTool` (the real
-enforcement path, not the UI config table) confirmed the user was right: `"auto"` mode is a real,
-distinct mode with its own fast-path (skip the prompt if the action would already be allowed under
-`acceptEdits`) and, failing that, an actual classifier call, gated behind the CLI's own
-`TRANSCRIPT_CLASSIFIER` feature flag -- nothing like Manual at all. `"bypassPermissions"` is a
-blunter, classifier-free, unconditional bypass -- not what a faithful "Auto" option modeled on the
-real extension should send. See `claude_code_launcher.py`'s own docstring for why this app's own
-`can_use_tool` still shows a prompt under `"auto"` regardless of this correction -- that part is a
-separate, still-open question, not fixed by reverting this value."""
+"""**History on this list's "Auto" entry, in order, none of it silently dropped:**
+1. Originally sent `"auto"`, on the wrong assumption it was "the SDK's own broadest bypass."
+2. Corrected (same day) to `"bypassPermissions"` on that same wrong assumption, one field
+   (`PermissionMode.ts`'s `external: 'default'`) read in isolation.
+3. **Reverted back to `"auto"`** after a real user, testing this app, contradicted that from their
+   own experience with the real extension -- `permissions.ts`'s actual enforcement code confirmed
+   `"auto"` is a genuine, distinct, classifier-backed mode, nothing like Manual.
+4. **Confirmed live (isolated `claude_agent_sdk.query()` probe, three-way A/B/C, not more source
+   guessing) that `"auto"`'s classifier fast-path is simply inert in the currently-bundled CLI
+   build** -- `"auto"` behaves identically to `"default"` here, for reasons outside this project's
+   control (see `claude_code_launcher.py`'s docstring and tracker entry
+   `2026-09-04-auto-mode-fast-path-not-observed-in-headless-sdk-invocation` for the full,
+   conclusive finding).
+5. **`"bypassPermissions"`, deliberately, again -- this time not a mistake, a considered choice
+   given step 4's finding (2026-09-04, later the same day).** A user, told plainly that "Auto" does
+   nothing useful here right now, asked for what they actually wanted instead: give the agent a
+   complete instruction and let it run end to end, only interrupting the user for a genuine
+   clarifying question (ordinary chat text, not a tool-approval gate) rather than a permission
+   check on every tool call. `"bypassPermissions"` is the real mode that delivers exactly that --
+   confirmed live in step 4's own probe to skip `can_use_tool` unconditionally. This is a materially
+   bigger trust step than `"acceptEdits"`: it also skips Bash and every MCP tool call, not just file
+   writes, with no per-call check at all -- flagged explicitly to the user (and confirmed) before
+   wiring it in, not assumed to be wanted just because "Auto" was the closest existing label."""
 glob PERMISSION_MODE_OPTIONS: list[dict[str, str]] = [
     {"value": "default", "label": "Manual"},
     {"value": "acceptEdits", "label": "Edit automatically"},
     {"value": "plan", "label": "Plan"},
-    {"value": "auto", "label": "Auto"}
+    {"value": "bypassPermissions", "label": "Auto"}
 ];
 
 glob EFFORT_OPTIONS: list[dict[str, str]] = [

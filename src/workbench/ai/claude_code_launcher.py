@@ -37,9 +37,10 @@ screenshot, asked for its "Manual / Edit automatically / Plan / Auto" mode switc
 selector. `permission_mode`'s four values used by `ai_chat.jac`'s picker map onto the SDK's own
 documented semantics one-to-one: `"default"` (Manual -- every dangerous call still reaches
 `can_use_tool` below, this launcher's original, only behavior before this change), `"acceptEdits"`
-(Edit automatically), `"plan"` (Plan -- no tool execution at all), `"auto"` (Auto -- a real,
-classifier-backed auto-approval mode, **not** a blanket bypass -- see the second correction below
-for why this line originally, briefly, said something else). Modes other than `"default"` mean
+(Edit automatically), `"plan"` (Plan -- no tool execution at all), `"auto"` (Auto's original value
+-- see the three corrections below for the full round trip: a wrong guess, a user-caught revert, a
+conclusive live finding that it's inert in the currently-bundled CLI, and, finally, a deliberate
+switch to `"bypassPermissions"` once that was known). Modes other than `"default"` mean
 some or all tool calls never reach `can_use_tool` at all (the SDK's own permission-mode check
 short-circuits it, not something this launcher special-cases) -- so fewer or no approval cards is
 the *correct*, expected result of picking one of those modes, not a regression of the approval flow
@@ -93,11 +94,22 @@ runs differing only in `permission_mode`:
 This cleanly isolates the problem to `"auto"` mode specifically -- every *other* mode's
 fast-path/bypass logic works correctly through this exact SDK invocation shape, ruling out "headless
 SDK usage can't do fast-paths in general" as an explanation. `"auto"` mode remains the correct value
-to send (per the earlier correction, its *intended* design is real and not equivalent to Manual) --
-it just doesn't behave that way in the specific CLI build currently bundled by the installed
-`claude-agent-sdk` version, for reasons outside this codebase's control (most likely a feature still
-being rolled out, gated off in this build/account context). Nothing further to fix here -- this is
-an accepted, documented limitation of the current dependency, not an open question anymore.
+*to describe what the real extension's Auto mode does* -- it just doesn't behave that way in the
+specific CLI build currently bundled by the installed `claude-agent-sdk` version, for reasons
+outside this codebase's control (most likely a feature still being rolled out, gated off in this
+build/account context).
+
+**Deliberate switch to `"bypassPermissions"`, 2026-09-04, later the same day -- a considered
+product decision, not another guess.** Told plainly that "Auto" does nothing useful in this app
+right now (identical to Manual), a user asked for what they actually wanted: give the agent a
+complete instruction and let it run end to end, only interrupting for a genuine clarifying
+question -- ordinary chat text, not a permission gate -- rather than a prompt on every tool call.
+`"bypassPermissions"` is the real mode that delivers exactly that, confirmed in the probe above to
+skip `can_use_tool` unconditionally. Flagged explicitly before wiring it in, and confirmed by the
+user: this is a materially bigger trust step than `"acceptEdits"`, since it also skips Bash and
+every MCP tool call, not just file writes, with no per-call check of any kind. `ai_chat.jac`'s
+`PERMISSION_MODE_OPTIONS` keeps the "Auto" label (matching what the user actually asked this app's
+own picker to mean) but now sends `"bypassPermissions"` as the value.
 
 `mcp_servers` points Claude Code at `jac mcp` (a real, working first-party MCP server --
 confirmed live via `jac mcp --inspect`, 140 resources/19 tools/9 prompts) over stdio, giving it

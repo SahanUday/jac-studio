@@ -501,3 +501,15 @@ correct value to send (its intended design, confirmed by source, really is diffe
 it just doesn't behave that way with the currently-bundled CLI build, for reasons outside this
 project's control. Closed the open tracker entry with this conclusive finding rather than leave it
 open on a guess.
+
+**Update, same day, twelfth finding -- a deliberate product decision, not another correction.**
+Told plainly that "Auto" does nothing useful in this app right now (behaves identically to Manual),
+the user asked for what they actually wanted instead: a complete instruction should let the agent
+run end to end, only interrupting for a genuine clarifying question -- ordinary chat text, not a
+permission gate -- rather than a prompt on every tool call. `"bypassPermissions"` is the real mode
+that delivers exactly that (confirmed unconditional in the eleventh finding's own probe). Flagged
+explicitly before wiring it in, since it's a materially bigger trust step than `"acceptEdits"` --
+also skips Bash and every MCP tool call, not just file writes, with no per-call check at all -- and
+confirmed with the user before shipping. `PERMISSION_MODE_OPTIONS`'s "Auto" entry keeps its label
+but now sends `"bypassPermissions"`. Re-verified live with a fresh isolated probe combining a file
+write and a Bash command in one turn: both ran with zero approval interruptions.

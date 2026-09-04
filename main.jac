@@ -36,12 +36,6 @@ import from src.workbench.settings.settings_service { get_setting, set_setting }
 # register /function/start_chat_turn at all.
 import from src.workbench.ai.claude_code_client { start_chat_turn }
 
-# Same reason, same fix again: `watch_workspace_changes`
-# (src/workbench/workspace/workspace_watcher.jac) is also consumed by a raw SSE `fetch` (in
-# file_tree.impl.jac), not a generated RPC stub -- needs the identical entry-module import to
-# register /function/watch_workspace_changes at all.
-import from src.workbench.workspace.workspace_watcher { watch_workspace_changes }
-
 """**Dark mode was never activated (2026-08-25, caught via real browser screenshots, again not
 compiled-bundle inspection)** -- `styles/global.css` defines dark-theme values behind
 `@custom-variant dark (&:is(.dark *));`, a *class-based* switch: every shadcn component (`Sidebar`,

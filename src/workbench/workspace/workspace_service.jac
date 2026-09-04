@@ -246,7 +246,38 @@ underneath ends up holding" stance the de-dup step above already takes for a dif
 `rename_path`/`delete_path` still attempt the edge cleanup (harmless best-effort, and matches the
 existing "detach and let it become graph garbage" convention if it ever does take effect), but
 nothing here depends on it succeeding anymore. See tracker entry
-`2026-08-28-edge-deletion-not-committed-across-real-http-requests` for the full record."""
+`2026-08-28-edge-deletion-not-committed-across-real-http-requests` for the full record.
+
+**Also now skips any `Contains`-edge target that isn't actually a `Folder`/`File` (2026-09-04,
+real-user QA) -- a real, live-reproduced crash, `'Workspace' object has no attribute 'path'` on the
+`child.path` check just below, that took down this call (and with it, the whole Explorer tree)
+server-wide, mid-session, on a real long-running `jac run --serve --dev` process.** Confirmed this
+wasn't the newly-added `workspace_watcher.jac` at fault -- direct `curl` calls to that module's own
+`check_workspace_changes` kept succeeding throughout, while `list_children_by_path` kept failing
+identically, on the same request. **The exact trigger was not pinned down**: a targeted `jac test`
+attempting the most obvious candidate (opening a second workspace root, then reopening the first,
+then listing) passed cleanly, consistent with this being the same general class of issue
+`_workspace_lock`'s own docstring already documents as "narrowed but not closed" -- a real
+overlapping-HTTP-requests timing window `jac test`'s single-process synchronous execution structurally
+cannot reproduce (that docstring's own words, for the sibling race this file already knows about).
+Rather than chase the exact interleaving further without a reliable repro, this applies the same
+"the read path is the actual source of truth, regardless of what the graph underneath holds" stance
+the two guards above already take: a `Workspace` (or anything else) turning up where only
+`Folder`/`File` should ever be is now silently skipped instead of crashing the whole call.
+
+**`hasattr(child, "path")`, not `isinstance(child, (Folder, File))` -- confirmed live that the
+`isinstance` form fails too, on the exact same `'Workspace' object has no attribute 'path'` error,
+just one line earlier.** A genuinely surprising Jac-language finding, not assumed: checking
+`isinstance` against a `Workspace` value that lacks the fields `Folder`/`File` declare apparently
+triggers some field-level access as part of the archetype check itself, rather than behaving like a
+plain Python `type()` comparison. Verified both ways directly -- temporarily reverted to the
+`isinstance` form and reran this file's own new regression test below, which failed with that exact
+error at the `isinstance` line; restored to `hasattr`, which passes. Logged as tracker entry
+`2026-09-04-list-children-by-path-crashes-on-unexpected-contains-target`, covering both the crash
+itself and the `isinstance`-vs-`hasattr` gotcha -- the underlying question of *why* a `Workspace`
+ends up as a `Contains` target at all (almost certainly `get_or_create_workspace`'s own
+cache-vs-commit consistency under concurrent requests) is a real, open question, not yet closed --
+just no longer able to take the Explorer tree down with it."""
 def:pub list_children_by_path(parent_path: str) -> list[dict] {
     key = jid(root);
     if key not in _path_index or parent_path not in _path_index[key] {
@@ -259,6 +290,9 @@ def:pub list_children_by_path(parent_path: str) -> list[dict] {
     seen_paths: set[str] = set();
     deduped_children = [];
     for child in children {
+        if not hasattr(child, "path") {
+            continue;
+        }
         if child.path in seen_paths or not os.path.exists(child.path) {
             continue;
         }

@@ -385,15 +385,38 @@ of this problem (a file changing on disk for *any* reason -- an AI tool, a termi
 `IFileService.onDidFilesChange` (confirmed by reading `explorerService.ts` in a real
 `microsoft/vscode` checkout) is one general, workspace-wide file-change stream every interested
 part of the workbench subscribes to. Superseded the AI-specific callback with the same idea, scoped
-to what this project needs today: a new `workspace_watcher.jac` module streams
-`{"dirs": [...]}` change events by polling a directory-entry-set snapshot of the open workspace
-once a second (a deliberate choice over a native OS watcher/new dependency -- this codebase already
-has two working precedents for polling-based cross-process coordination, see that module's own
-docstring), and `file_tree.jac` now owns its own persistent watch connection (opened when a
-workspace opens, aborted and re-opened if a different one does, via a genuinely new
-`AbortController` pattern this codebase hadn't needed before), refreshing only the directories it
-actually has loaded among whichever ones changed. Verified directly against the running server with
-`curl`, not just `jac check` -- creating a file mid-stream produced the expected `changed` event
-within the poll interval. Still scoped to the sidebar only, not `inline_chat_widget.jac` or
-auto-reloading already-open editor tabs -- both real, legitimate follow-up work, not dropped, but
-bigger, separate changes than this pass's actual finding calls for.
+to what this project needs today: a new `workspace_watcher.jac` module polls a directory-entry-set
+snapshot of the open workspace once a second, and `file_tree.jac` refreshes whichever directories
+it actually has loaded among whichever changed.
+
+**Update, same day, fifth finding**: the first version of that watcher was itself a real,
+live-reproduced regression -- an indefinite SSE stream, opened once and left running for the whole
+session, broke `list_children_by_path` server-wide (`'Workspace' object has no attribute 'path'`)
+the moment it started, confirmed from the sponsor's own terminal log. This project's own
+already-documented SSE-generator-isolation risk (three prior tracker entries), but a worse instance
+of it than any before -- every other stream here is short-lived (one chat turn, one debug session);
+this was the first that never disconnected on its own. Fixed by not streaming at all: the watcher is
+now a plain, ordinary `def:pub` function `file_tree.jac` polls on a `setInterval`, completely
+stateless server-side (the client passes back its own last snapshot each call). Verified directly
+against the running server with `curl`, not just `jac check` -- confirmed the new function keeps
+working correctly even while the old bug's symptom was still reproducing on the same request.
+
+**Update, same day, sixth finding**: that same symptom turned out to be a separate, genuinely
+pre-existing bug, unrelated to the watcher -- confirmed by the sponsor themselves, who had seen the
+Explorer tree disappear on long-running sessions before the watcher ever existed, and by direct
+`curl` testing showing the new watcher function succeeding on the same request that
+`list_children_by_path` failed on. Root cause not fully pinned down (the likely candidate,
+`get_or_create_workspace`'s cache-vs-commit consistency under concurrent requests, is the same
+class of race `_workspace_lock`'s own docstring already flags as real but not reproducible under
+`jac test`'s synchronous execution) -- but `list_children_by_path` now defends against the crash
+itself: a `Contains`-edge target that isn't actually a `Folder`/`File` is skipped instead of taking
+the whole call down. A genuinely surprising secondary finding along the way: `isinstance()` against
+the malformed value raised the identical error one line earlier than the `hasattr()` form that
+actually works -- confirmed live by temporarily reverting and rerunning the new regression test.
+Logged as tracker entry `2026-09-04-list-children-by-path-crashes-on-unexpected-contains-target`.
+**This fix needs a real server restart to take effect** -- unlike every other fix in this cycle,
+it's server-side Python execution, not the client bundle Vite's `--dev` hot-reloads.
+
+Still scoped to the sidebar only, not `inline_chat_widget.jac` or auto-reloading already-open
+editor tabs -- both real, legitimate follow-up work, not dropped, but bigger, separate changes than
+this pass's actual finding calls for.

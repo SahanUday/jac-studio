@@ -10,55 +10,48 @@ outside its own RPC calls.
 this, and it doesn't special-case causes either: `IFileService.onDidFilesChange`
 (`explorerService.ts` in a real `microsoft/vscode` checkout) is one general, OS-level file-system
 watcher covering the *entire* open workspace, feeding a single event stream that the Explorer (and
-everything else that cares -- open editors, SCM, search) subscribes to, regardless of whether a
-change came from an AI tool, a terminal command, `git checkout`, or another program entirely. This
-module is that same idea, scoped to what this project actually needs today (the Explorer tree, not
-yet open-editor auto-reload -- see `file_tree.jac`'s own docstring for that boundary) --
-**replacing** the `onWorkspaceFileChanged` wiring, not layering on top of it, since a general
-watcher already covers every case the special-cased one did plus everything it didn't.
+everything else that cares) subscribes to, regardless of whether a change came from an AI tool, a
+terminal command, `git checkout`, or another program entirely. This module is that same idea,
+scoped to what this project actually needs today (the Explorer tree, not yet open-editor
+auto-reload -- see `file_tree.jac`'s own docstring for that boundary).
 
-**Polling a directory snapshot, not a native OS watcher (inotify/`watchdog`/parcel) -- a deliberate
-choice, not a missing dependency.** This project already has two real, working precedents for
-polling-based cross-process coordination doing the identical job a "real" watcher would
-(`claude_code_launcher.py`'s `_wait_for_tool_approval`, `dap_client.jac`'s command-file polling) --
-extending that same idiom here, rather than introducing this project's first native file-system-
-event dependency, for a local dev tool where sub-second latency isn't the bar VS Code's own
-Electron-process-boundary architecture has to clear. `_POLL_INTERVAL_SECONDS` trades a small,
-bounded latency (at most one interval before a change is noticed) for zero new dependencies and no
-platform-specific native-watcher behavior to verify across environments.
+**A second, real, live-reproduced regression, same day: this module's *first* version was itself an
+indefinite, always-connected SSE stream (`watch_workspace_changes() -> Generator`, opened once per
+workspace-open and left running for the component's whole lifetime) -- and it broke
+`list_children_by_path` server-wide the moment it started running, confirmed from a real user's own
+terminal log: every `list_children_by_path` call failed with `'Workspace' object has no attribute
+'path'` (a shape mismatch that only makes sense if a request landed against a *different* `root`'s
+`_path_index` than the one that actually opened `testing-workspace`) from the instant the watch
+started, for the rest of that server process's life.** This is this project's own already-documented
+SSE-generator-isolation risk (see `claude_code_client.jac`'s docstring and tracker entries
+`2026-09-01-sse-generator-endpoint-runs-in-isolated-process-no-shared-glob-state`/
+`2026-09-02-sse-generator-glob-isolation-not-reproduced-single-process-dev-run`/
+`2026-09-05-sse-generator-root-scoped-graph-query-unreliable`) -- but a materially worse instance of
+it than any of those: every other `Generator`-returning endpoint in this codebase is short-lived,
+scoped to one chat turn or one debug session, and disconnects on its own; this was the first
+*indefinite* one, reconnected on every workspace-open and otherwise left running for a whole
+session. Whatever isolation mechanism those tracker entries describe, a stream that never
+disconnects gives it far more opportunity to interfere with this process's shared, `root`-keyed
+`_path_index`/`_cached_workspace_jid` globals than a stream that naturally ends in seconds.
 
-**Diffs the *set of immediate entries* per directory, not per-file content/mtimes.** The Explorer
-tree only cares whether what's listed inside a directory changed (a file appeared, disappeared, or
-was renamed) -- an existing file's own content changing doesn't change its parent directory's
-listing, so tracking mtimes would notice changes this tree has no reason to react to. A
-subdirectory being deleted entirely is still caught correctly: it stops appearing in *its own
-parent's* entry list, which the parent's own diff catches, without needing a separate
-"disappeared directory" case -- `os.walk` simply never visits the deleted path in the new snapshot,
-so nothing yields a stale reference to it.
+**Fixed by not streaming at all.** `check_workspace_changes` below is a plain, ordinary `def:pub`
+function -- the same request/response shape `list_children_by_path` itself, `refresh_status`, and
+every other polled-from-the-client call in this codebase already use safely. `file_tree.jac` now
+polls it on a `setInterval`, passing back the snapshot it got last time so this function stays
+completely stateless server-side (no lingering task, no connection to leak, nothing to abort when a
+different workspace opens -- `clearInterval` is all the client-side cleanup this needs, simpler than
+the `AbortController` the streaming version required). This isn't a smaller, faster-to-write version
+of the same idea -- it's the version that doesn't reach for this project's own proven-unreliable
+mechanism for something that never needed to be a stream in the first place.
 
-**`root_path` resolved by the caller, passed in as a plain argument -- the same SSE-generator-
-isolation-safe pattern `claude_code_client.jac`'s `start_chat_turn` and this exact class of bug
-already established (see that module's own docstring).** This generator never queries
-`get_current_workspace()` (a real `root`-scoped graph query) itself; `file_tree.jac` already has
-`root_path` as plain component state by the time it starts watching, from the same
-`_open_path_into_tree` call that opened the workspace in the first place.
+**Still diffs the *set of immediate entries* per directory, not per-file content/mtimes** -- the
+Explorer tree only cares whether what's listed inside a directory changed (a file appeared,
+disappeared, or was renamed), not whether some existing file's own content changed. A subdirectory
+being deleted entirely is still caught correctly: it stops appearing in *its own parent's* entry
+list, which the parent's own diff catches, without needing a separate "disappeared directory" case."""
 
-**No server-side "has the workspace changed" self-termination.** An earlier design considered
-having this generator poll `get_current_workspace()` itself each iteration to notice when the user
-opens a *different* folder and stop on its own -- rejected for the identical reason `root_path`
-isn't resolved fresh here at all: that's exactly the root-scoped-graph-query-inside-an-SSE-generator
-pattern already proven unreliable. Instead this stream runs until its connection closes, and
-`file_tree.jac`'s own client-side `AbortController` (see that module's docstring) is what actually
-stops it when the user opens a new root -- the correct side for that decision to live on, since the
-client is the one that knows when it no longer wants this particular watch."""
-
-import asyncio;
-import json;
 import os;
-import from typing { AsyncGenerator, Generator }
 import from src.workbench.workspace.workspace_service { DEFAULT_EXCLUDED_DIRS }
-
-glob _POLL_INTERVAL_SECONDS: float = 1.0;
 
 def _dir_snapshot(root_path: str) -> dict[str, list[str]] {
     snapshot: dict[str, list[str]] = {};
@@ -69,30 +62,21 @@ def _dir_snapshot(root_path: str) -> dict[str, list[str]] {
     return snapshot;
 }
 
-"""The one SSE-streamed entry point. Yields `{"type": "changed", "dirs": [...]}` whenever a poll
-notices any directory's own immediate entry list differ from the previous poll -- `dirs` is every
-directory that changed in that interval, not just one, since several can genuinely change between
-two polls (a multi-file AI turn, a `git checkout` touching many paths at once). Yields nothing on an
-interval with no changes -- an idle workspace produces an empty, silent stream, not a periodic
-no-op event `file_tree.jac` would have to filter out itself."""
-async def:pub watch_workspace_changes(root_path: str) -> Generator {
-    async def stream -> AsyncGenerator[str, None] {
-        if not os.path.isdir(root_path) {
-            return;
-        }
-        last_snapshot = _dir_snapshot(root_path);
-        while True {
-            await asyncio.sleep(_POLL_INTERVAL_SECONDS);
-            current_snapshot = _dir_snapshot(root_path);
-            changed_dirs = [
-                d for d in current_snapshot
-                if d not in last_snapshot or current_snapshot[d] != last_snapshot[d]
-            ];
-            if changed_dirs {
-                yield json.dumps({"type": "changed", "dirs": changed_dirs});
-            }
-            last_snapshot = current_snapshot;
-        }
+"""Stateless: `last_snapshot` is whatever the caller got back from its own previous call (an empty
+dict on the first call for a given `root_path`), and this function's own `snapshot` return value is
+what the caller should pass back on its *next* call -- nothing is kept between calls on this side.
+`changed_dirs` is every directory whose own immediate entry list differs from `last_snapshot`,
+including any directory present in one snapshot but not the other (a newly created or entirely
+deleted subtree)."""
+def:pub check_workspace_changes(root_path: str, last_snapshot: dict[str, list[str]]) -> dict[str, any] {
+    if not os.path.isdir(root_path) {
+        return {"changed_dirs": [], "snapshot": {}};
     }
-    report stream();
+    current_snapshot = _dir_snapshot(root_path);
+    changed_dirs = [
+        d for d in current_snapshot
+        if d not in last_snapshot or current_snapshot[d] != last_snapshot[d]
+    ];
+    changed_dirs += [d for d in last_snapshot if d not in current_snapshot];
+    return {"changed_dirs": changed_dirs, "snapshot": current_snapshot};
 }

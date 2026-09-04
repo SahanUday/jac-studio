@@ -137,26 +137,38 @@ possible cause of an external change.** Asked to check how real VS Code handles 
 version of this problem: `IFileService.onDidFilesChange` (`explorerService.ts` in a real
 `microsoft/vscode` checkout) is one general, workspace-wide file-change stream that Explorer (and
 everything else that cares) subscribes to, regardless of *why* something changed -- an AI tool, a
-terminal command, `git checkout`, another program entirely. `start_watching` below is that same
-idea: `workspace_watcher.jac`'s `watch_workspace_changes` (a polling-based watcher, not a native
-OS one -- see that module's own docstring for why that's a deliberate choice, not a missing
-dependency, matching two existing polling precedents already in this codebase) streams
-`{"dirs": [...]}` events for any directory whose own immediate entry list changed; `handle_watch_event`
-below refreshes only the ones this component actually has loaded (`refresh_children` per matching
-key in `children_by_path`), root included. Started once, from `_open_path_into_tree`, right after
-`root_path` is known -- and re-started (aborting the previous connection first) if the user opens a
-*different* root, since an old watch left running against a folder that's no longer open would be
-pure waste. `watch_abort_controller` (a `Ref[any]`, not `has` state, since it holds a mutable
-`AbortController` this component's own lifecycle owns, not something a re-render should ever
-recreate) is what makes that abort possible -- there's no other precedent for canceling an in-flight
-SSE `fetch` anywhere in this codebase (`terminal.jac`/`dap_client.jac`'s own long-lived streams
-never needed to stop themselves this way), so this is a genuinely new, standard-`fetch`-`signal`
-pattern, not an existing one reused."""
+terminal command, `git checkout`, another program entirely.
 
+**A second attempt generalized this correctly but implemented it as an indefinite SSE stream
+(`watch_workspace_changes() -> Generator`, opened once per workspace-open and left running for this
+component's whole lifetime) -- a real, live-reproduced regression, confirmed from a real user's own
+terminal log: `list_children_by_path` started failing server-wide (`'Workspace' object has no
+attribute 'path'`) the instant that stream started, for the rest of that server process's life.**
+This project already has three tracker entries documenting that `Generator`-returning endpoints can
+run isolated from ordinary `def:pub` calls in ways that corrupt shared, `root`-keyed global state
+(see `claude_code_client.jac`'s own docstring) -- every prior instance of that risk in this codebase
+was a *short-lived* stream (one chat turn, one debug session) that disconnects on its own; this was
+the first *indefinite* one, and it looks like that made the same known risk far more damaging.
+
+**Fixed by not streaming at all -- `workspace_watcher.jac`'s `check_workspace_changes` is a plain,
+ordinary `def:pub` function, the same request/response shape `list_children_by_path` itself already
+uses safely.** `poll_workspace_changes` below calls it on a `setInterval`, passing back the snapshot
+it got last time (`watch_snapshot`) so the server side stays completely stateless -- no lingering
+task, no connection to clean up, nothing to abort when a different workspace opens. The
+`useEffect([root_path])` below starts a fresh `setInterval` (and resets `watch_snapshot`) whenever
+the open root changes, `clearInterval`-ing the previous one via the effect's own cleanup return --
+simpler than the streaming version's own `AbortController` needed, one more real advantage of this
+design over the one it replaced, not just a workaround for the regression. `poll_workspace_changes`
+below refreshes only the
+directories this component actually has loaded (`refresh_children` per matching key in
+`children_by_path`) among whichever the poll reports changed, root included."""
+
+import from "react" { useEffect }
 import from src.workbench.workspace.workspace_service {
     open_workspace, list_children_by_path, get_current_workspace,
     create_file, create_folder, rename_path, delete_path
 }
+import from src.workbench.workspace.workspace_watcher { check_workspace_changes }
 import from src.workbench.file_icons.file_icons { file_icon_class }
 
 import from components.ui.sidebar {
@@ -314,7 +326,7 @@ def:pub app(props: any) -> JsxElement {
     has selected_path: str = "";
     has compare_pending_path: str = "";
     has compare_pending_name: str = "";
-    has watch_abort_controller: Ref[any] = Ref();
+    has watch_snapshot: dict[str, list[str]] = {};
 
     git_status = props["gitStatus"] if "gitStatus" in props else {};
 
@@ -328,8 +340,17 @@ def:pub app(props: any) -> JsxElement {
     async def create_new_folder(parent_path: str) -> None;
     async def rename_item(path: str, parent_path: str, current_name: str) -> None;
     async def delete_item(path: str, parent_path: str, is_dir: bool) -> None;
-    async def start_watching(path: str) -> None;
-    async def handle_watch_event(event: dict[str, any]) -> None;
+    async def poll_workspace_changes -> None;
+
+    useEffect(lambda {
+        if root_path == "" {
+            return;
+        }
+        watch_snapshot = {};
+        poll = lambda { poll_workspace_changes(); };
+        timer = setInterval(poll, 1000);
+        return lambda { clearInterval(timer); };
+    }, [root_path]);
 
     async can with entry {
         restored = await get_current_workspace();

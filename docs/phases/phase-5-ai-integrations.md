@@ -265,3 +265,299 @@ content pressure in a `flexDirection: column` list — fixed with an explicit `f
 every message entry), and **a visible OS-chrome scrollbar** in the narrow message column (fixed
 with `styles/global.css`'s own `no-scrollbar` Tailwind utility, defined at some earlier point but
 never actually applied anywhere in this project until now).
+
+A fourth round, comparing directly against a real VS Code Claude Code extension screenshot, found
+two more gaps: **the message list didn't auto-scroll to the latest content** (fixed with a `Ref`
+on the scrollable container plus a `useEffect` keyed on everything that can add visible content —
+`messages`, `is_streaming`, `pending_approvals` — setting `scrollTop = scrollHeight`, applied to
+both `ai_chat.jac` and `inline_chat_widget.jac`), and **user and assistant messages were hard to
+tell apart at a glance** (fixed by giving only the user's own prompt a distinct boxed card,
+matching the reference screenshot's own asymmetry — the assistant's response stays unboxed,
+flowing markdown text).
+
+## Second QA round (2026-09-04) — PRs #71–73
+
+Testing MCP wiring, tool approval, and multi-file edit review turned up five more real, unrelated
+findings — two genuine bugs and three feature requests grounded in real product/SDK capability,
+not invented from scratch. Full detail lives in each touched module's own docstring; summarized
+here for the phase-level record.
+
+- **Bug: the sidebar's resize handle showed real white space, not this app's dark theme, when
+  dragged wider than the active view's content** — two separate gaps in the vendored shadcn
+  `Sidebar` primitive's `collapsible="none"` branch, both in the Explorer view specifically but
+  latent in every sidebar view: (1) `Sidebar` hardcodes a `16rem` width regardless of its resizable
+  container, so dragging wider left the resize handle's own extra space uncovered — fixed with
+  `className="w-full min-w-0"` (Tailwind's `cn()`/`tailwind-merge` resolves the class conflict in
+  the caller's favor); (2) none of `file_tree.jac`/`scm.jac`/`outline.jac`'s plain-`<div>` roots
+  set an explicit background, so any area they didn't cover fell through the app's `.dark`-class
+  scoping (applied to a div *inside* `body`, not `body` itself — see `main.jac`'s own docstring) to
+  `body`'s genuinely still-light `--background` — fixed with one `#191A1B` fallback on the shared
+  `ResizablePanel` all five sidebar views sit inside, matching this file's own chrome color.
+- **Bug: asking the agent to create a file named `scratch_test.txt` wrote it to
+  `~/.claude-scratch/<session-id>/` instead of the open workspace**, even though `cwd` was
+  confirmed correct in the server's own request log. Root cause: `claude_code_launcher.py` runs as
+  the same OS user as whoever's own, separate Claude Code CLI session has a personal global
+  `~/.claude/CLAUDE.md` — `ClaudeAgentOptions.setting_sources` defaults to loading every filesystem
+  settings source, `"user"` included, so this in-app launcher was reading and obeying that
+  unrelated, machine-owner-specific config (a real rule about naming a file literally "scratch").
+  Fixed with `setting_sources=["project", "local"]`, excluding `"user"` while keeping the two
+  sources genuinely scoped to the open workspace itself. See `claude_code_launcher.py`'s own
+  docstring for the full finding — this generalizes beyond this one developer's machine to any
+  future jac-studio user with their own unrelated global Claude Code config.
+- **Feature: model/permission-mode/effort pickers** in `ai_chat.jac`'s composer, all three backed
+  by real `ClaudeAgentOptions` fields the installed SDK already exposes (`model`, `permission_mode`,
+  `effort` — confirmed by reading the dataclass directly). `permission_mode`'s four options map
+  one-to-one onto the real extension's own "Manual/Edit automatically/Plan/Auto" mode switcher, per
+  a side-by-side reference screenshot. `model` still defaults to `"haiku"` on mount — a picker to
+  move *off* the cheap default when needed, not a reversal of it.
+- **Feature: an `@`-triggered file-attachment picker**, investigated against real VS Code's own
+  file-reference mechanism first (`chatDynamicVariables.ts`/`chatAttachmentModel.ts` in a real
+  `microsoft/vscode` checkout) before building a proportionate equivalent: file content is resolved
+  and prepended to the prompt server-side before the request goes out (`claude_code_client.jac`'s
+  new `_build_prompt_with_attachments`), the same "resolve to real content before sending" approach
+  VS Code's own attachment model uses, rather than hoping raw `@text` gets parsed downstream. Reuses
+  `workspace_service.jac`'s existing `list_all_files` (the same RPC `quick_open.jac`'s Ctrl+P
+  switcher already calls) through a `CommandDialog` picker. One-shot per turn, not persisted pinned
+  context across a conversation — a deliberate v1 scope cut to avoid silently re-sending the same
+  file's content (and cost) on every follow-up.
+
+**Update, same day**: live-testing the resizable-sidebar fix above (dragging the Explorer sidebar
+wide, then opening two diff editors side by side) surfaced two more real bugs, both root-caused
+with `jac browse` + `getComputedStyle`/pixel sampling rather than guessed from screenshots alone:
+
+- **A regression in the sidebar-width fix itself**: `className="w-full min-w-0"` on `Sidebar`
+  looked correct and fixed the width, but silently discarded the primitive's own `bg-sidebar
+  text-sidebar-foreground` classes too, rendering the entire Explorer tree in near-invisible
+  near-black text on a transparent background. Root cause, confirmed via `getComputedStyle` in a
+  live session: `sidebar.jac`'s `collapsible="none"` branch spreads `{**attrs}` (every prop,
+  `className` included) *after* its own computed `className={cn(...)}` — a prop specified twice in
+  JSX keeps the last one, so any `className` passed to `<Sidebar collapsible="none">` from any
+  caller clobbers the whole `cn(...)` result. Fixed by routing the width override through `style`
+  instead (`style={{"width": "100%", "minWidth": "0"}}`) — `attrs` still carries `style` through
+  the same spread, but nothing in that branch sets an explicit `style` of its own to collide with
+  it, so it applies cleanly without touching the vendored primitive.
+- **A second, unrelated white-gap instance**, this time at the editor group's own split, not the
+  sidebar: a genuinely white ~25px band flanking the resize handle between two editor panes,
+  confirmed with real sampled pixel values (`(255, 255, 255)`), not assumed from a screenshot.
+  Same root cause as the sidebar's white-space bug, one level more general: `.dark`'s
+  `--background`/`--foreground` CSS variables cascade to every descendant, but nothing was ever
+  painting an actual `background-color`/`color` from them anywhere near the app's actual root —
+  every dark surface up to this point was one more hand-styled component's own hardcoded hex color,
+  meaning any *other*, not-yet-hand-styled gap anywhere in the tree was one more undiscovered
+  instance of the same bug. Fixed at the true root this time, not a third individual container:
+  `main.jac`'s own `.dark`-classed wrapper div (the one element that already wraps literally
+  everything the app renders) now paints `background: var(--background); color:
+  var(--foreground)` directly, making this whole bug class structurally impossible to reintroduce
+  by omission elsewhere.
+
+**Update, same day again**: the sponsor re-tested the `~/.claude-scratch/` fix above and hit the
+identical bug again -- `setting_sources=["project", "local"]` was real progress but did not
+actually close it. Root-caused this time by reading the real `claude` CLI's own TypeScript source
+directly (a local checkout at `/home/sahan/dev/coder/src/`), not re-guessing from the Python SDK's
+docstring a second time: `"user"` gates one dedicated lookup
+(`homedir()/.claude/CLAUDE.md`), but `"project"` gates a *separate* one that walks every ancestor
+directory from `cwd` up to the filesystem root looking for `.claude/CLAUDE.md` in each, with no
+special case for `$HOME` — and since any real workspace's `cwd` is necessarily nested under the
+actual OS user's home directory, that walk always eventually reaches `$HOME` and independently
+rediscovers the identical global file through the `"project"`-gated path, completely bypassing the
+`"user"` exclusion. Confirmed with standalone `claude_agent_sdk.query()` probe scripts against the
+installed SDK directly (not just this launcher): `setting_sources=["project", "local"]` still
+leaked the exact `~/.claude-scratch/...` write; `setting_sources=[]` (full isolation) did not, and
+correctly landed a normal file request in the open workspace with no confusion. Since `"project"`
+scope can never be excluded from this ancestor-walk risk while `cwd` is home-nested — true for
+every real jac-studio workspace — full isolation is the *minimum* setting that actually works here,
+not a broader fix than necessary. See `claude_code_launcher.py`'s own docstring for the complete,
+source-verified write-up.
+
+**Update, same day, third finding**: after confirming the fix above, the sponsor found a follow-on
+gap -- a file the agent's `Write` tool created was genuinely on disk (confirmed with their own
+terminal) but never appeared in the Explorer sidebar, even with the dev server's HMR running. Not
+an HMR gap (Vite's hot reload only concerns this app's own source recompiling, unrelated to
+workspace files) -- `file_tree.jac`'s tree is plain client-side state, fetched once per directory
+on expand and never re-fetched on its own, and an AI tool call writes to disk from a wholly
+separate OS process with no way to signal the tree. A first fix wired a dedicated callback
+straight from `ai_chat.jac`'s own `tool_result` handling -- correct, but special-cased to this
+app's own AI tool calls as the only possible cause of an external change.
+
+**Update, same day, fourth finding**: asked to check how real VS Code handles the general version
+of this problem (a file changing on disk for *any* reason -- an AI tool, a terminal command,
+`git checkout`, another program), and it doesn't special-case causes either:
+`IFileService.onDidFilesChange` (confirmed by reading `explorerService.ts` in a real
+`microsoft/vscode` checkout) is one general, workspace-wide file-change stream every interested
+part of the workbench subscribes to. Superseded the AI-specific callback with the same idea, scoped
+to what this project needs today: a new `workspace_watcher.jac` module polls a directory-entry-set
+snapshot of the open workspace once a second, and `file_tree.jac` refreshes whichever directories
+it actually has loaded among whichever changed.
+
+**Update, same day, fifth finding**: the first version of that watcher was itself a real,
+live-reproduced regression -- an indefinite SSE stream, opened once and left running for the whole
+session, broke `list_children_by_path` server-wide (`'Workspace' object has no attribute 'path'`)
+the moment it started, confirmed from the sponsor's own terminal log. This project's own
+already-documented SSE-generator-isolation risk (three prior tracker entries), but a worse instance
+of it than any before -- every other stream here is short-lived (one chat turn, one debug session);
+this was the first that never disconnected on its own. Fixed by not streaming at all: the watcher is
+now a plain, ordinary `def:pub` function `file_tree.jac` polls on a `setInterval`, completely
+stateless server-side (the client passes back its own last snapshot each call). Verified directly
+against the running server with `curl`, not just `jac check` -- confirmed the new function keeps
+working correctly even while the old bug's symptom was still reproducing on the same request.
+
+**Update, same day, sixth finding**: that same symptom turned out to be a separate, genuinely
+pre-existing bug, unrelated to the watcher -- confirmed by the sponsor themselves, who had seen the
+Explorer tree disappear on long-running sessions before the watcher ever existed, and by direct
+`curl` testing showing the new watcher function succeeding on the same request that
+`list_children_by_path` failed on. Root cause not fully pinned down (the likely candidate,
+`get_or_create_workspace`'s cache-vs-commit consistency under concurrent requests, is the same
+class of race `_workspace_lock`'s own docstring already flags as real but not reproducible under
+`jac test`'s synchronous execution) -- but `list_children_by_path` now defends against the crash
+itself: a `Contains`-edge target that isn't actually a `Folder`/`File` is skipped instead of taking
+the whole call down. A genuinely surprising secondary finding along the way: `isinstance()` against
+the malformed value raised the identical error one line earlier than the `hasattr()` form that
+actually works -- confirmed live by temporarily reverting and rerunning the new regression test.
+Logged as tracker entry `2026-09-04-list-children-by-path-crashes-on-unexpected-contains-target`.
+**This fix needs a real server restart to take effect** -- unlike every other fix in this cycle,
+it's server-side Python execution, not the client bundle Vite's `--dev` hot-reloads.
+
+Still scoped to the sidebar only, not `inline_chat_widget.jac` or auto-reloading already-open
+editor tabs -- both real, legitimate follow-up work, not dropped, but bigger, separate changes than
+this pass's actual finding calls for.
+
+**Update, same day, seventh finding**: a follow-up report that looked at first like another
+file-tree bug wasn't one. The sponsor asked the AI Chat to create `scratch_test.txt`; it reported
+success, but the file never appeared in the Explorer -- and the terminal log showed why: it had
+actually been written to `/tmp/scratch_test.txt`, nowhere near the open workspace, so there was
+nothing wrong with the tree or the watcher to find. Root cause was in `claude_code_launcher.py`:
+it never set `system_prompt`, and the installed SDK's own source (`subprocess_cli.py`) shows
+`system_prompt=None` sends the real CLI `--system-prompt ""` -- an *explicit* empty prompt, not
+"use the default." Cross-checked against a real `claude` CLI source checkout
+(`utils/queryContext.ts`, `constants/prompts.ts`): an empty custom prompt makes the CLI skip its
+entire default system prompt, including the `<env>Working directory: ...</env>` block baked into
+it. With no context at all about where it was running, the model fell back to its own pretrained
+instinct for a scratch-sounding filename. Fixed with `system_prompt={"type": "preset", "preset":
+"claude_code"}`, confirmed (via the same source) not to reopen the earlier `setting_sources`
+CLAUDE.md leak -- independent CLI flags.
+
+**Update, same day, eighth finding**: separately, asked to check how VS Code's production
+architecture handles file watching efficiently, since `check_workspace_changes` (the polling
+function from the fifth finding above) did a full recursive `os.walk` every second, forever,
+regardless of whether anything had changed. VS Code's `IFileService` doesn't poll at all -- a real
+OS-level notification mechanism (inotify and equivalents) reports changes, and
+`files.watcherExclude` prunes exactly the directories (`node_modules`, `.git`) this project's own
+`DEFAULT_EXCLUDED_DIRS` already prunes from `os.walk`, for the identical resource reason.
+`workspace_watcher.jac` now does the same, using `watchdog` (a new but small dependency, confirmed
+safe to import at `.jac` module scope by an actual `jac run` probe before committing to the design
+-- unlike `claude-agent-sdk`'s documented compiler-choking dependency closure) -- scheduled
+per-directory, non-recursively, matching `files.watcherExclude`'s own reasoning rather than
+watching everything and filtering afterward. The client-side poll transport is unchanged
+deliberately (a push/stream design would reopen the fifth finding's SSE-isolation risk); what
+changed is that answering a poll is now an O(1) in-memory read instead of an O(files) disk walk.
+Caught one real bug live-testing this before it shipped: a directory's own `modified` event (fired
+because its mtime changes when something inside it changes) was being misattributed to its
+*parent* via a naive `dirname()`, marking the wrong directory dirty -- fixed by dropping `modified`
+events entirely, since they carry no signal beyond what the `created`/`deleted` event that caused
+them already provides.
+
+**Update, same day, ninth finding**: separately, live-tested a genuine re-recurrence of the
+`'Workspace' object has no attribute 'path'` crash (sixth finding above) -- confirmed the existing
+`hasattr` guard in `list_children_by_path` was still solid (re-verified `isinstance` vs `hasattr`
+directly), found and closed one more genuinely unguarded instance of the same gap in
+`ensure_path_reachable` (not confirmed as this occurrence's actual cause -- the live browser stack
+trace only named `list_children_by_path`), and asked the user to restart their server so a real
+next occurrence (if any) could be cleanly attributed to persisted-vs-in-memory corruption. The
+restart cleared it.
+
+**Update, same day, tenth finding, corrected within the hour: the "Auto" permission-mode picker
+option (fourth QA pass) was reported still prompting for every tool call despite sending
+`permission_mode: "auto"` correctly end to end.** A first read of the real `claude` CLI's own
+source (`utils/permissions/PermissionMode.ts`) found one config field
+(`PERMISSION_MODE_CONFIG.auto.external: 'default'`) and concluded `"auto"` behaves identically to
+Manual mode externally -- shipped as a "fix" changing the picker to send `"bypassPermissions"`
+instead. **The user, testing this app, immediately pushed back**: in their own real experience
+with the actual Claude Code extension, Auto mode genuinely does not prompt for every call --
+directly contradicting that conclusion. Reading the *actual enforcement code*
+(`permissions.ts`'s `hasPermissionsToUseTool`), not just the UI config table, confirmed the user
+was right: `"auto"` mode has a real fast-path (skip the prompt if the same action would already be
+allowed under `"acceptEdits"`) and, failing that, an AI-classifier call, both gated behind a
+`TRANSCRIPT_CLASSIFIER` feature flag -- nothing like Manual's unconditional prompting.
+`"bypassPermissions"` is a different, blunter, classifier-free mode. Reverted the picker back to
+`"auto"`. See `claude_code_launcher.py`'s own docstring for the full, two-correction record -- kept
+visible rather than quietly rewritten, since the wrong conclusion and how it was caught are as much
+the finding here as the eventual right answer.
+
+**Update, same day, eleventh finding -- resolved, not left open**: whether `"auto"` mode's own
+fast-path/classifier actually engages through this app's headless SDK invocation. Static analysis of
+the bundled `claude` CLI binary (`claude_agent_sdk`'s own `_bundled/claude`, confirmed this is the
+one actually spawned -- no `claude` exists on this machine's `PATH`) came back ambiguous (the
+`TRANSCRIPT_CLASSIFIER` feature-flag string itself is absent, but `.mode==="auto"` comparisons
+aren't -- inconclusive on minified code alone). Rather than draw a third conclusion from static
+inference after getting the first one wrong, ran a real, isolated, three-way controlled test: a bare
+`claude_agent_sdk.query()` script with no jac-studio code involved, same instrumented `can_use_tool`
+callback, same "create a new file" prompt, varying only `permission_mode` -- `"acceptEdits"` and
+`"bypassPermissions"` both correctly skipped the callback entirely (0 invocations each, the SDK's
+own shadowing warning even confirms it for the latter); `"auto"` invoked it once. This cleanly
+isolates the gap to `"auto"` mode specifically, in this exact installed CLI build -- every other
+mode's fast-path logic works correctly through the identical SDK invocation shape, ruling out any
+general "headless can't do fast-paths" theory and any jac-studio-side bug. `"auto"` remains the
+correct value to send (its intended design, confirmed by source, really is different from Manual);
+it just doesn't behave that way with the currently-bundled CLI build, for reasons outside this
+project's control. Closed the open tracker entry with this conclusive finding rather than leave it
+open on a guess.
+
+**Update, same day, twelfth finding -- a deliberate product decision, not another correction.**
+Told plainly that "Auto" does nothing useful in this app right now (behaves identically to Manual),
+the user asked for what they actually wanted instead: a complete instruction should let the agent
+run end to end, only interrupting for a genuine clarifying question -- ordinary chat text, not a
+permission gate -- rather than a prompt on every tool call. `"bypassPermissions"` is the real mode
+that delivers exactly that (confirmed unconditional in the eleventh finding's own probe). Flagged
+explicitly before wiring it in, since it's a materially bigger trust step than `"acceptEdits"` --
+also skips Bash and every MCP tool call, not just file writes, with no per-call check at all -- and
+confirmed with the user before shipping. `PERMISSION_MODE_OPTIONS`'s "Auto" entry keeps its label
+but now sends `"bypassPermissions"`. Re-verified live with a fresh isolated probe combining a file
+write and a Bash command in one turn: both ran with zero approval interruptions.
+
+**Update, same day, thirteenth finding: `CanUseToolShadowedWarning` was leaking into the chat panel
+as a red error card.** Real, live-reported: the "Auto" mode change above is exactly what triggers
+this Python warning (it fires precisely because `bypassPermissions` shadows `can_use_tool`, the
+intended behavior), but nothing suppressed it -- `claude_code_client.jac`'s stdout reader (stderr
+merged into the same stream) treats any non-JSON line as a crash and relays it to the client as an
+error, and Python's default warning handler prints straight to stderr. The SDK's own docstring on
+that warning class names the exact fix: `warnings.filterwarnings("ignore",
+category=CanUseToolShadowedWarning)`, added once at launcher module scope. Confirmed live (a direct
+subprocess probe) that the clean JSON event stream has zero trace of it now, while a real
+launcher-side crash still raises a real exception and still surfaces as a genuine `error` event --
+this only silences the one specific, by-design warning.
+
+**Update, same day, fourteenth finding: auto-reloading an already-open, undirtied editor tab when
+its file changes on disk externally, matching real VS Code's own policy.** Reported live: asking
+the AI Chat to edit a file that was already open in a tab showed "Done" in chat, but the tab kept
+showing stale content -- the general watcher (`workspace_watcher.jac`) already covered the Explorer
+tree by this point, but nothing told an *already-open editor* its own content was stale. Read real
+VS Code source (`TextFileEditorModelManager.onDidFilesChange`) rather than guessing: the policy is
+"reload a clean model automatically, never touch a dirty one" (`if (model.isDirty()) { continue; //
+never reload dirty models }`, verbatim, twice, in that file). Implemented the same policy end to
+end: `workspace_watcher.jac` now also tracks individual `modified` *file* events (not just
+directory-listing changes -- see that module's own docstring for why this needed a second,
+file-level allowlist, separate from the directory one), `file_tree.jac`'s existing poll surfaces
+`changed_files` to a new `onFilesChangedExternally` callback, `workbench.jac` cross-references
+every changed path against open tabs and `dirty_paths` (already tracked) and bumps a per-path
+reload nonce only for a clean, open tab, threaded down through `editor_tabs.jac` to
+`MonacoEditorApp`'s new `reloadNonce` prop. `monaco_editor.jac`'s own `reload_from_disk` re-checks
+`dirty` itself right before touching the buffer (closing a real, if narrow, race the parent's own
+filter alone can't close), preserves cursor position across the reload, and suppresses its own
+dirty-tracking `onChange` handler while calling `editor.setValue(...)` (confirmed live that
+`setValue` fires the identical event a real keystroke does, which would otherwise immediately
+re-mark a just-synced tab dirty).
+
+**A second, real bug caught live while verifying the above, unrelated to the reload feature
+itself** -- instrumenting the watcher directly against a real served process (not the earlier
+`jac run --no-serve` script probes) showed this installed `watchdog` version emitting
+`opened`/`closed`/`closed_no_write` events too, beyond the four the module was originally built
+against. The directory-event branch was a `!= "modified"` blocklist, not an allowlist, so any of
+these three new types on a directory would have spuriously marked its parent dirty. Fixed by
+matching the file branch's own already-correct allowlist shape.
+
+Verified the whole feature live, end to end, not just `jac check`: a clean tab auto-reloads on a
+real external edit with zero manual action and no dirty flag set; a genuinely dirty tab (a real
+edit applied via Monaco's own `executeEdits` API, not simulated) is left completely untouched by a
+second external edit -- the user's in-progress change survives intact and the dirty indicator stays
+lit, confirmed via the live DOM and the live Monaco model's own content, matching VS Code's policy
+exactly rather than a guessed approximation of it.

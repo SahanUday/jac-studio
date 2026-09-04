@@ -13,15 +13,103 @@ forwarding raw SDK messages (which aren't JSON-serializable as-is: AssistantMess
 are dataclasses, not dicts).
 
 Usage: claude_code_launcher.py <prompt> [--resume <session_id>] [--cwd <path>]
+       [--model <name>] [--permission-mode <mode>] [--effort <level>]
 
-**`ClaudeAgentOptions.model` is pinned to `"haiku"`, a deliberate standing choice, not a
-leftover from one PR's live-verification pass.** Every feature built against this integration
-gets exercised for real (`jac browse`, a genuine running server, genuine API calls -- this
-project's own "verify empirically" discipline), which means real API spend on every session, not
-just this one. Pinning to the cheapest model keeps that discipline affordable across the whole
-run of AI-integration work, not only while implementing it -- correctness of the plumbing this
-launcher owns (event shapes, streaming, tool approval, MCP wiring) doesn't depend on which model
-answers, so there's no accuracy tradeoff being made here worth trading back for.
+**`ClaudeAgentOptions.model` still *defaults* to `"haiku"` when `--model` is omitted -- the
+standing choice from this launcher's first version is unchanged, only now overridable, not
+reversed.** Every feature built against this integration gets exercised for real (`jac browse`, a
+genuine running server, genuine API calls -- this project's own "verify empirically" discipline),
+which means real API spend on every session, not just this one; defaulting to the cheapest model
+keeps that discipline affordable. **A real model picker in `ai_chat.jac` (2026-09-04, real-user
+QA) now sends an explicit `--model` on every turn** -- a user asked for the same model-selection
+UI real Claude Code/Copilot chat surfaces have, rather than a silently fixed choice with no way to
+reach for a stronger model on a harder question. `haiku`/`sonnet`/`opus` are passed through
+verbatim as the CLI's own documented short model aliases (confirmed: `"haiku"` already worked as
+exactly this kind of alias before this change existed, not a full versioned model id) -- this
+launcher does no alias resolution of its own, the same "don't reinvent what the tool already does"
+call `mcp_servers` above already makes.
+
+**`--permission-mode`/`--effort` (2026-09-04, real-user QA) thread straight through to
+`ClaudeAgentOptions.permission_mode`/`.effort` -- both real fields the installed SDK already
+exposes (confirmed by reading `ClaudeAgentOptions`'s own dataclass fields directly, not assumed),
+not new behavior invented here.** A user, comparing against a real Claude Code extension
+screenshot, asked for its "Manual / Edit automatically / Plan / Auto" mode switcher and its effort
+selector. `permission_mode`'s four values used by `ai_chat.jac`'s picker map onto the SDK's own
+documented semantics one-to-one: `"default"` (Manual -- every dangerous call still reaches
+`can_use_tool` below, this launcher's original, only behavior before this change), `"acceptEdits"`
+(Edit automatically), `"plan"` (Plan -- no tool execution at all), `"auto"` (Auto's original value
+-- see the three corrections below for the full round trip: a wrong guess, a user-caught revert, a
+conclusive live finding that it's inert in the currently-bundled CLI, and, finally, a deliberate
+switch to `"bypassPermissions"` once that was known). Modes other than `"default"` mean
+some or all tool calls never reach `can_use_tool` at all (the SDK's own permission-mode check
+short-circuits it, not something this launcher special-cases) -- so fewer or no approval cards is
+the *correct*, expected result of picking one of those modes, not a regression of the approval flow
+PR #72 built. `effort` is passed through as one of the SDK's own five documented literal levels
+unchanged.
+
+**CORRECTION, 2026-09-04, later the same day, WRONG -- see the second correction right below
+before acting on anything in this paragraph.** ~~The picker's "Auto" option originally sent
+`"auto"` as the literal `permission_mode` value, not `"bypassPermissions"` -- a real,
+live-reproduced bug, a wrong assumption never checked against source until a user reported "Auto"
+still asking for approval on every tool call.~~ Traced into the real `claude` CLI's own TypeScript
+source (`utils/permissions/PermissionMode.ts`) and read exactly one field
+(`PERMISSION_MODE_CONFIG.auto.external: 'default'`) as proof `"auto"` behaves identically to
+Manual mode externally, and shipped a "fix" changing the picker to `"bypassPermissions"` on that
+basis, without reading the actual enforcement code this config table feeds into.
+
+**SECOND CORRECTION, 2026-09-04, hours later: the paragraph directly above was itself wrong, and
+has been reverted -- `"auto"` was the right value all along.** A real user, testing this app,
+reported that in their own actual experience with the real Claude Code extension, Auto mode
+genuinely does *not* prompt for every tool call -- directly contradicting the "fix" above and
+correctly calling it into question rather than accepting it. Reading `permissions.ts`'s
+`hasPermissionsToUseTool` (the real enforcement path this config table's `external` field doesn't
+actually describe) confirmed the user was right: `"auto"` mode has its own genuine fast-path (skip
+the prompt if the same action would already be allowed under `"acceptEdits"`, checked via
+`tool.checkPermissions` with the mode temporarily overridden) and, failing that, an actual
+AI-classifier call, both gated behind the CLI's own `TRANSCRIPT_CLASSIFIER` feature flag --
+nothing at all like Manual mode's unconditional prompt-every-time behavior. `"bypassPermissions"`
+is a different, blunter, classifier-free, unconditional bypass -- reverted `ai_chat.jac`'s
+`PERMISSION_MODE_OPTIONS` back to `"auto"`.
+
+**RESOLVED, same day, a few hours later: confirmed live, not by more source-reading, that the
+`TRANSCRIPT_CLASSIFIER`-gated fast-path is simply inert in this installed CLI build -- not a bug in
+this launcher, this SDK's plumbing, or how it's invoked.** Static analysis of the bundled CLI binary
+(`claude_agent_sdk`'s own `_bundled/claude`, the one this launcher actually spawns -- confirmed via
+`_find_bundled_cli()` in the SDK's `subprocess_cli.py`, and confirmed no `claude` exists on this
+machine's `PATH` for it to fall back to) was tried first and came back ambiguous (the literal string
+`"TRANSCRIPT_CLASSIFIER"` doesn't appear anywhere in the binary, but `.mode==="auto"` comparisons
+do -- inconclusive on its own, since a minifier can rename/strip flag names without necessarily
+removing the surrounding logic). Rather than draw a *third* conclusion from static inference after
+getting it wrong once already this same day, ran a real, isolated, three-way controlled test
+instead: a bare `claude_agent_sdk.query()` script (no jac-studio code involved at all), same
+`can_use_tool` callback instrumented to count invocations, same `Write`-a-new-file prompt, three
+runs differing only in `permission_mode`:
+
+- `"acceptEdits"` -> `can_use_tool` invoked **0** times (correctly auto-allowed, matching source)
+- `"bypassPermissions"` -> `can_use_tool` invoked **0** times (correctly auto-allowed, matching
+  source; the SDK's own `CanUseToolShadowedWarning` fires here too, confirming the SDK's own
+  bookkeeping agrees)
+- `"auto"` -> `can_use_tool` invoked **1** time (the callback fires; no shadowing warning)
+
+This cleanly isolates the problem to `"auto"` mode specifically -- every *other* mode's
+fast-path/bypass logic works correctly through this exact SDK invocation shape, ruling out "headless
+SDK usage can't do fast-paths in general" as an explanation. `"auto"` mode remains the correct value
+*to describe what the real extension's Auto mode does* -- it just doesn't behave that way in the
+specific CLI build currently bundled by the installed `claude-agent-sdk` version, for reasons
+outside this codebase's control (most likely a feature still being rolled out, gated off in this
+build/account context).
+
+**Deliberate switch to `"bypassPermissions"`, 2026-09-04, later the same day -- a considered
+product decision, not another guess.** Told plainly that "Auto" does nothing useful in this app
+right now (identical to Manual), a user asked for what they actually wanted: give the agent a
+complete instruction and let it run end to end, only interrupting for a genuine clarifying
+question -- ordinary chat text, not a permission gate -- rather than a prompt on every tool call.
+`"bypassPermissions"` is the real mode that delivers exactly that, confirmed in the probe above to
+skip `can_use_tool` unconditionally. Flagged explicitly before wiring it in, and confirmed by the
+user: this is a materially bigger trust step than `"acceptEdits"`, since it also skips Bash and
+every MCP tool call, not just file writes, with no per-call check of any kind. `ai_chat.jac`'s
+`PERMISSION_MODE_OPTIONS` keeps the "Auto" label (matching what the user actually asked this app's
+own picker to mean) but now sends `"bypassPermissions"` as the value.
 
 `mcp_servers` points Claude Code at `jac mcp` (a real, working first-party MCP server --
 confirmed live via `jac mcp --inspect`, 140 resources/19 tools/9 prompts) over stdio, giving it
@@ -81,6 +169,45 @@ card -- no attempt made here to guess at a shape for a tool this project hasn't 
 possible `MultiEdit` tool included; a probe for it timed out inconclusively rather than confirming
 a real shape, so it deliberately isn't special-cased).
 
+**`setting_sources=[]` -- full isolation, a real, live-reproduced bug fix, not a defensive
+default (2026-09-04, real-user QA, corrected same day after the first fix attempt below turned out
+to be insufficient -- also confirmed live, not assumed).** A real user asked this launcher to
+"Create a new file called scratch_test.txt", with `--cwd` correctly pointing at their own open
+workspace (confirmed live in the server's own request log) -- yet the file landed under
+`~/.claude-scratch/<session-id>/`, nowhere near that workspace. Root cause: this launcher runs on
+the *same machine, same OS user* as whoever is developing jac-studio itself with their own,
+separate Claude Code CLI session -- so a query spawned here was reading that developer's own
+personal global `~/.claude/CLAUDE.md`, not anything jac-studio ships or controls. That file's own
+real standing rule (verbatim: "Anything throwaway ... goes in `$HOME/.claude-scratch/<session-id>/`,
+never inside a project repo") is exactly what fired: the requested file was *literally named*
+"scratch_test.txt", and the agent, correctly following instructions it had no way to know weren't
+meant for it, obeyed. This isn't specific to that one rule or that one developer's machine -- *any*
+end user of jac-studio's shipped AI Chat feature could have their own unrelated global `CLAUDE.md`
+silently steering this in-app assistant's behavior on a completely unrelated project, purely
+because both run as the same OS user.
+
+**CORRECTION, same day: the first fix, `setting_sources=["project", "local"]` (excluding only
+`"user"`), was real progress but did not actually close the bug -- confirmed live, the exact same
+`~/.claude-scratch/...` write still happened with that value set.** Diagnosed by reading the real
+`claude` CLI's own TypeScript source directly (`utils/claudemd.ts`'s memory-file loader), not
+re-guessing from the Python SDK's docstring a second time: `"user"` gates one specific, dedicated
+lookup (`getMemoryPath('User')` -- `homedir()/.claude/CLAUDE.md`), but `"project"` gates a
+*separate* one that walks every ancestor directory from `cwd` up to the filesystem root looking for
+`.claude/CLAUDE.md` in each -- with no special case to stop at, or skip, `$HOME`. Since any real
+workspace's `cwd` is necessarily nested *under* the actual OS user's home directory, that ancestor
+walk always eventually reaches `$HOME` itself and independently rediscovers
+`$HOME/.claude/CLAUDE.md` -- the identical file, reached through the `"project"`-gated code path,
+completely bypassing the `"user"` exclusion. Verified both the failure and the fix directly against
+the installed SDK (`claude_agent_sdk.query()`, standalone probe scripts, not just this launcher) --
+`setting_sources=["project", "local"]` still leaked; `setting_sources=[]` did not, and let a
+normal (non-"scratch"-named) file request land correctly in the open workspace with no confusion.
+Given `"project"` scope can never be excluded from this ancestor-walk risk while `cwd` is
+home-nested (true for every real jac-studio workspace), full isolation is the only setting that is
+actually correct here -- not a broader hammer than necessary, the *minimum* one that works. The
+trade-off (a workspace's own project-level `CLAUDE.md`, if it ever has one, goes unread too) is
+accepted deliberately: predictable, host-independent behavior for jac-studio's own shipped
+assistant matters more here than an unbuilt, so-far-unused feature.
+
 **A tool call's full lifecycle is now three separate events, not one bare name, closing item 6 of
 `docs/architecture.md`'s "Reframed 2026-09-03" AI section (richer agent-session visualization).**
 `tool_use_start` (immediate, at `content_block_start` -- `id`+`name` only, `input` isn't populated
@@ -93,13 +220,50 @@ string arrives here as `is_error=True` content, not as a separate mechanism) car
 All three share the same `tool_use_id` as the join key, exactly like the pre-existing
 `tool_approval_request`/`approve_tool_call` pairing. Replaces the old single `{"type": "tool_use",
 "name": ...}` event, which gave a client no way to show anything beyond "a tool started" -- no id to
-correlate a later outcome against, no input, no result."""
+correlate a later outcome against, no input, no result.
+
+**`system_prompt={"type": "preset", "preset": "claude_code"}` (2026-09-04, real-user QA) -- a real,
+live-reproduced bug, found investigating a report that looked at first like a *file-tree* bug and
+wasn't.** A user asked the in-app AI Chat to "Create a new file called scratch_test.txt" with a
+workspace open; the assistant reported success, but the file never appeared in the Explorer tree.
+The natural suspect was `workspace_watcher.jac`, but the terminal log told a different story: the
+file had been written to `/tmp/scratch_test.txt`, nowhere near the open workspace `--cwd` pointed
+at -- so the watcher (and the tree) were correctly reporting no change *inside the workspace*, since
+none had happened there. The real bug was this launcher never setting `system_prompt` at all,
+leaving it at the SDK's own default of `None`.
+
+Traced into the installed SDK's own source (`subprocess_cli.py`, not assumed from the dataclass
+docstring alone): `system_prompt=None` doesn't mean "use Claude Code's normal default prompt" --
+`if self._options.system_prompt is None: cmd.extend(["--system-prompt", ""])`, an *explicit empty
+string*, sent to the real CLI as a custom prompt. Confirmed against the real `claude` CLI's own
+TypeScript source (the same `/home/sahan/dev/coder/src` checkout used to diagnose the earlier
+`setting_sources` leak): `fetchSystemPromptParts` in `utils/queryContext.ts` treats
+`customSystemPrompt !== undefined` (true for `""`, same as any other string) as "skip the default
+entirely" -- both `getSystemPrompt()` (Claude Code's whole default behavioral prompt) and
+`getSystemContext()` are replaced with nothing. Confirmed further, in `constants/prompts.ts`, that
+`getSystemPrompt()` is exactly where the `<env>Working directory: ${getCwd()}...</env>` block lives
+(`computeEnvInfo`/`computeSimpleEnvInfo`, wired in as the `env_info_simple` section). So this
+launcher was running every single turn with the model told nothing at all about where it was
+running -- not even its own working directory -- `cwd` only ever set the OS-level subprocess
+directory tool calls resolve relative paths against, never anything the model itself could read.
+Asked for a file with no explicit path and a name that sounds like a scratch/temp file, and given
+zero anchoring context saying otherwise, the model reasonably fell back to its own pretrained
+instinct (a `/tmp`-shaped path) rather than the actual open workspace.
+
+**Fix is the preset, not a hand-written prompt** -- `{"type": "preset", "preset": "claude_code"}`
+restores the real default prompt (env info, working-directory framing, every built-in behavioral
+instruction Claude Code normally ships with) without writing a parallel, driftable copy of it here.
+This does **not** reopen the `setting_sources=[]` leak fixed earlier the same day: confirmed via the
+same source reading that CLAUDE.md loading is a completely separate CLI flag
+(`--setting-sources`, `subprocess_cli.py`) from `--system-prompt`, independent knobs, and
+`setting_sources=[]` above is untouched by this change."""
 import argparse
 import asyncio
 import json
 import os
 import sys
 import time
+import warnings
 
 from claude_agent_sdk import query, ClaudeAgentOptions
 from claude_agent_sdk.types import (
@@ -112,7 +276,18 @@ from claude_agent_sdk.types import (
     ToolResultBlock,
     PermissionResultAllow,
     PermissionResultDeny,
+    CanUseToolShadowedWarning,
 )
+
+# The SDK's own suggested suppression (its docstring names this exact call) -- this launcher always
+# registers can_use_tool, and permission_mode="bypassPermissions" ("Auto", 2026-09-04) deliberately
+# means it won't be invoked for most calls. That's the intended behavior, not a crash: without this
+# filter, Python's default warning print goes to stderr, which claude_code_client.jac's stdout
+# reader (stderr merged into the same stream) treats as a non-JSON line and relays to the chat panel
+# as a red error card -- confirmed live, a real user saw exactly this and reasonably read it as
+# something broken. Real launcher-side bugs still raise real exceptions, caught and emitted as a
+# proper `error` event further down; this only silences the one specific, expected-by-design warning.
+warnings.filterwarnings("ignore", category=CanUseToolShadowedWarning)
 
 _TOOL_APPROVAL_FILE = "/tmp/jac_studio_tool_approval_decisions.json"
 _TOOL_APPROVAL_TIMEOUT_SECONDS = 300.0
@@ -213,6 +388,9 @@ async def main() -> None:
     parser.add_argument("prompt")
     parser.add_argument("--resume", default=None)
     parser.add_argument("--cwd", default=None)
+    parser.add_argument("--model", default=None)
+    parser.add_argument("--permission-mode", default=None)
+    parser.add_argument("--effort", default=None)
     args = parser.parse_args()
 
     options = ClaudeAgentOptions(
@@ -221,7 +399,11 @@ async def main() -> None:
         cwd=args.cwd,
         mcp_servers={"jac": {"command": "jac", "args": ["mcp"]}},
         can_use_tool=_can_use_tool,
-        model="haiku",
+        model=args.model or "haiku",
+        permission_mode=args.permission_mode,
+        effort=args.effort,
+        setting_sources=[],
+        system_prompt={"type": "preset", "preset": "claude_code"},
     )
 
     try:

@@ -172,6 +172,34 @@ impl app.handle_dirty_change(path: str, is_dirty: bool) -> None {
     dirty_paths = updated_dirty_paths;
 }
 
+"""See this module's own docstring ("Auto-reload an open, undirtied tab...") for the full VS Code
+comparison. Only a plain file tab (no `kind`) with a matching path counts as "open" here -- a diff
+or gitdiff tab has no single live buffer this reload mechanism targets."""
+impl app.handle_files_changed_externally(paths: list[str]) -> None {
+    open_paths = set();
+    for g in groups {
+        for t in g["tabs"] {
+            if not t.get("kind") {
+                open_paths.add(t["path"]);
+            }
+        }
+    }
+    updated_reload = {**files_pending_reload};
+    next_nonce = next_reload_nonce;
+    any_changed = False;
+    for p in paths {
+        if p in open_paths and not dirty_paths.get(p, False) {
+            updated_reload[p] = next_nonce;
+            next_nonce = next_nonce + 1;
+            any_changed = True;
+        }
+    }
+    if any_changed {
+        files_pending_reload = updated_reload;
+        next_reload_nonce = next_nonce;
+    }
+}
+
 impl app.handle_command(command_id: str) -> None {
     if command_id == "workbench.action.splitEditorRight" {
         await split_group(active_group_id);

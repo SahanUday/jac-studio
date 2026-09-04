@@ -218,8 +218,53 @@ calls `dap_client.jac`'s `set_breakpoints(path, breakpoint_lines)` -- an ordinar
 (imported directly, same as every LSP function above), not a stream, since setting a breakpoint has
 one definite answer (which lines ended up verified), unlike a debug session's open-ended event
 flow. `options.glyphMargin: True` is required for Monaco to reserve the glyph-margin lane at
-all -- without it, `glyphMarginClassName` decorations are accepted but never rendered."""
+all -- without it, `glyphMarginClassName` decorations are accepted but never rendered.
 
+**External-change auto-reload (2026-09-04, real-user QA)** -- `reloadNonce` (forwarded from
+`editor_tabs.jac`/`workbench.jac`; see `workbench.jac`'s own docstring for the full VS Code
+comparison and the "never a dirty tab" policy this component trusts its parent to have already
+applied) triggers `reload_from_disk`, the reverse of `handle_save`: instead of reading the live
+Monaco buffer and pushing it to disk, it reads the file's fresh on-disk content
+(`open_document`, the same call `can with entry` uses at mount) and pushes it *into* the live
+buffer.
+
+**`suppress_dirty_ref` exists because `editor.setValue(...)` fires the exact same
+`onDidChangeModelContent` event a real keystroke does -- confirmed live, not assumed, since
+`@monaco-editor/react`'s `onChange` (wired to `handle_content_change`, this component's own dirty
+tracker) doesn't distinguish "the user typed" from "something called `setValue` programmatically."**
+Without this guard, an external reload would immediately re-mark the tab dirty the instant it
+finished silently updating it from the *same* disk content that write just came from -- flipping the
+unsaved-changes dot on for a file with no actual unsaved changes. Set to `True` immediately before
+`setValue`, `False` immediately after; `handle_content_change` checks it first and no-ops while set.
+A `Ref`, not `has` state, for the same reason `editor_ref` itself is one -- this flag needs to be
+read synchronously inside the very same call stack `setValue` triggers, not after a re-render that
+hasn't happened yet.
+
+**Cursor position is preserved across the reload, deliberately, not a side effect of anything
+else** -- `setValue` replaces the whole model and would otherwise reset the cursor to `(1, 1)`,
+which for a file the user is actively looking at (just not the specific lines an external tool
+happened to touch) would be jarring on every external edit. `editor.getPosition()` before,
+`setPosition`/`revealPositionInCenter` after, the same pair `handle_mount`'s own `initialCursor`
+restoration already uses.
+
+**`notify_document_save`, not `notify_document_open`, resyncs the LSP server** -- despite this not
+being a real user-initiated save. `notify_document_open` hardcodes `version: 1` on every call
+(correct once, at genuine first-open, but not for a document `jac lsp` already has open under a
+higher version); `notify_document_save` does the fresh full-content sync this needs (`_sync_content`,
+the same one `refresh_symbols`'s own `get_document_symbols` call already triggers internally) *and*
+fires `textDocument/didSave`, which is what makes `jac lsp` recompute diagnostics -- correct here,
+since the file's real, saved-on-disk content genuinely changed and stale diagnostics against the
+old content would be actively misleading. Breakpoint lines are deliberately *not* re-fetched or
+re-validated here, matching `handle_save`'s own existing scope (it doesn't either) -- keeping the
+two content-refresh paths consistent rather than growing new behavior only one of them has.
+
+**Re-checks `dirty` itself, not just `workbench.jac`'s own filter, immediately before touching the
+buffer** -- a real, if narrow, race: the parent decided "this tab is clean" at the moment it
+received the change signal, but the user could start typing in the time between that decision and
+this effect actually running. Trusting only the parent's filter risks clobbering a keystroke that
+landed in that window; re-checking `dirty` here, right before the point of no return, closes it."""
+
+import from "react" { useEffect }
 import from "@monaco-editor/react" { Editor }
 import from src.editor.document_service { open_document, save_document }
 import from src.editor.client.jac_language { register_jac_language }
@@ -277,7 +322,7 @@ def _register_global_editor_keybindings(editor: any, monaco: any) -> None {
     });
 }
 
-def:pub app(path: str, onCursorChange: any, initialCursor: any, onDirtyChange: any, onOpenLocation: any, onOpenCommandPalette: any, onAskAI: any) -> JsxElement {
+def:pub app(path: str, onCursorChange: any, initialCursor: any, onDirtyChange: any, onOpenLocation: any, onOpenCommandPalette: any, onAskAI: any, reloadNonce: any) -> JsxElement {
     has content: str = "";
     has loaded: bool = False;
     has dirty: bool = False;
@@ -285,6 +330,7 @@ def:pub app(path: str, onCursorChange: any, initialCursor: any, onDirtyChange: a
     has monaco_ref: Ref[any] = Ref();
     has decorations_ref: Ref[any] = Ref();
     has breakpoints_ref: Ref[any] = Ref();
+    has suppress_dirty_ref: Ref[any] = Ref();
     has symbols: list[dict[str, any]] = [];
     has breadcrumb_path: list[dict[str, any]] = [];
     has breakpoint_lines: list[int] = [];
@@ -302,6 +348,18 @@ def:pub app(path: str, onCursorChange: any, initialCursor: any, onDirtyChange: a
         }
         breakpoint_lines = await get_breakpoints(path);
     }
+
+    async def reload_from_disk -> None;
+
+    # reloadNonce == 0 means "nothing pending" (workbench.jac's default for a path with no entry in
+    # filesPendingReload); also skips the mount-time firing every useEffect gets for free, since
+    # content is already freshly loaded by can with entry above at that point.
+    useEffect(lambda {
+        if reloadNonce == 0 or not loaded {
+            return;
+        }
+        reload_from_disk();
+    }, [reloadNonce]);
 
     def handle_before_mount(monaco: any) -> None;
     def handle_mount(editor: any, monaco: any) -> None;

@@ -17,6 +17,33 @@ impl app._open_path_into_tree(path: str) -> None {
     fresh_children_by_path[root_path] = top_children;
     children_by_path = fresh_children_by_path;
     opened = True;
+    await start_or_switch_watch(root_path);
+}
+
+"""One poll tick: calls `check_workspace_changes` (a plain, ordinary RPC call -- see `app`'s own
+docstring for why this replaced an earlier, indefinite-SSE-stream design that broke
+`list_children_by_path` server-wide, and later, why the polled function itself stopped doing a full
+disk walk per call) and refreshes only the directories this component actually has loaded
+(`children_by_path`) among whichever ones a real OS-level watch reported changed since the last
+tick. A directory this tree has never expanded gets its fresh listing for free the first time it
+*is* expanded, so refreshing it now would be a wasted round-trip for content nobody's looking at
+yet.
+
+**`changed_files` (2026-09-04) forwards to `on_files_changed_externally` unmodified, if a caller
+provided it** -- this component owns the one poll loop and is the natural place to surface the
+signal, but has no reason to know or care what a changed *file's own content* means to anything
+else; that's `workbench.jac`'s job (deciding which changed paths are actually open, undirtied
+tabs), the same "leaf reports, parent owns state" shape `onOpenFile`/`onCompareFiles` already use."""
+impl app.poll_workspace_changes -> None {
+    result = await check_workspace_changes(root_path);
+    for d in result["changed_dirs"] {
+        if d in children_by_path {
+            await refresh_children(d);
+        }
+    }
+    if on_files_changed_externally and len(result["changed_files"]) > 0 {
+        on_files_changed_externally(result["changed_files"]);
+    }
 }
 
 impl app.open_folder -> None {

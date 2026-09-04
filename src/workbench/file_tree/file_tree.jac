@@ -88,11 +88,98 @@ instead. `collapsible="none"` is not a workaround -- it's the vendored primitive
 variant for a sidebar that's a persistent in-flow panel rather than a collapsible overlay (this
 component never used `SidebarTrigger`/offcanvas collapse behavior in the first place), and its own
 branch in `sidebar.jac` renders a plain flow `<div>` with no `fixed`/`z-index` at all -- so it
-participates in the workbench's flex row like every other column instead of fighting it."""
+participates in the workbench's flex row like every other column instead of fighting it.
 
+**A `style` prop on `Sidebar` itself (2026-09-04, real-user QA), a second, separate gap in the
+same `collapsible="none"` branch.** Found live: dragging the sidebar's resize handle wider left a
+large blank (true white, not this app's dark theme -- see `workbench.jac`'s own note on the same
+finding) gap between the Explorer's actual content and the editor area. Root cause:
+`sidebar.jac`'s `collapsible="none"` branch hardcodes `w-(--sidebar-width)` (`16rem`, sized for a
+real app's own fixed-width sidebar with its own internal collapse mechanism) regardless of its
+container's actual width -- so the `ResizablePanel` around this component (`workbench.jac`) could
+be dragged to any width, but the `Sidebar` DOM node inside it stayed pinned at 256px, leaving
+whatever's beneath (`workbench.jac`'s own new fallback background, previously nothing) exposed for
+the remainder.
+
+**A first attempt at this fix (`className="w-full min-w-0"`, briefly shipped the same day) was
+itself a real, worse regression, found live moments later: the entire Explorer tree rendered in
+near-invisible near-black text on a transparent background.** Root cause, confirmed with
+`getComputedStyle` in a real `jac browse` session, not guessed: `sidebar.jac`'s own
+`collapsible="none"` branch spreads `{**attrs}` (`attrs = {**props}`, every prop this component
+received, `className` included) *after* its own `className={cn("bg-sidebar text-sidebar-foreground
+... ", props["className"])}` -- and in JSX, a prop specified twice keeps the *last* one. Passing
+any `className` at all to `<Sidebar collapsible="none">`, from any caller, silently discards the
+entire `cn(...)`-computed class list (background, text color, flex layout, all of it) in favor of
+whatever raw string was passed in -- a latent bug in the vendored primitive that nothing had ever
+triggered before this component became the first caller to pass `Sidebar` its own `className`. Not
+a `sidebar.jac` edit (per this docstring's own earlier note: `jac install --shadcn sidebar` would
+silently regenerate over a hand-patch) -- the real fix routes around it entirely via `style`
+instead of `className`: `attrs` still carries `style` through the same `{**attrs}` spread, but
+`sidebar.jac`'s own `collapsible="none"` div never sets an explicit `style` prop of its own to
+collide with it, so `width: "100%"` applies cleanly (inline styles also simply outrank a utility
+class in CSS specificity regardless) while `cn(...)`'s own `className` output -- now receiving
+`props["className"]` as `None` again, since nothing overrides it -- survives completely
+unclobbered. Makes the resize handle actually resize the visible tree, not just the empty space
+next to it, without reintroducing the text/background regression.
+
+**Watches the open workspace for external changes and refreshes affected directories, closing a
+real gap: a file the AI agent created via its own `Write` tool was confirmed live on disk (a real
+user checked with their own terminal) but never appeared in this tree.** Root cause: an AI tool
+call writes directly to the filesystem from a completely separate OS process
+(`claude_code_launcher.py`'s own subprocess, see that module's docstring) -- it doesn't go through
+`workspace_service.jac`'s `create_file`, the only path that already knew to call
+`refresh_children` (`create_new_file` above). This component has no way to know a write happened
+unless told.
+
+**A first fix wired a dedicated `refreshSignal` nonce prop straight from `ai_chat.jac`'s own
+`tool_result` handling -- correct, but special-cased to *this app's own AI tool calls* as the only
+possible cause of an external change.** Asked to check how real VS Code handles the general
+version of this problem: `IFileService.onDidFilesChange` (`explorerService.ts` in a real
+`microsoft/vscode` checkout) is one general, workspace-wide file-change stream that Explorer (and
+everything else that cares) subscribes to, regardless of *why* something changed -- an AI tool, a
+terminal command, `git checkout`, another program entirely.
+
+**A second attempt generalized this correctly but implemented it as an indefinite SSE stream
+(`watch_workspace_changes() -> Generator`, opened once per workspace-open and left running for this
+component's whole lifetime) -- a real, live-reproduced regression, confirmed from a real user's own
+terminal log: `list_children_by_path` started failing server-wide (`'Workspace' object has no
+attribute 'path'`) the instant that stream started, for the rest of that server process's life.**
+This project already has three tracker entries documenting that `Generator`-returning endpoints can
+run isolated from ordinary `def:pub` calls in ways that corrupt shared, `root`-keyed global state
+(see `claude_code_client.jac`'s own docstring) -- every prior instance of that risk in this codebase
+was a *short-lived* stream (one chat turn, one debug session) that disconnects on its own; this was
+the first *indefinite* one, and it looks like that made the same known risk far more damaging.
+
+**Fixed that day by not streaming at all -- polling a plain, ordinary `def:pub` function instead,
+the same request/response shape `list_children_by_path` itself already uses safely -- but the first
+version of that polled function did a fresh, full `os.walk` of the entire tree on every single
+call, every second, forever, to figure out what (if anything) changed.** Flagged the same day in
+follow-up QA as real, wasted CPU for a signal that's usually "nothing happened" -- asked again to
+check how VS Code's own production architecture handles this. It doesn't poll at all:
+`IFileService`'s watcher is backed by a real OS-level notification mechanism (inotify and
+equivalents), so the OS itself reports a change instead of something walking the tree on a timer to
+discover one. **`workspace_watcher.jac` now does the same** (`watchdog`, a new but small
+dependency, confirmed safe to import at `.jac` module scope by an actual `jac run` probe, not
+assumed -- see that module's own docstring for the full finding) -- a real, per-directory,
+`DEFAULT_EXCLUDED_DIRS`-aware OS watch, started once per open workspace and swapped when a different
+one opens, feeding a small in-memory dirty-directory set in the background. **The poll transport
+here is unchanged, and deliberately still not a push** -- going back to a live connection per client
+would reopen the exact SSE-isolation risk two paragraphs up describes; what changed is that
+answering a poll is now an O(1) read of that set instead of an O(files) disk walk. Because the
+state moved fully server-side, `check_workspace_changes` dropped its `last_snapshot`
+parameter/`snapshot` return value, and this component no longer carries a `watch_snapshot` field at
+all -- `_open_path_into_tree` calls `start_or_switch_watch(root_path)` once, up front, and
+`poll_workspace_changes` below just asks what changed since last time. It still only refreshes the
+directories this component actually has loaded (`refresh_children` per matching key in
+`children_by_path`) among whichever the poll reports changed, root included."""
+
+import from "react" { useEffect }
 import from src.workbench.workspace.workspace_service {
     open_workspace, list_children_by_path, get_current_workspace,
     create_file, create_folder, rename_path, delete_path
+}
+import from src.workbench.workspace.workspace_watcher {
+    check_workspace_changes, start_or_switch_watch
 }
 import from src.workbench.file_icons.file_icons { file_icon_class }
 
@@ -242,6 +329,7 @@ def:pub FileTreeNode(props: any) -> JsxElement {
 def:pub app(props: any) -> JsxElement {
     has on_open_file: any = props["onOpenFile"];
     has on_compare_files: any = props["onCompareFiles"];
+    has on_files_changed_externally: any = props["onFilesChangedExternally"] if "onFilesChangedExternally" in props else None;
     has opened: bool = False;
     has root_path: str = "";
     has root_name: str = "";
@@ -264,6 +352,16 @@ def:pub app(props: any) -> JsxElement {
     async def create_new_folder(parent_path: str) -> None;
     async def rename_item(path: str, parent_path: str, current_name: str) -> None;
     async def delete_item(path: str, parent_path: str, is_dir: bool) -> None;
+    async def poll_workspace_changes -> None;
+
+    useEffect(lambda {
+        if root_path == "" {
+            return;
+        }
+        poll = lambda { poll_workspace_changes(); };
+        timer = setInterval(poll, 1000);
+        return lambda { clearInterval(timer); };
+    }, [root_path]);
 
     async can with entry {
         restored = await get_current_workspace();
@@ -273,7 +371,7 @@ def:pub app(props: any) -> JsxElement {
     }
 
     <SidebarProvider>
-        <Sidebar collapsible="none">
+        <Sidebar collapsible="none" style={{"width": "100%", "minWidth": "0"}}>
             <SidebarHeader>
                 <div style={{"padding": "0.5rem", "display": "flex", "gap": "0.4rem", "fontFamily": "system-ui, sans-serif"}}>
                     <input

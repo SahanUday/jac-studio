@@ -521,7 +521,17 @@ shape that entry describes) got a real `jac check` failure's output parsed corre
 had, moments earlier in the same request session, been confirmed open (`get_current_workspace`
 returned correct data from the very same call). Fixed with the identical fallback
 `get_or_create_workspace`/`list_all_files` already use: never trust the cache dict's absence as
-proof no workspace is open."""
+proof no workspace is open.
+
+**`hasattr(c, "path")` added to the `matches` filter (2026-09-04) -- found investigating a fresh
+recurrence of `list_children_by_path`'s own `'Workspace' object has no attribute 'path'` crash, not
+confirmed as that occurrence's actual cause.** This function's own `Contains`-edge read here
+(`children = [current->:Contains:->]`) had no equivalent to `list_children_by_path`'s guard against
+a non-`Folder`/`File` target -- `c.name`/`c.path` were accessed directly on every child, unguarded.
+This function isn't in the call path the live crash's own browser stack trace named
+(`_open_path_into_tree` -> `list_children_by_path` only), so it is **not** claimed to be the fix for
+that specific report -- but it's the identical class of gap, real and independently worth closing
+regardless of whether it's ever actually been hit here yet."""
 def:pub ensure_path_reachable(path: str) -> File | None {
     key = jid(root);
     if key in _cached_workspace_jid {
@@ -554,7 +564,10 @@ def:pub ensure_path_reachable(path: str) -> File | None {
     for idx in range(len(parts)) {
         _ensure_scanned(current);
         children = [current->:Contains:->];
-        matches = [c for c in children if c.name == parts[idx] and os.path.exists(c.path)];
+        matches = [
+            c for c in children
+            if hasattr(c, "path") and c.name == parts[idx] and os.path.exists(c.path)
+        ];
         if len(matches) == 0 {
             return None;
         }

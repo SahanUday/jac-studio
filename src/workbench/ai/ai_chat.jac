@@ -256,19 +256,26 @@ glob MODEL_OPTIONS: list[dict[str, str]] = [
     {"value": "opus", "label": "Opus"}
 ];
 
-"""**`bypassPermissions`, not `auto`, is the real SDK-level value for "Auto" (corrected 2026-09-04,
-same day as this list was first added) -- see `claude_code_launcher.py`'s own docstring for the
-full, source-verified finding.** `"auto"` is a real, accepted `PermissionMode` value, which is
-exactly why sending it never errored -- but per the real `claude` CLI's own source, it's an
-Anthropic-internal-only mode gated behind a feature flag, and even then maps to the identical
-external behavior as `"default"` (Manual). `"bypassPermissions"` is the actual full-bypass mode a
-"Manual / Edit automatically / Plan / Auto" switcher modeled on the real extension is supposed to
-send for its last option."""
+"""**CORRECTION, 2026-09-04, hours after the note below was first written: `"auto"` is the right
+value here after all -- reverted back from a wrong same-day "fix" that swapped it for
+`"bypassPermissions"`.** That swap was based on one field in the real CLI's own
+`PermissionMode.ts` (`external: 'default'`) read in isolation, without checking the actual
+enforcement code -- a real user, testing this app, reported that in their own experience with the
+real Claude Code extension, Auto mode genuinely does *not* prompt for every call, directly
+contradicting that "fix." Reading `permissions.ts`'s `hasPermissionsToUseTool` (the real
+enforcement path, not the UI config table) confirmed the user was right: `"auto"` mode is a real,
+distinct mode with its own fast-path (skip the prompt if the action would already be allowed under
+`acceptEdits`) and, failing that, an actual classifier call, gated behind the CLI's own
+`TRANSCRIPT_CLASSIFIER` feature flag -- nothing like Manual at all. `"bypassPermissions"` is a
+blunter, classifier-free, unconditional bypass -- not what a faithful "Auto" option modeled on the
+real extension should send. See `claude_code_launcher.py`'s own docstring for why this app's own
+`can_use_tool` still shows a prompt under `"auto"` regardless of this correction -- that part is a
+separate, still-open question, not fixed by reverting this value."""
 glob PERMISSION_MODE_OPTIONS: list[dict[str, str]] = [
     {"value": "default", "label": "Manual"},
     {"value": "acceptEdits", "label": "Edit automatically"},
     {"value": "plan", "label": "Plan"},
-    {"value": "bypassPermissions", "label": "Auto"}
+    {"value": "auto", "label": "Auto"}
 ];
 
 glob EFFORT_OPTIONS: list[dict[str, str]] = [

@@ -37,32 +37,55 @@ screenshot, asked for its "Manual / Edit automatically / Plan / Auto" mode switc
 selector. `permission_mode`'s four values used by `ai_chat.jac`'s picker map onto the SDK's own
 documented semantics one-to-one: `"default"` (Manual -- every dangerous call still reaches
 `can_use_tool` below, this launcher's original, only behavior before this change), `"acceptEdits"`
-(Edit automatically), `"plan"` (Plan -- no tool execution at all), `"bypassPermissions"` (Auto --
-the SDK's own broadest bypass). Modes other than `"default"` mean some or all tool calls never
-reach `can_use_tool` at all (the SDK's own permission-mode check short-circuits it, not something
-this launcher special-cases) -- so fewer or no approval cards is the *correct*, expected result of
-picking one of those modes, not a regression of the approval flow PR #72 built. `effort` is passed
-through as one of the SDK's own five documented literal levels unchanged.
+(Edit automatically), `"plan"` (Plan -- no tool execution at all), `"auto"` (Auto -- a real,
+classifier-backed auto-approval mode, **not** a blanket bypass -- see the second correction below
+for why this line originally, briefly, said something else). Modes other than `"default"` mean
+some or all tool calls never reach `can_use_tool` at all (the SDK's own permission-mode check
+short-circuits it, not something this launcher special-cases) -- so fewer or no approval cards is
+the *correct*, expected result of picking one of those modes, not a regression of the approval flow
+PR #72 built. `effort` is passed through as one of the SDK's own five documented literal levels
+unchanged.
 
-**CORRECTION, 2026-09-04, later the same day: the picker's "Auto" option originally sent `"auto"`
-as the literal `permission_mode` value, not `"bypassPermissions"` -- a real, live-reproduced bug, a
-wrong assumption never checked against source until a user reported "Auto" still asking for
-approval on every tool call.** `"auto"` genuinely is one of the six string values the installed
-SDK's own `PermissionMode` type literal accepts (confirmed directly, not the mistake), which is
-exactly why picking it silently "worked" instead of erroring -- but accepting a value and giving it
-the *intended* meaning turned out to be two different things. Traced into the real `claude` CLI's
-own TypeScript source (`utils/permissions/PermissionMode.ts`) to find out what `"auto"` actually
-does there: it's gated behind a `TRANSCRIPT_CLASSIFIER` feature flag and `USER_TYPE === 'ant'`
-(Anthropic-internal-only, per that file's own `isExternalPermissionMode` -- "External users can't
-have auto"), and even when active, its own config entry maps `external: 'default'` -- the *exact
-same* external, wire-level behavior as Manual mode. So this app's "Auto" option was, in practice,
-silently behaving like Manual the entire time, which is exactly the "still asks for approval on
-every tool call" symptom reported live. `"bypassPermissions"` is the real, external, always-on
-full-bypass mode (`PermissionMode.ts`'s own `title: 'Bypass Permissions'`, and the mode
-`permissions.ts` checks directly wherever it needs to skip every other gate) -- the actual SDK-level
-equivalent of what a "Auto" toggle modeled on the real extension's own switcher is supposed to mean.
-Fixed in `ai_chat.jac`'s `PERMISSION_MODE_OPTIONS` (the value sent, not the "Auto" label a user
-sees, which was already correct).
+**CORRECTION, 2026-09-04, later the same day, WRONG -- see the second correction right below
+before acting on anything in this paragraph.** ~~The picker's "Auto" option originally sent
+`"auto"` as the literal `permission_mode` value, not `"bypassPermissions"` -- a real,
+live-reproduced bug, a wrong assumption never checked against source until a user reported "Auto"
+still asking for approval on every tool call.~~ Traced into the real `claude` CLI's own TypeScript
+source (`utils/permissions/PermissionMode.ts`) and read exactly one field
+(`PERMISSION_MODE_CONFIG.auto.external: 'default'`) as proof `"auto"` behaves identically to
+Manual mode externally, and shipped a "fix" changing the picker to `"bypassPermissions"` on that
+basis, without reading the actual enforcement code this config table feeds into.
+
+**SECOND CORRECTION, 2026-09-04, hours later: the paragraph directly above was itself wrong, and
+has been reverted -- `"auto"` was the right value all along.** A real user, testing this app,
+reported that in their own actual experience with the real Claude Code extension, Auto mode
+genuinely does *not* prompt for every tool call -- directly contradicting the "fix" above and
+correctly calling it into question rather than accepting it. Reading `permissions.ts`'s
+`hasPermissionsToUseTool` (the real enforcement path this config table's `external` field doesn't
+actually describe) confirmed the user was right: `"auto"` mode has its own genuine fast-path (skip
+the prompt if the same action would already be allowed under `"acceptEdits"`, checked via
+`tool.checkPermissions` with the mode temporarily overridden) and, failing that, an actual
+AI-classifier call, both gated behind the CLI's own `TRANSCRIPT_CLASSIFIER` feature flag --
+nothing at all like Manual mode's unconditional prompt-every-time behavior. `"bypassPermissions"`
+is a different, blunter, classifier-free, unconditional bypass -- reverted `ai_chat.jac`'s
+`PERMISSION_MODE_OPTIONS` back to `"auto"`.
+
+**What's still genuinely open**: this app's own `can_use_tool` callback below still received an
+approval request for a plain `Write` call under `permission_mode="auto"` in the same live test that
+surfaced this whole mistake -- which, per the fast-path logic just described, should have been
+auto-allowed without ever reaching this callback. The installed Python SDK's own shadowing-warning
+logic (`_get_can_use_tool_shadowed_warning` in the SDK's `types.py`) only special-cases
+`"bypassPermissions"` and whole-tool `allowed_tools` entries as things that auto-approve *before*
+`can_use_tool` is consulted -- it says nothing about `"auto"` mode's own fast-path/classifier at
+all, which is consistent with (but doesn't prove) that logic either not running, or not being
+reachable, in this headless SDK-driven invocation path. The most likely explanation not yet
+confirmed live: `TRANSCRIPT_CLASSIFIER` is a feature flag, and this launcher's `query()` call may
+authenticate through a different mechanism (e.g. a bare API key) than the interactive `claude` CLI
+session the user's own past experience comes from (an authenticated, subscription-linked session)
+-- if that flag is off for whatever account context this launcher runs under, the fast-path/
+classifier code the correction above describes may simply never engage here, independent of
+anything this codebase controls. Not confirmed either way yet -- left as a real, open question
+rather than papered over with another guess.
 
 `mcp_servers` points Claude Code at `jac mcp` (a real, working first-party MCP server --
 confirmed live via `jac mcp --inspect`, 140 resources/19 tools/9 prompts) over stdio, giving it

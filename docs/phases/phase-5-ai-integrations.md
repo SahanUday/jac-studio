@@ -465,14 +465,25 @@ trace only named `list_children_by_path`), and asked the user to restart their s
 next occurrence (if any) could be cleanly attributed to persisted-vs-in-memory corruption. The
 restart cleared it.
 
-**Update, same day, tenth finding**: the "Auto" permission-mode picker option (fourth QA pass) was
-still prompting for every tool call despite sending `permission_mode: "auto"` correctly end to end
--- confirmed live via the server's own request log. Traced into the real `claude` CLI's own source
-(`utils/permissions/PermissionMode.ts`) rather than re-guessing: `"auto"` is a real, accepted
-`PermissionMode` value (which is why it never errored), but it's gated
-Anthropic-internal-only behind a feature flag and a `USER_TYPE === 'ant'` check, and even when
-active its own config maps to the *identical external behavior as `"default"`* (Manual) -- so this
-app's "Auto" option had been silently behaving like Manual since the picker was first added. The
-correct value for a real full-bypass "Auto" mode is `"bypassPermissions"` -- fixed in `ai_chat.jac`'s
-`PERMISSION_MODE_OPTIONS`, and `claude_code_launcher.py`'s docstring corrected in place rather than
-left stale.
+**Update, same day, tenth finding, corrected within the hour: the "Auto" permission-mode picker
+option (fourth QA pass) was reported still prompting for every tool call despite sending
+`permission_mode: "auto"` correctly end to end.** A first read of the real `claude` CLI's own
+source (`utils/permissions/PermissionMode.ts`) found one config field
+(`PERMISSION_MODE_CONFIG.auto.external: 'default'`) and concluded `"auto"` behaves identically to
+Manual mode externally -- shipped as a "fix" changing the picker to send `"bypassPermissions"`
+instead. **The user, testing this app, immediately pushed back**: in their own real experience
+with the actual Claude Code extension, Auto mode genuinely does not prompt for every call --
+directly contradicting that conclusion. Reading the *actual enforcement code*
+(`permissions.ts`'s `hasPermissionsToUseTool`), not just the UI config table, confirmed the user
+was right: `"auto"` mode has a real fast-path (skip the prompt if the same action would already be
+allowed under `"acceptEdits"`) and, failing that, an AI-classifier call, both gated behind a
+`TRANSCRIPT_CLASSIFIER` feature flag -- nothing like Manual's unconditional prompting.
+`"bypassPermissions"` is a different, blunter, classifier-free mode. Reverted the picker back to
+`"auto"`. **What's still genuinely open, not papered over**: this app's own `can_use_tool` callback
+was still reached under `"auto"` in the same live test, which the fast-path logic above says
+shouldn't happen -- most likely explanation (not yet confirmed live) is that `TRANSCRIPT_CLASSIFIER`
+is off for whatever account/auth context this launcher's headless `query()` call runs under, versus
+the subscription-linked interactive session the user's own past experience comes from. See
+`claude_code_launcher.py`'s own docstring for the full, two-correction record -- kept visible
+rather than quietly rewritten, since the wrong conclusion and how it was caught are as much the
+finding here as the eventual right answer.

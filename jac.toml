@@ -17,6 +17,7 @@ menuColor = "default"
 [dependencies]
 debugpy = ">=1.8.0"
 claude-agent-sdk = ">=0.1.0"
+watchdog = ">=4.0.0"
 [dependencies.npm]
 sonner = "^2.0.7"
 cmdk = "^1.1.1"

@@ -172,6 +172,44 @@ impl app.handle_dirty_change(path: str, is_dirty: bool) -> None {
     dirty_paths = updated_dirty_paths;
 }
 
+"""See this module's own docstring ("Auto-reload an open, undirtied tab...") for the full VS Code
+comparison, and its own "gitdiff tabs" addendum for why this now covers two different tab shapes
+under one shared `files_pending_reload` nonce -- a plain file tab (no `kind`, keyed by `t["path"]`)
+and a read-only `"gitdiff"` tab (keyed by `t["filePath"]`, the same real on-disk path). Deliberately
+does **not** filter by `dirty_paths` here anymore -- a `"gitdiff"` tab has no dirty state at all
+(read-only, nothing to clobber) and should always refresh, while a plain tab's own
+`reload_from_disk` already re-checks `dirty` itself immediately before touching its buffer (see
+`monaco_editor.jac`'s docstring), so a dirty plain tab stays safe even if it happens to share a
+bumped nonce with a co-open `"gitdiff"` tab for the same path -- the actual safety guarantee lives
+there, not in this filter, so duplicating it here would only block the `"gitdiff"` case for no
+reason."""
+impl app.handle_files_changed_externally(paths: list[str]) -> None {
+    open_paths = set();
+    for g in groups {
+        for t in g["tabs"] {
+            if not t.get("kind") {
+                open_paths.add(t["path"]);
+            } elif t.get("kind") == "gitdiff" {
+                open_paths.add(t["filePath"]);
+            }
+        }
+    }
+    updated_reload = {**files_pending_reload};
+    next_nonce = next_reload_nonce;
+    any_changed = False;
+    for p in paths {
+        if p in open_paths {
+            updated_reload[p] = next_nonce;
+            next_nonce = next_nonce + 1;
+            any_changed = True;
+        }
+    }
+    if any_changed {
+        files_pending_reload = updated_reload;
+        next_reload_nonce = next_nonce;
+    }
+}
+
 impl app.handle_command(command_id: str) -> None {
     if command_id == "workbench.action.splitEditorRight" {
         await split_group(active_group_id);

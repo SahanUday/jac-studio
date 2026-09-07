@@ -15,7 +15,18 @@ def _build_prompt(editor: any, path: str, instruction: str) -> str {
 """Consumes `start_chat_turn`'s SSE stream -- the identical `fetch` + `ReadableStream` reading loop
 `ai_chat.impl.jac`/`debug_console.impl.jac` already established (two-`JSON.parse` unwrap, the
 trailing-`event: end`-frame guard). See `app`'s own docstring for why this widget makes its own
-independent call rather than reusing the sidebar's."""
+independent call rather than reusing the sidebar's.
+
+**`model`/`permission_mode`/`effort` are fixed constants here, not a second copy of
+`ai_chat.jac`'s own pickers (2026-09-04, real-user QA)** -- this popover is deliberately the fast,
+minimal "just make the edit" surface (`app`'s own docstring: "rendered smaller to fit this
+popover's own compact footprint"), and a second full toolbar of dropdowns would work against that.
+`permission_mode="default"` in particular keeps this widget's own already-built approval cards
+(`pending_approvals` below) live -- `"acceptEdits"`/`"auto"` would bypass `can_use_tool` for most
+of what an inline edit actually does (Edit/Write) and leave that UI silently unused. No attachment
+picker here either, for the same "keep this surface minimal" reason -- the selected code this
+widget already inlines into every prompt (`_build_prompt` above) covers the one piece of file
+context an inline edit actually needs."""
 impl app.handle_submit -> None {
     editor = editorRef.current;
     if not editor or input_text.strip() == "" or is_streaming {
@@ -33,7 +44,15 @@ impl app.handle_submit -> None {
     resp = await fetch("/function/start_chat_turn", {
         "method": "POST",
         "headers": {"Content-Type": "application/json"},
-        "body": JSON.stringify({"prompt": prompt, "session_id": session_id, "cwd": cwd})
+        "body": JSON.stringify({
+            "prompt": prompt,
+            "session_id": session_id,
+            "cwd": cwd,
+            "attached_paths": [],
+            "model": "haiku",
+            "permission_mode": "default",
+            "effort": "high"
+        })
     });
     reader = resp.body.getReader();
     decoder = new(TextDecoder);

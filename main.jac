@@ -46,7 +46,29 @@ hand-styled pieces (tab bar, terminal, status bar) use hardcoded dark hex colors
 tree's `Sidebar`, the command palette's `Dialog`, buttons) was rendering in shadcn's *light* theme
 this whole time, which is why the app looked like a light-and-dark patchwork instead of a
 consistent VS-Code-style dark UI. `dark` is applied here, once, at the true root -- everything
-`WorkbenchApp` renders is a descendant, so this is the one place that needs it."""
+`WorkbenchApp` renders is a descendant, so this is the one place that needs it.
+
+**This root div also now paints `background`/`color` from `var(--background)`/`var(--foreground)`
+directly (2026-09-04, real-user QA) -- closing an entire *class* of white-gap bugs at its actual
+source, not the third container-by-container patch of the same symptom.** A real user found two
+separate instances of the identical bug in one QA round: the sidebar's `ResizablePanel` (fixed in
+`workbench.jac`) and, found moments later live via `jac browse` + `getComputedStyle` (not guessed
+-- `document.elementsFromPoint` at the visible white band directly confirmed a stack of fully
+transparent ancestor `<div>`s down to `<body>` itself) at the *editor group's own* split -- a
+genuinely white ~25px band flanking the resize handle between two editor panes, wide enough to be
+sampled with real pixel values (`(255, 255, 255)`), not a rendering artifact. Root cause, common to
+both: `.dark` (this div's own class) sets `--background`/`--foreground` as CSS custom properties,
+which cascade to descendants -- but neither property is an *inherited rendering* property on its
+own; something still has to actually paint `background-color`/`color` from those variables
+somewhere, and this project has no single place that reliably does. Every dark surface visible
+before this fix was one more hand-styled component explicitly setting its own hex color
+(`workbench.jac`'s tab bar, `ai_chat.jac`'s `#181818`, ...) -- correct as far as it goes, but it
+means *every* gap between such components, anywhere in the tree, forever, is one more undiscovered
+instance of this same bug waiting for a screenshot to catch it. Painting `var(--background)` here
+once, at the one div that already carries `.dark`/`.light` and wraps literally everything this app
+renders, makes it structurally impossible for any future gap to fall through to `<body>`'s own
+still-light theme -- the correct place to fix a whole bug class, not the second (now third)
+individual symptom of it."""
 def:pub app -> JsxElement {
     has theme: str = "dark";
 
@@ -56,7 +78,7 @@ def:pub app -> JsxElement {
 
     async def toggle_theme -> None;
 
-    <div className={theme}>
+    <div className={theme} style={{"background": "var(--background)", "color": "var(--foreground)", "height": "100vh"}}>
         <WorkbenchApp onToggleTheme={toggle_theme} />
     </div>
 }

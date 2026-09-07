@@ -119,13 +119,64 @@ def _launcher_path -> str {
     return os.path.join(os.path.dirname(os.path.abspath(__file__)), "claude_code_launcher.py");
 }
 
+glob _ATTACHMENT_MAX_CHARS: int = 50000;
+
+"""Builds the text actually sent to the launcher as its one positional `prompt` argument --
+`prompt` itself, unchanged, when there are no attachments (the common case, and the only case
+before this existed). **`attached_paths`'s content is read and prepended here, server-side, rather
+than trusting the model to fetch it itself or hoping the CLI parses some `@file` marker out of raw
+text** (real VS Code's own file-attachment picker -- confirmed by reading
+`chatDynamicVariables.ts`/`chatAttachmentModel.ts` in a real `microsoft/vscode` checkout before
+building this -- works the identical way: a picked file becomes a resolved, real attachment
+*before* the request goes out, never a hope that raw inline text gets specially parsed downstream).
+`ai_chat.jac`'s own `messages` log still shows the user's original, unaugmented `prompt` -- this
+function's output is only what actually reaches the launcher, keeping the visible conversation log
+readable regardless of how much file content rides along with it. Each file is capped at
+`_ATTACHMENT_MAX_CHARS` (truncated with a visible note, never silently) -- a real guard, not
+theoretical: an attached file large enough to blow out a turn's context is a real possibility the
+picker itself (`ai_chat.jac`, reusing `workspace_service.jac`'s own `list_all_files`) has no reason
+to prevent a user from selecting. A path that can't be read (removed since the picker fetched its
+list, a permissions error, ...) gets a visible inline note instead of silently vanishing from the
+prompt or aborting the whole turn."""
+def _build_prompt_with_attachments(prompt: str, attached_paths: list[str]) -> str {
+    if len(attached_paths) == 0 {
+        return prompt;
+    }
+    blocks = [];
+    for path in attached_paths {
+        name = os.path.basename(path);
+        try {
+            with open(path, "r", encoding="utf-8", errors="replace") as f {
+                content = f.read();
+            }
+        } except Exception as exc {
+            blocks.append(f"--- Attached file: {name} ({path}) ---\n[could not be read: {exc}]");
+            continue;
+        }
+        if len(content) > _ATTACHMENT_MAX_CHARS {
+            content = content[:_ATTACHMENT_MAX_CHARS] + "\n[... truncated]";
+        }
+        blocks.append(f"--- Attached file: {name} ({path}) ---\n{content}\n--- end of {name} ---");
+    }
+    return "\n\n".join(blocks) + "\n\n" + prompt;
+}
+
 """The one SSE-streamed entry point. Spawns `claude_code_launcher.py` with `prompt` (and `resume`
 if `session_id` continues an existing conversation), relays each JSON event line it prints as an
 SSE frame unchanged (the launcher already emits the shape the client needs -- see its own
 docstring), and ends the stream once the subprocess exits. Refuses to run at all when
 `[terminal] enabled = false`, matching `dap_client.jac`'s `start_debug_session` and
-`lsp_client.jac`'s equivalent gate exactly."""
-async def:pub start_chat_turn(prompt: str, session_id: str | None, cwd: str | None) -> Generator {
+`lsp_client.jac`'s equivalent gate exactly.
+
+**`attached_paths`/`model`/`permission_mode`/`effort` (2026-09-04, real-user QA) are the client's
+own current picker state, sent fresh on every turn -- not session-level settings resolved here.**
+`ai_chat.jac`'s docstring covers the picker UI itself; this function's only job is threading each
+value straight to the launcher's matching `--model`/`--permission-mode`/`--effort` flags (and
+running `prompt` through `_build_prompt_with_attachments` first) -- no validation, no defaulting
+beyond what the launcher's own argparse/`ClaudeAgentOptions` already does, matching this project's
+existing "the client sends a complete, already-valid request" convention for every other call this
+generator makes."""
+async def:pub start_chat_turn(prompt: str, session_id: str | None, cwd: str | None, attached_paths: list[str], model: str, permission_mode: str, effort: str) -> Generator {
     async def stream -> AsyncGenerator[str, None] {
         if not _ai_enabled() {
             yield json.dumps({"type": "error", "message": "AI tool integrations are disabled. Set [terminal] enabled = true in jac.toml to turn them on."});
@@ -141,7 +192,8 @@ async def:pub start_chat_turn(prompt: str, session_id: str | None, cwd: str | No
         env = dict(os.environ);
         env["PYTHONPATH"] = _build_pythonpath(sys.path);
 
-        args = [python_bin, _launcher_path(), prompt];
+        full_prompt = _build_prompt_with_attachments(prompt, attached_paths);
+        args = [python_bin, _launcher_path(), full_prompt];
         if session_id {
             args.append("--resume");
             args.append(session_id);
@@ -150,6 +202,12 @@ async def:pub start_chat_turn(prompt: str, session_id: str | None, cwd: str | No
             args.append("--cwd");
             args.append(cwd);
         }
+        args.append("--model");
+        args.append(model);
+        args.append("--permission-mode");
+        args.append(permission_mode);
+        args.append("--effort");
+        args.append(effort);
 
         try {
             proc = await asyncio.create_subprocess_exec(

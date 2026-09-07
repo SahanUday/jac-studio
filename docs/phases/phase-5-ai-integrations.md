@@ -595,3 +595,33 @@ actually worked. Corrected by checking Monaco's own live model content directly
 (`window.monaco.editor.getModels()`), which is the reliable way to verify Monaco content changes
 regardless of scroll position, confirmed correct: the diff's "modified" side model picked up the
 fresh content, "original" (the git `HEAD` blob) correctly did not.
+
+**Update, 2026-09-07, sixteenth finding: `editor.getPosition()` can return `null`, and two call
+sites here didn't check for it -- a real, live-reported crash.** `Cannot read properties of null
+(reading 'lineNumber')`, thrown from `handle_mount`'s own cursor-position report right after a
+freshly-opened tab mounted -- Monaco's own type signature (`getPosition(): Position | null`)
+documents this as a real possible return, and a freshly-mounted editor before layout/model
+attachment fully settles is exactly when it fires. Checked real VS Code's own handling, per the
+request: `documentSymbolsOutline.ts` (its breadcrumb/outline position-mapping, the closest real
+equivalent to this project's `update_breadcrumb`) null-checks `getPosition()`'s result at every
+single call site, never assumes it. `handle_mount` and `update_breadcrumb` now do the same.
+
+**Update, 2026-09-07, seventeenth finding -- a real, confirmed upstream concurrency bug, not a
+jac-studio bug, logged and left open rather than worked around.** The same live session also
+surfaced `save_session` failing outright with a raw Postgres error: `cannot execute INSERT in a
+read-only transaction`. Traced into jaseci's own server session/transaction layer
+(`jaclang/server/impl/session.impl.jac`): it runs an *optimistic* transaction strategy -- start
+read-only, detect the first real write, transparently upgrade to a writable (serializable)
+transaction before that write reaches the database (`_ensure_txn`/`_raise_ro_retry`). The raw error
+reaching the client means that upgrade path didn't fire in time here -- a real concurrency bug in
+that mechanism, most plausibly triggered by this app's own traffic shape: `save_session` (a genuine
+writer) fires on nearly every UI action, constantly overlapping with the workspace watcher's own
+1-second read-only poll (`check_workspace_changes`/`list_children_by_path`), exactly the kind of
+concurrent-call mix that would stress "which of these overlapping calls actually needs to write"
+tracking. Practical impact is low, not silent data loss: `save_session` is called again on
+essentially every subsequent action, so a single failed save is retried by the next one; only the
+very last state before a hard crash/restart is genuinely at risk. No fix possible from this
+project's own `.jac` source -- the bug lives entirely in jaseci's own runtime. Logged to the
+tracker with the full root-cause writeup; user's own call, given the option, was to log it and move
+on rather than add a mitigation (reducing `save_session`'s own call frequency) that wouldn't fix
+the underlying race anyway.

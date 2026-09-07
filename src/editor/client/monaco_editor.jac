@@ -262,7 +262,21 @@ two content-refresh paths consistent rather than growing new behavior only one o
 buffer** -- a real, if narrow, race: the parent decided "this tab is clean" at the moment it
 received the change signal, but the user could start typing in the time between that decision and
 this effect actually running. Trusting only the parent's filter risks clobbering a keystroke that
-landed in that window; re-checking `dirty` here, right before the point of no return, closes it."""
+landed in that window; re-checking `dirty` here, right before the point of no return, closes it.
+
+**`editor.getPosition()` can return `null`, and two call sites here didn't check for it
+(2026-09-07, real-user QA) -- a real, live-reported crash, not a hypothetical.** Reported live:
+`Cannot read properties of null (reading 'lineNumber')`, thrown from `handle_mount`'s own
+`onCursorChange(path, position.lineNumber, ...)` call right after a freshly-opened tab mounted --
+Monaco's own type signature (`getPosition(): Position | null`) documents this as a real possible
+return, not an implementation detail; a freshly-mounted editor before layout/model attachment fully
+settles is exactly when it fires. Checked how real VS Code handles this, per the request --
+`documentSymbolsOutline.ts` (its own breadcrumb/outline position-mapping, the closest real
+equivalent to this component's `update_breadcrumb`) null-checks `getPosition()`'s result at every
+single call site (`if (!position || ...) { return; }`), never assumes it. `handle_mount` and
+`update_breadcrumb` now do the same -- a `null` position skips the cursor-position report / clears
+the breadcrumb for that tick rather than crashing, exactly matching what VS Code's own code does in
+the identical situation."""
 
 import from "react" { useEffect }
 import from "@monaco-editor/react" { Editor }

@@ -22,7 +22,9 @@ impl app.handle_mount(editor: any, monaco: any) -> None {
         editor.revealPositionInCenter(restored_position);
     }
     position = editor.getPosition();
-    onCursorChange(path, position.lineNumber, position.column);
+    if position {
+        onCursorChange(path, position.lineNumber, position.column);
+    }
     update_breadcrumb();
     decorations_ref.current = editor.createDecorationsCollection([]);
     apply_git_decorations();
@@ -75,6 +77,10 @@ impl app.update_breadcrumb -> None {
         return;
     }
     position = editor_ref.current.getPosition();
+    if not position {
+        breadcrumb_path = [];
+        return;
+    }
     breadcrumb_path = symbol_path_at_position(symbols, position.lineNumber, position.column);
 }
 

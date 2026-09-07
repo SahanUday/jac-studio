@@ -561,3 +561,37 @@ edit applied via Monaco's own `executeEdits` API, not simulated) is left complet
 second external edit -- the user's in-progress change survives intact and the dirty indicator stays
 lit, confirmed via the live DOM and the live Monaco model's own content, matching VS Code's policy
 exactly rather than a guessed approximation of it.
+
+**Update, 2026-09-07, fifteenth finding: the SCM diff view (`"gitdiff"` tabs) had the identical
+staleness gap, explicitly left out of the fourteenth finding's own scope, and a real user hit it
+directly** -- asked the AI Chat to rewrite an already-open-in-a-gitdiff-tab file twice in a row, and
+the diff view kept showing the *first* edit's diff. `scm_diff_editor.jac`'s `ScmDiffEditorApp`
+fetches its diff exactly once at mount and never refetches -- the same class of bug, just in a
+component this PR's own earlier docstring had explicitly scoped out ("diff or gitdiff tab kinds...
+don't have a single live buffer this reload mechanism targets"). Extended
+`handle_files_changed_externally` to also match `"gitdiff"`-kind tabs (keyed by `t["filePath"]`)
+into the same shared `files_pending_reload` nonce, and **deliberately dropped the `dirty_paths`
+filter at that layer entirely** -- a `"gitdiff"` tab is read-only end to end, has no dirty state,
+and should always refresh regardless of whether a co-open plain tab for the same path happens to be
+dirty; a plain tab stays safe anyway since `MonacoEditorApp`'s own `reload_from_disk` already
+re-checks `dirty` itself right before touching anything (the actual safety guarantee always lived
+there, not in this filter). `scm_diff_editor.jac`'s own fix is simpler than the plain-tab one: its
+`<DiffEditor>` is a *controlled* component (`original`/`modified` are real props, unlike
+`monaco_editor.jac`'s deliberate uncontrolled `defaultValue`), so reassigning
+`original_content`/`modified_content` state on a fresh fetch re-renders correctly with no
+imperative `setValue`, no cursor to preserve, and no dirty-tracking handler to suppress.
+
+**A real, own-tooling-caused false alarm during this verification, worth recording honestly**:
+several rapid isolated-server restarts while debugging produced spurious `405 Method Not Allowed`
+errors on ordinary function calls (`open_workspace`, `get_current_workspace`) from a genuinely
+fresh browser session -- looked at first like a real routing regression. Ruled out by clearing
+`.jac/client/.vite`/`.jac/cache` and restarting clean once more: the errors did not reproduce. Same
+underlying stale-build-cache class `2026-09-04-dev-server-stale-vite-cache-after-rapid-restarts`
+already documented, just a new symptom (405s, not a client-side crash) from the identical cause.
+Separately, an initial DOM-`innerText`-based live check for this specific fix falsely read as
+"not reloaded" -- Monaco virtualizes line rendering, and the test's marker text was appended past
+the visible viewport of a longer file, off-screen in the DOM regardless of whether the update
+actually worked. Corrected by checking Monaco's own live model content directly
+(`window.monaco.editor.getModels()`), which is the reliable way to verify Monaco content changes
+regardless of scroll position, confirmed correct: the diff's "modified" side model picked up the
+fresh content, "original" (the git `HEAD` blob) correctly did not.

@@ -305,16 +305,29 @@ was added there specifically for this). VS Code's own policy, read directly from
 guessed: `TextFileEditorModelManager.onDidFilesChange` reloads a model from disk automatically **only
 if it isn't dirty** -- `if (model.isDirty()) { continue; // never reload dirty models }`, verbatim,
 twice, in that file. This project's own `dirty_paths` (already tracked, see above) is the exact
-equivalent check: `handle_files_changed_externally` cross-references every reported changed path
-against both `groups`' currently-open plain-file tabs *and* `dirty_paths`, and only bumps
-`files_pending_reload[path]` (a per-path monotonic nonce, the same "nonce, not the value itself, is
-what a `useEffect` should key off" convention `ai_pending_nonce` above already establishes) for a
-path that's open and clean. A dirty tab is left completely alone -- the user's own in-progress,
-unsaved edit is never silently clobbered by an external write, matching VS Code's stance exactly
-rather than inventing a different one. `MonacoEditorApp`'s own docstring covers the client-side half
-(the actual `setValue` call, and why it has to suppress its own dirty-tracking `onChange` handler
-while doing it) -- deliberately scoped to plain file tabs only for this pass, not diff/gitdiff tab
-kinds, which don't have a single "this path's own live buffer" the same way."""
+equivalent check, applied client-side (see below) rather than in this handler. `MonacoEditorApp`'s
+own docstring covers the client-side half of the plain-tab case (the actual `setValue` call, and why
+it has to suppress its own dirty-tracking `onChange` handler while doing it).
+
+**`"gitdiff"` tabs (2026-09-07, real-user QA) -- a real, live-reported gap in the pass above,
+closed the same day.** Explicitly scoped out at first ("deliberately scoped to plain file tabs
+only... diff/gitdiff tab kinds don't have a single live buffer this reload mechanism targets") --
+but `scm_diff_editor.jac`'s `ScmDiffEditorApp` fetches its diff exactly once at mount and never
+refetches, the identical staleness class, and a real user hit it directly: asked the AI Chat to
+rewrite an already-open-in-a-gitdiff-tab file twice in a row, and the SCM diff view kept showing the
+*first* edit's diff, not the second. `handle_files_changed_externally` now also matches a
+`"gitdiff"`-kind tab (keyed by its own `t["filePath"]`, the same real on-disk path
+`workspace_watcher.jac` reports) into the same shared `files_pending_reload` nonce a plain tab uses.
+**Deliberately does not apply the `dirty_paths` filter here anymore** -- a `"gitdiff"` tab is
+read-only end to end (`scm_diff_editor.jac`'s own docstring: "Read-only, both sides"), has no dirty
+state of its own, and should always refresh; a plain tab sharing the same path stays safe regardless
+of this handler no longer filtering for it, since `MonacoEditorApp`'s own `reload_from_disk` already
+re-checks `dirty` itself immediately before touching anything -- the actual safety guarantee always
+lived there, not in this handler's own filter, so keeping a redundant filter here would only have
+blocked the `"gitdiff"` case for no real reason. `scm_diff_editor.jac`'s own docstring covers the
+client-side half of this case -- simpler than the plain-tab one, since a controlled `DiffEditor`
+component just needs its own `original`/`modified` state reassigned on a fresh fetch, no imperative
+`setValue`/cursor-preservation/dirty-suppression dance needed at all."""
 
 import from "react" { useEffect }
 import from "sonner" { Toaster, toast }

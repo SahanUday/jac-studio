@@ -9,7 +9,7 @@ subsystem: workbench-shell
 jac_version: "0.37.1"
 related_vscode_ref: ""
 upstream_issue: ""
-tags: [graph, cache-consistency, isinstance, hasattr, file-tree, real-user-qa]
+tags: [graph, cache-consistency, isinstance, hasattr, file-tree, real-user-qa, hmr, upstream-jaclang]
 ---
 
 ## What happened
@@ -92,3 +92,57 @@ either tightening `_workspace_lock`'s guarantee, or moving `_path_index` consist
 always re-verify against fresh graph state (`jobj(jid(...))`) rather than trusting a cached
 Python object reference, the pattern this project's own top-of-file docstring already prescribes
 for exactly this class of staleness.
+
+## CORRECTION / STRONG NEW CANDIDATE, 2026-09-07: a real trigger mechanism found, source-confirmed,
+not yet controlled-repro-confirmed
+
+A separate real-user report (asking the AI Chat to edit `testing-workspace/hello.jac`) included a
+terminal log with a detail this entry's original investigation didn't have: the exact crash was
+directly preceded by `[HMR] Reloaded: .../testing-workspace/hello.jac` followed by this server's
+own full startup banner (`Admin portal endpoints registered`, `LLM telemetry...`, etc.) -- i.e., a
+real, in-place **server process restart**, triggered by the AI's own edit to a file inside the
+*open workspace*, not by anything in this app's own source changing.
+
+Traced into `/home/sahan/dev/jaseci/jac` (the jaclang compiler itself, a separate project, run here
+in dev mode) to confirm this isn't a misreading: `jac run --dev`'s own hot-reload watcher
+(`jaclang/server/watcher.jac`'s `JacFileWatcher`, wired up in
+`jaclang/cli/commands/impl/execution.impl.jac`) is constructed as
+`JacFileWatcher(watch_paths=[base])`, where `base` (`cli_helpers.jac`'s `proc_file`) is simply
+`os.path.split(filename)` on the entry-point file (`main.jac`) -- **the whole project root
+directory**, watched recursively for `*.jac`/`*.tsx`/`*.js`/`*.css`/`*.png`/`*.jpg`/`*.jpeg`, with
+no exclusion mechanism at all beyond `.jac/` (the build-cache dir), `node_modules`, and
+`__pycache__` (`watcher.impl.jac`'s `_on_change`). `testing-workspace/` -- this project's own
+gitignored fixture, deliberately kept at the repo root per `jac-studio-implementation`'s own
+documented convention -- sits directly under that watched root, so **any AI Chat write to a `.jac`
+file inside the currently-open workspace is indistinguishable, to jaclang's own dev-mode watcher,
+from an edit to jac-studio's own application source**, and triggers the identical hot-reload path a
+real source change would.
+
+This would fully explain the original crash here: a hot-reload restart mid-flight, while other
+requests are still in-progress against the pre-reload process/module state, is exactly the kind of
+window that could leave `_path_index`/`_cached_workspace_jid` (plain in-process globals, keyed to a
+specific loaded module's own class identity) holding a reference that no longer matches what a
+freshly-reloaded module considers a `Folder`/`File`/`Workspace` to be -- a much more concrete
+candidate than the vague "concurrent HTTP requests" theory this entry originally proposed, and one
+that also cleanly explains why `jac test`'s synchronous, single-process execution could never
+reproduce it (there's no hot-reload watcher running under `jac test` at all).
+
+**Important scope note, also confirmed from source**: `base` is jac-studio's own project root
+(wherever `main.jac` lives), not whatever folder a user opens through the app's own "Open workspace"
+picker. A real end user running an installed jac-studio pointed at their own, separate project
+elsewhere on disk would never hit this -- their project's directory doesn't overlap with
+jac-studio's own served root at all. This is specific to *this project's own dev/testing setup*,
+where the fixture workspace happens to be nested inside the same repo being served in `--dev` mode.
+
+**Not yet a fully closed, controlled repro** (the standard this project holds itself to) -- the
+correlation is from a real user's own terminal log, and the mechanism is confirmed from actual
+jaclang source, but no one has yet deliberately triggered an AI-Chat edit to a `.jac` file inside
+`testing-workspace/` under a fresh `--dev` server and watched the exact same crash follow, isolated
+from every other variable. Immediate, low-cost mitigation recommended regardless of that gap: run
+the dev server *without* `--dev` while doing this kind of AI Chat / workspace-editing QA (jaclang's
+own watcher setup is entirely gated behind `if dev { ... }`, so omitting the flag removes the
+hot-reload path -- and therefore this entire trigger class -- outright), at the cost of losing
+client-bundle HMR for jac-studio's own source changes during that session. A real fix would need to
+happen upstream in jaclang itself (an exclude-patterns option for `JacFileWatcher`/`watch_paths`,
+or scoping the default watch root to the entry-point's own package rather than the whole project
+directory) -- outside this repo's own ability to patch, and not attempted here.

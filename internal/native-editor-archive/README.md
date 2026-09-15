@@ -6,7 +6,7 @@ the real `monaco-editor` npm package as the live editor engine for v1. See
 `../../docs/architecture.md`'s "Editor core" section and tracker entry
 `2026-08-25-editor-core-decision-reversed-to-monaco` for the full reasoning -- in short, this is a
 reuse-over-reinvention call, not a verdict that this code doesn't work. It met every one of Phase
-1's exit criteria before being parked; see `../../docs/phases/phase-1-editor-core.md` for the
+1's exit criteria before being parked; see `../../docs/milestones/m1-editor-core.md` for the
 complete record of how it was built and what it does.
 
 ## What's here
@@ -56,4 +56,4 @@ the text engine, a desktop/native-JS story that doesn't fit Monaco well):
    `2026-08-23-node-persistence-crashes-on-self-referential-fields` -- against current `jac`
    behavior before relying on the workarounds still being necessary.
 5. Rendering virtualization was a known, deliberately deferred gap even when this was live (see
-   `docs/phases/phase-1-editor-core.md`'s "What's left" section) -- still true, still unaddressed.
+   `docs/milestones/m1-editor-core.md`'s "Left open" section) -- still true, still unaddressed.

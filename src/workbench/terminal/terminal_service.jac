@@ -1,34 +1,8 @@
-"""TerminalService: server-side process execution backing the integrated terminal
-(`docs/roadmap.md` Phase 2, per `docs/architecture.md`'s Process Execution section). Deny-by-default,
-gated by a `[terminal]` section in `jac.toml` -- `enabled = true` must be set explicitly, mirroring
-architecture.md's reasoning for the `@jac/desktop` `shell` capability ("safe... same trust level as
-[the user] opening their own terminal") even though jac-studio ships as a `web-app` kind project
-(`jac.toml`'s `[project] kind`), not a packaged desktop app, so that capability plugin isn't
-reachable here -- `JacConfig.get_section` reads jac-studio's own `[terminal]` section directly
-instead of going through `@jac/desktop`.
-
-**Streamed via a live async generator, not `subprocess.run`+`readline()` in a sync generator.**
-jaclang's SSE dispatcher only offloads a *sync* `def:pub`'s initial call onto a worker thread
-(`asyncio.to_thread`, `jaclang/runtimelib/serving/app.jac`) to get the generator object -- every
-subsequent `next()` on that generator (i.e. every blocking `readline()`) then runs directly on the
-event loop (`_sse_frame_stream_inner`'s plain `for item in source` in
-`jaclang/runtimelib/serving/sse.jac`), stalling every other concurrent request for the whole
-process's runtime. Declaring this `async def:pub` instead means the dispatcher `await`s it directly,
-and `sse_frame_stream` drives an async generator with `async for` -- so
-`asyncio.create_subprocess_shell` + `await process.stdout.readline()` yields control back to the
-loop between lines like any other async I/O wait, instead of blocking it.
-
-**One-shot spawn per call, not a persistent shell session (2026-08-25 v1 scope).** A real OS
-terminal keeps one long-lived shell process alive so `cd`/exported env vars/interactive REPLs
-persist across commands. That needs a server-side session keyed by an id, with input written to a
-held-open process's stdin from a *second* endpoint while its stdout is still being streamed from the
-first -- a meaningfully bigger, session-lifecycle-managing feature (holding OS handles open across
-requests, cleaning them up if the tab closes) than "spawn a process, stream its output" calls for.
-Deferred the same way the command palette deferred keybinding scoping to its own roadmap bullet --
-`run_in_terminal` spawns and streams exactly one independent process per call, so `cd` doesn't
-persist between commands typed into the terminal. Worth a dedicated follow-up if this bites in
-practice.
-"""
+"""TerminalService: server-side process execution backing the integrated terminal.
+Deny-by-default, gated by `[terminal] enabled` in `jac.toml`. See ADR 0025.
+One-shot spawn per call, no persistent shell session -- `cd`/env vars don't persist. See ADR 0026.
+Declared `async def:pub`, not sync: jaclang's SSE dispatcher only thread-offloads a sync
+generator's *first* call, so later `readline()`s would block the event loop for every request."""
 
 import asyncio;
 import from typing { AsyncGenerator, Generator }
@@ -46,10 +20,7 @@ def _terminal_enabled -> bool {
     return bool(section.get("enabled", False));
 }
 
-"""Spawns `command` in a shell and streams its combined stdout/stderr back one line at a time,
-ending with an `[process exited with code N]` line. Refuses to run anything when `[terminal]
-enabled` isn't set in `jac.toml` -- deny-by-default, the same posture `docs/architecture.md` scopes
-for the desktop `shell` capability."""
+"""Spawns `command` in a shell, streaming combined stdout/stderr one line at a time."""
 async def:pub run_in_terminal(command: str, cwd: str) -> Generator {
     async def stream -> AsyncGenerator[str, None] {
         if not _terminal_enabled() {

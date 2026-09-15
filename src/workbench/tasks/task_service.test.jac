@@ -1,12 +1,6 @@
-"""Exercises the pure pieces directly (`_parse_generic`/`_parse_jac`, `list_tasks`/`save_tasks`),
-plus `run_task`'s deny-by-default gate. **Deliberately does not exercise `run_task`'s actual
-subprocess-execution success path** -- this repo's own `jac.toml` ships `[terminal] enabled =
-false` (deny-by-default, matching `terminal_service.jac`'s own posture, which has no test file at
-all for the identical reason), so a `jac test` run against the real project config can only ever
-observe the disabled branch deterministically. The execution path (a real task actually running,
-its output landing in the right `output_service.jac` channel, its problem matcher populating real
-diagnostics) is verified live against a real `jac run --serve --dev` server with the flag
-temporarily flipped on, not committed that way -- see the PR description for that verification."""
+"""Exercises the pure pieces directly (`_parse_generic`/`_parse_jac`, `list_tasks`/`save_tasks`)
+plus `run_task`'s deny-by-default gate. `[terminal] enabled = false` here, so the real
+subprocess-execution success path is verified live instead (see PR description)."""
 
 import os;
 import tempfile;

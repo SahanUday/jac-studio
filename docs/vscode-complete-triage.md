@@ -41,7 +41,7 @@ found during this triage pass, not previously mentioned anywhere in the docs.
 | markers | Scoped | Phase 3/4 — `Diagnostic` node type + Problems panel |
 | keybindings, keybindingsExport | Scoped | Phase 2/3 — context system + persisted keybindings |
 | preferences | Scoped | Phase 3 — settings as graph-attached objects (this *is* the settings UI contrib) |
-| quickaccess | Done | Command palette shipped Phase 2. Quick Open (Ctrl+P fuzzy file switcher), the distinct second provider under this same contrib, slipped from Phase 2 (documented but never built — see `docs/phases/phase-2-workbench-shell.md`'s "what's left") and shipped in Phase 3 instead (`src/workbench/quick_open/quick_open.jac`, 2026-08-28) — see `roadmap.md`'s Phase 3 section |
+| quickaccess | Done | Command palette shipped Phase 2. Quick Open (Ctrl+P fuzzy file switcher), the distinct second provider under this same contrib, slipped from Phase 2 (documented but never built — see `docs/milestones/m2-workbench-shell.md`'s "Left open") and shipped in Phase 3 instead (`src/workbench/quick_open/quick_open.jac`, 2026-08-28) — see `roadmap.md`'s Phase 3 section |
 | search, searchEditor | Scoped | Phase 4 — search-in-files |
 | extensions | Scoped, **partially New** | Phases 4, 6, 7 cover the extension *runtime*/trust model (re-numbered 2026-08-31, see `roadmap.md`'s top-of-document note — Phase 4 is now the native/trusted-in-process milestone, dynamic loading and sandboxing moved to Phases 6–7); this specific contrib is the Extensions *view* (browse/install/manage) — not previously called out as its own UI surface. Add to Phase 6: once extensions are dynamically loadable, they need a UI to install/enable/disable/uninstall from. Cheap addition to that phase, not a new one. |
 | webview, webviewPanel, webviewView, customEditor | Tracked | Gap analysis Tier 2 — noted as architecturally easier for us than upstream (a jac-cl component in a panel vs. upstream's iframe sandbox) |
@@ -177,8 +177,6 @@ of VS Code a user directly interacts with, now source-verified rather than notes
   this whole layer's *pattern*, per `architecture.md`), not feature-by-feature triaged.
 
 Not settled, and not meant to be yet: most "Tracked" rows above have a one-paragraph rationale, not
-an architecture section like the Tier 1 items in
-[`vscode-feature-gap-analysis.md`](vscode-feature-gap-analysis.md) got. That's the correct amount
-of investment for something several phases away — full design work for a feature happens when its
-phase is about to start, not years of roadmap in advance. Re-run this triage (or at least reread
-it) before starting each new phase, the same instruction the gap-analysis doc already gives itself.
+full design work. That's the correct amount of investment for something several milestones away —
+design happens when a milestone is about to start, not years of roadmap in advance. Re-run this
+triage (or at least reread it) before starting each new milestone.

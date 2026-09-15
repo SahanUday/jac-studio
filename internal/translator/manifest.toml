@@ -20,7 +20,7 @@ status = "landed"
 risk_tier = "low"
 verification = "tests"
 phase = 0
-notes = "Both PrefixSumComputer and ConstantTimePrefixSumComputer ported; 48/48 ported tests pass. First real translation -- see docs/phases/phase-0-foundations.md and the challenge tracker for findings hit along the way."
+notes = "Both PrefixSumComputer and ConstantTimePrefixSumComputer ported; 48/48 ported tests pass. First real translation -- see docs/milestones/m0-foundations.md and the challenge tracker for findings hit along the way."
 
 [[modules]]
 id = "interval-tree"

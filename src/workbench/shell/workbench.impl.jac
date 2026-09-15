@@ -1,20 +1,13 @@
-"""Every group update rebuilds `groups` as a fresh list of fresh dicts rather than mutating in
-place, per this project's established reactivity convention for `has` fields holding
-lists/dicts (see `file_tree.impl.jac`'s docstring) -- a `has` field write is only picked up
-reactively when the field itself is reassigned to a new object.
-
-`_save_session` is called (`await`-ed, not fire-and-forget) at the end of every method here that
-changes `groups`/`active_group_id`/`next_group_id`/`terminal_open` -- see `workbench.jac`'s
-"Workspace-state persistence" docstring section for why `handle_cursor_change` is the one
-exception, debouncing instead."""
+"""Handler bodies for `workbench.jac`. A `has` field holding a list or dict is only picked up
+reactively when the field itself is reassigned, so every update here rebuilds a fresh object
+rather than mutating in place. Every method that changes `groups`/`active_group_id`/
+`next_group_id`/`terminal_open` awaits `_save_session`; `handle_cursor_change` debounces instead,
+since it fires on every keystroke."""
 
 impl app._save_session -> None {
     await save_session(groups, active_group_id, next_group_id, terminal_open, cursor_positions);
 }
 
-"""Re-selecting the already-active tab closes the panel; selecting the other tab (or opening from
-closed) switches to it and opens -- see `workbench.jac`'s "Output panel + a real bottom-panel tab
-strip" docstring section for why this replaced two separate hardcoded toggles."""
 impl app._toggle_panel(panel_id: str) -> None {
     if terminal_open and active_bottom_panel == panel_id {
         terminal_open = False;
@@ -44,12 +37,8 @@ impl app.open_tab(path: str, name: str) -> None {
     await _save_session();
 }
 
-"""Seeds `cursor_positions[path]` *before* inserting the tab -- see `workbench.jac`'s "Search, the
-second real sidebar view" docstring section for why this reuses the session-restore mount-time
-mechanism rather than a new imperative jump. `_save_session` persists `cursor_positions` the same
-way `handle_cursor_change`'s debounce eventually would; doing it synchronously here (via the shared
-`_upsert_tab_in_active_group` + `_save_session` path `open_tab` already uses) is fine since this is
-a real, low-frequency user action (clicking a search result), not a per-keystroke one."""
+"""Seeds `cursor_positions[path]` before inserting the tab, so the editor picks the position up as
+`initialCursor` at mount rather than needing an imperative jump."""
 impl app.open_search_result(path: str, name: str, line: int, column: int) -> None {
     updated_cursor_positions = {**cursor_positions};
     updated_cursor_positions[path] = {"line": line, "column": column};
@@ -58,9 +47,7 @@ impl app.open_search_result(path: str, name: str, line: int, column: int) -> Non
     await _save_session();
 }
 
-"""Stores only `{filePath, staged}` -- never fetched diff content -- in the tab dict; see
-`scm_diff_editor.jac`'s docstring for why the tab itself re-fetches content on mount rather than
-this handler doing it once up front."""
+"""Stores only `{filePath, staged}`; `scm_diff_editor.jac` fetches the diff content itself on mount."""
 impl app.open_scm_diff(path: str, name: str, staged: bool) -> None {
     suffix = "::staged" if staged else "::unstaged";
     groups = _upsert_tab_in_active_group({
@@ -238,11 +225,8 @@ impl app.select_view(view_id: str) -> None {
     active_view_id = view_id;
 }
 
-"""Switches to the AI Chat sidebar and hands it `promptText` -- the receiving half of
-`ai_code_action_provider.jac`'s "Fix"/"Explain"/"Modify" commands. `ai_pending_nonce` increments
-on every call (not just when `promptText` changes) so `AIChatApp`'s own `useEffect([pendingNonce])`
-fires even if the same code action is triggered twice in a row with identical text -- a plain
-`useEffect([pendingPrompt])` would silently no-op on the second identical request."""
+"""`ai_pending_nonce` increments on every call, not just when `promptText` changes, so triggering
+the same code action twice in a row still fires `AIChatApp`'s `useEffect`."""
 impl app.handle_ask_ai(promptText: str, autoSend: bool) -> None {
     active_view_id = "ai_chat";
     ai_pending_prompt = promptText;
@@ -250,21 +234,12 @@ impl app.handle_ask_ai(promptText: str, autoSend: bool) -> None {
     ai_pending_nonce += 1;
 }
 
-"""Flips whether `AIChatApp` renders docked in its normal sidebar column or maximized to cover the
-whole workbench area -- see `ai_chat.jac`'s own docstring for why this is a pure CSS/style toggle
-on the *same* mounted instance (a `position: fixed` overlay when maximized) rather than moving the
-component to a second mount point (a real tab, a portal, ...): the point is more room for the exact
-same live conversation, and anything that unmounts/remounts the component to get there would lose
-`messages`/`session_id`/`pending_approvals` in the process. Real VS Code's own "maximize panel"
-(double-click a panel tab) is the precedent this borrows from, not a novel interaction."""
+"""Style-only toggle on the same mounted instance -- remounting to a second mount point would lose
+`messages`/`session_id`/`pending_approvals`."""
 impl app.toggle_ai_chat_maximized -> None {
     ai_chat_maximized = not ai_chat_maximized;
 }
 
-"""Maps `severity` onto `sonner`'s own per-severity call (`toast.error`/`toast.warning`/plain
-`toast` for info) rather than always calling the bare `toast(message)` form -- `sonner` uses that
-to pick the toast's icon/accent color, the same severity vocabulary `diagnostics.jac` already
-established (`"error" | "warning" | "info"`)."""
 impl app.add_notification(message: str, severity: str, source: str) -> None {
     updated = notifications + [{
         "id": next_notification_id,

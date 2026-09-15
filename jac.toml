@@ -60,57 +60,24 @@ lib_imports = ["import tailwindcss from '@tailwindcss/vite'"]
 [test]
 directory = "src"
 
-# output_service.jac uses `root`/`jid()` (server-only concepts) but has no Python import or graph
-# archetype to anchor it server per the placement solver's own evidence rules -- without this pin
-# the whole module, jid(root) included, gets pulled wholesale into the client bundle the moment a
-# client component (src/workbench/output/output.jac) imports one of its def:pub functions, and
-# jid() then throws a confusing runtime error instead of dispatching over RPC. See tracker entry
-# 2026-08-31-anchor-free-root-using-module-pulled-client-wholesale.
+# The placement solver mis-places two module shapes, each needing an explicit pin:
+#   - uses root/jid() but has no Python import or graph archetype to anchor it server-side, so it
+#     gets pulled wholesale into the client bundle -> 2026-08-31-anchor-free-root-using-module-pulled-client-wholesale
+#   - is client-only but imports one server def:pub, which it reads as reason to place the whole
+#     module server-side -> 2026-08-31-client-module-with-one-server-import-pulled-server-wholesale
+# The jac_*_provider pins are all the second case: client-only Monaco code importing one lsp_client
+# function. breadcrumb_symbols is pinned as insurance -- a wrong default would silently reintroduce
+# the per-keystroke RPC round trip it exists to avoid.
 [placement.pins]
 "src.workbench.output.output_service" = "server"
-
-# jac_completion_provider.jac is genuinely client-only (its whole job is calling into the real
-# browser `monaco` global), but it also imports a server def:pub function
-# (lsp_client.get_completions) for the one RPC boundary it needs -- the placement solver's evidence
-# rules apparently read that server-side import as reason to place the *whole module* server-side
-# instead of just lowering that one call into an RPC boundary, the inverse of the output_service.jac
-# finding above (there: no server evidence at all, wrongly placed client; here: server evidence from
-# one import, wrongly placed server despite genuinely client-only code everywhere else in the file).
-# Confirmed live: without this pin, `register_jac_completion_provider(monaco)` itself gets called as
-# a server RPC, and `monaco` arrives server-side as an opaque placeholder with no `.languages`
-# attribute. See tracker entry 2026-08-31-client-module-with-one-server-import-pulled-server-wholesale.
 "src.editor.client.jac_completion_provider" = "client"
-
-# Same finding, same fix, for the hover provider added right after: genuinely client-only (its
-# whole job is calling the browser `monaco` global), but imports lsp_client.get_hover for its one
-# RPC boundary, which the placement solver reads as reason to place the whole module server-side.
 "src.editor.client.jac_hover_provider" = "client"
-
-# Same finding, same fix, for the go-to-definition provider: genuinely client-only (its whole job
-# is calling the browser `monaco` global, including monaco.editor.registerEditorOpener), but
-# imports lsp_client.get_definition for its one RPC boundary, which the placement solver reads as
-# reason to place the whole module server-side.
 "src.editor.client.jac_definition_provider" = "client"
-
-# Same finding, same fix, for the find-references provider: genuinely client-only, but imports
-# lsp_client.get_references for its one RPC boundary, which the placement solver reads as reason
-# to place the whole module server-side.
 "src.editor.client.jac_reference_provider" = "client"
-
-# Same finding, same fix, for the rename provider: genuinely client-only, but imports
-# lsp_client.get_rename_edits and lsp_client.apply_disk_rename_edits for its RPC boundary, which
-# the placement solver reads as reason to place the whole module server-side.
 "src.editor.client.jac_rename_provider" = "client"
-
-# breadcrumb_symbols.jac has zero server evidence of its own (no root/jid, no server imports) and
-# is only ever imported by monaco_editor.jac (client), so the placement solver should place it
-# client-side by default -- pinned explicitly anyway as insurance, since this module exists
-# specifically to avoid a per-keystroke RPC round trip (see its own docstring), and a wrong
-# placement default here would silently reintroduce exactly that bug.
 "src.editor.client.breadcrumb_symbols" = "client"
 
-# Deny-by-default: the integrated terminal (src/workbench/terminal/terminal_service.jac) refuses to
-# run any command until this is explicitly flipped on, same posture docs/architecture.md scopes for
-# the desktop `shell` capability -- "same trust level as [the user] opening their own terminal."
+# Deny-by-default: the terminal refuses to run anything until this is flipped on. Granting it is
+# the same trust level as the user opening their own shell.
 [terminal]
 enabled = false

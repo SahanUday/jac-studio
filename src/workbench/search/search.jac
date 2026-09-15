@@ -1,25 +1,7 @@
-"""Search: Phase 4's search-in-files sidebar view (`docs/roadmap.md`), the second real entry in
-`activity_bar.jac`'s `VIEWS` -- the exact addition that module's own docstring anticipated ("Once
-Phase 4 adds a second real view... that's a one-entry-plus-one-branch addition").
-
-**Submit on Enter/click, not live-as-you-type.** Unlike Quick Open's client-side fuzzy filter over
-an already-fetched file list, every keystroke here would mean a fresh server-side workspace-wide
-content scan (`search_service.jac` reads every candidate file's bytes) -- genuinely expensive to
-run per keystroke, unlike a client-side filter. An explicit submit (matching real VS Code's own
-"press Enter to search," not its live-refine-after-first-search behavior) is the honest MVP scope
-here, not a corner cut silently -- a debounced live search is a legitimate future widen once this
-ships and the cost profile is worth revisiting.
-
-**Results are grouped by file, matches indented beneath**, mirroring `search_service.jac`'s own
-response shape (`{"path", "name", "matches": [{"line", "column", "preview"}]}`) directly rather
-than flattening it -- the natural read of "which files, and where in each" a grep-style result set
-needs.
-
-**Clicking a match reports `(path, name, line, column)` up to `workbench.jac`'s `open_search_result`**
--- not just `(path, name)` like `FileTreeApp`/`QuickOpenApp`'s `onOpenFile` -- because a search
-result's whole point is "jump to this specific line," not just "open this file." See
-`workbench.jac`'s own docstring for how it reuses the exact session-restore cursor-seeding
-mechanism (`cursor_positions` assigned before the tab exists) rather than inventing a new one.
+"""Search-in-files sidebar view. Submits on Enter/click, not live-as-you-type, since every
+keystroke would mean a fresh server-side workspace scan (`search_service.jac`), unlike Quick Open's
+client-side filter. Results group by file, matches indented beneath, mirroring
+`search_service.jac`'s response shape.
 """
 
 def:pub app(onOpenResult: any) -> JsxElement {

@@ -1,8 +1,5 @@
-"""Builds the actual prompt sent for a turn -- includes the selected code (if any) as context,
-the same shape `ai_code_action_provider.jac`'s "Modify" prompt uses, so a user typing "make this
-async" gets the surrounding code without having to paste it themselves. Falls back to just the
-file path when there's no selection (a cursor-position-only inline chat turn, e.g. "add a
-docstring here")."""
+"""Includes the selection as context, same shape as `ai_code_action_provider.jac`'s "Modify"
+prompt; falls back to just the file path when there's no selection."""
 def _build_prompt(editor: any, path: str, instruction: str) -> str {
     selection = editor.getSelection();
     if selection and not selection.isEmpty() {
@@ -12,10 +9,7 @@ def _build_prompt(editor: any, path: str, instruction: str) -> str {
     return "In " + path + ":\n\n" + instruction;
 }
 
-"""Consumes `start_chat_turn`'s SSE stream -- the identical `fetch` + `ReadableStream` reading loop
-`ai_chat.impl.jac`/`debug_console.impl.jac` already established (two-`JSON.parse` unwrap, the
-trailing-`event: end`-frame guard). See `app`'s own docstring for why this widget makes its own
-independent call rather than reusing the sidebar's."""
+"""SSE reading loop shared with `ai_chat.impl.jac`/`debug_console.impl.jac`."""
 impl app.handle_submit -> None {
     editor = editorRef.current;
     if not editor or input_text.strip() == "" or is_streaming {
@@ -107,10 +101,8 @@ impl app.handle_event(event: dict[str, any]) -> None {
     }
 }
 
-"""Mirrors `ai_chat.impl.jac`'s own `handle_approval_decision` -- appends the decision as a note
-into `response_text` rather than a separate list entry, for the identical reason that module's own
-docstring documents (a live-caught bug where a separate entry broke the "text keeps appending to
-the current response" invariant `text_delta` depends on)."""
+"""Appends the decision as a note into `response_text`, not a separate list entry — a separate
+entry broke the append-only invariant `text_delta` relies on (live-caught bug)."""
 impl app.handle_approval_decision(tool_use_id: str, name: str, decision: str) -> None {
     await approve_tool_call(tool_use_id, decision);
     pending_approvals = [a for a in pending_approvals if a["tool_use_id"] != tool_use_id];
@@ -134,10 +126,6 @@ impl app.handle_key_down(e: any) -> None {
     }
 }
 
-"""Resets this popover's own independent conversation on close -- matches `app`'s own docstring
-("no resume across a reopen in this first slice"), so reopening Ctrl+I later starts fresh rather
-than silently continuing a stale, possibly irrelevant session against whatever the cursor is on
-now."""
 impl app.handle_close(e: any) -> None {
     input_text = "";
     response_text = "";

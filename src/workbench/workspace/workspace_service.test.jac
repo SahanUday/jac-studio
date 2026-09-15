@@ -1,9 +1,7 @@
-"""Correctness tests against a small, deterministic synthetic fixture -- see
-`internal/workspace-graph-spike/tests/workspace_graph_tests.jac` for the shared fixture shape this
-mirrors. Unlike the spike, everything here goes through the two client-facing functions
-(`open_workspace`, `list_children_by_path`) and asserts the lazy-scan contract: a path that hasn't
-been listed yet returns nothing, listing a folder scans exactly one level (not its descendants),
-and re-listing an already-scanned folder doesn't rescan or duplicate children."""
+"""Correctness tests against a small, deterministic synthetic fixture, through the two
+client-facing functions (`open_workspace`, `list_children_by_path`). Asserts the lazy-scan
+contract: an unlisted path returns nothing, listing scans one level, and re-listing doesn't
+rescan or duplicate children."""
 
 import os;
 import tempfile;
@@ -189,16 +187,8 @@ test "get_current_workspace re-populates the path index so list_children_by_path
 }
 
 test "a no-op get_current_workspace call in between does not wipe an already-expanded folder's children" {
-    # Regression test for a real, reported bug: every SCM function (get_scm_status,
-    # get_diff_content, ...) calls get_current_workspace -> get_or_create_workspace first, purely
-    # to resolve the repo root, with no intent to change or reset anything. get_or_create_workspace
-    # used to unconditionally overwrite _path_index[key] with a fresh single-entry dict on *every*
-    # call, even when root_path hadn't changed -- discarding every previously cached Folder/File
-    # entry (list_children_by_path's own doc). Since list_children_by_path returns [] immediately
-    # when parent_path isn't in _path_index[key] (never even reaching the graph), simply having the
-    # SCM panel open -- or opening a diff view -- silently emptied out every already-expanded
-    # folder in the Explorer, even though the underlying graph (Folder node, scanned flag, Contains
-    # edges) was never touched.
+    # Regression: get_or_create_workspace used to reset _path_index on every call, even when
+    # root_path hadn't changed, silently emptying already-expanded Explorer folders.
     _reset_workspace_cache_for_tests();
     fixture = make_fixture();
     open_workspace(fixture);

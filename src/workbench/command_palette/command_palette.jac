@@ -1,49 +1,16 @@
-"""CommandPalette: Phase 2's third workbench-shell deliverable (`docs/roadmap.md`) after Tabs and
-editor-group splitting -- shadcn's `Command`/`CommandDialog` wired to
-`src/workbench/commands/command_registry.jac`'s server-side registry.
-
-**Metadata over RPC, dispatch through the parent.** This component fetches the command list
-(`id`/`title`) from the server once on mount and renders it -- but it doesn't know how to run a
-command; that logic lives in `workbench.jac`, which already owns the editor-group state every
-Phase 2 command actually mutates. Selecting an item just calls the `onRunCommand` prop with the
-picked command's id, same "leaf reports, parent owns behavior" shape `editor_tabs.jac` uses for
-its own callbacks -- see `command_registry.jac`'s docstring for why there's no server-side handler
-table to call into instead.
-
-**Open/close state moved to `workbench.jac` (2026-08-28, Phase 3's title-bar bullet), reversing
-this component's original self-contained `useEffect` keydown listener.** That earlier choice
-(global `Ctrl/Cmd+Shift+P`, handled with a plain unconditional `keydown` listener inside this
-component) was made because Phase 2's when-clause keybinding dispatch
-(`workbench.jac`'s `handle_keydown`/`commands` matching) wasn't built yet -- `quick_open.jac`
-already made the same move once that mechanism existed and was proven (terminal-toggle,
-theme-toggle, quick-open). The concrete trigger for finally reversing it here too: `title_bar.jac`'s
-Command Center button needs to open this same dialog, and there was no way for anything outside
-this component to do that with `open` as private internal state. `workbench.action.showCommands`
-is now a real `command_registry.jac` entry (`ctrl+shift+p`), dispatched through `handle_command`
-like every other Phase 3 command -- the title bar's button and the keyboard shortcut both flow
-through the identical path, rather than the title bar needing its own separate wiring.
-
-**"Recently used" / "other commands" split, matching real VS Code's own Command Palette
-(2026-09-01, `docs/roadmap.md` Phase 4's visual-parity pass).** `recent_ids` is plain component
-state -- an in-memory, session-only MRU list, not persisted to `settings_service.jac` -- capped at
-5 and updated on every `handle_select`. A deliberate v1 scope cut: real VS Code's own MRU survives
-a restart, but session-only already delivers the actual visible behavior (recently-run commands
-float to the top under their own heading while you keep working) without adding a new persisted-
-settings surface for a session-scoped nicety. `>` is passed as `CommandInput`'s new `prefix` prop,
-the same visual "this is the Command Palette, not Quick Open" marker real VS Code uses -- `>` is a
-literal rendered character here, not baked into the placeholder text the way the plain shadcn
-default did it."""
+"""CommandPalette: shadcn `Command`/`CommandDialog` wired to `command_registry.jac`'s registry.
+Fetches command metadata over RPC on mount; dispatch stays in `workbench.jac` via `onRunCommand`.
+Open/close state lives in `workbench.jac`, not a local keydown listener, so `title_bar.jac`'s
+Command Center button and `Ctrl+Shift+P` both dispatch `workbench.action.showCommands` the same way.
+`recent_ids` is in-memory, session-only, capped at 5 -- doesn't survive a restart, by design."""
 
 import from src.workbench.commands.command_registry { list_commands }
 import from components.ui.command {
     CommandDialog, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem, CommandShortcut
 }
 
-"""Picks the keybinding to show next to a palette entry: the always-on one (`when == ""`) if the
-command has one, else the first scoped one -- showing a context-scoped shortcut (e.g. `escape`,
-only live while the terminal has focus) as if it were the command's general shortcut would be
-misleading. Formats a raw combo string (`"ctrl+`"`) for display (`"Ctrl+`"`) without a
-platform-specific glyph layer (`⌘`/`⌃`/`⇧`) -- nothing here needs that polish yet."""
+"""Prefers the always-on keybinding (`when == ""`) over a context-scoped one, so a shortcut only
+live while e.g. the terminal has focus isn't shown as the command's general shortcut."""
 def format_keybinding(keybindings: list[dict[str, str]]) -> str {
     if len(keybindings) == 0 {
         return "";

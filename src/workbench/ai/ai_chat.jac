@@ -1,179 +1,8 @@
-"""AIChat: the UI half of Phase 5's native Claude Code integration (`docs/roadmap.md`'s "native AI
-coding-tool integrations" phase). A new left-sidebar view (`activity_bar.jac`'s `VIEWS`), not the
-auxiliary/secondary side bar real VS Code uses for Chat -- that panel doesn't exist in jac-studio
-yet (`vscode-complete-triage.md`'s `auxiliarybar` row, explicitly Phase 6 scope, per
-`docs/roadmap.md`'s 2026-08-31 re-prioritization). Reusing the existing `VIEWS` sidebar mechanism
-(one entry + one branch in `workbench.jac`, the same "no new plumbing" pattern Search/SCM/Outline
-already proved in Phase 4) is the deliberate, scoped choice here -- the narrower width is a real v1
-tradeoff, not an oversight, and moving this component into a real auxiliary bar later needs no
-rework of the component itself, only where it's mounted.
-
-**The SSE stream is consumed with a raw `fetch`, not the generated RPC stub -- same reasoning, and
-the identical two-`JSON.parse` unwrap + trailing-`event: end`-frame guard, as
-`debug_console.impl.jac`.** `claude_code_client.jac`'s `start_chat_turn` is declared `-> Generator`
-specifically so it stays a real server-push stream.
-
-**No mid-turn cancel in this first slice** -- matches `claude_code_client.jac`'s own documented v1
-scope cut (see that module's docstring for why). The Send control simply disables while a turn is
-in flight.
-
-**Conversation continuity is `session_id` round-tripped through `done` events, not client-side
-history replay** -- each turn sends only the new prompt plus the previous turn's `session_id`; the
-SDK's own `resume` mechanism (via `claude_code_launcher.py`) reconstructs context server-side. The
-displayed `messages` list is purely a rendering log, not what gets sent back on the next turn.
-
-**Tool-approval requests are a separate `pending_approvals` list, not folded into `messages`.**
-`claude_code_launcher.py`'s `can_use_tool` callback (see that module's own docstring for the
-real trust-boundary gap this closes) emits a `tool_approval_request` event mid-stream and then
-blocks the tool call until a decision arrives. Keeping approval cards in their own list keeps both
-pieces simple: `messages` stays a plain rendering log of turn content (text and tool steps), while
-`pending_approvals` is purely "what's blocked on the user right now" -- once decided, the card is
-just removed, and the corresponding `tool_step` entry in `messages` (see below) picks up the real
-outcome on its own via the launcher's own `tool_result` event, not a note written here. `tool_use_id`
-is the join key between a card and the `approve_tool_call` RPC call it fires -- concurrent approval
-requests (the SDK can ask for several tool calls in one turn) are handled correctly since each card
-tracks its own id independently.
-
-**`Edit`/`Write` cards render a real diff (`ai_tool_diff_preview.jac`), not the generic JSON dump.**
-`claude_code_launcher.py` includes `original_text`/`modified_text` on the event only for those two
-tool names (see that module's own docstring for how they're computed) -- every other tool (`Bash`,
-the `jac mcp` tools, ...) has neither key, and `a["has_diff"]` (set in `handle_event`) is `False`,
-so the card falls back to the same plain input-JSON `<pre>` block PR #72 already shipped.
-
-**`pendingPrompt`/`pendingAutoSend`/`pendingNonce` are the receiving half of
-`ai_code_action_provider.jac`'s "Fix"/"Explain"/"Modify" lightbulb menu (`docs/architecture.md`'s
-"Reframed 2026-09-03" AI section, item 1) -- `workbench.jac`'s own docstring covers the sending
-half.** `useEffect([pendingNonce])`, not `useEffect([pendingPrompt])` -- keying off the text itself
-would silently no-op a second identical request (React's own dependency-array equality check sees
-no change), where the nonce increments on every call regardless of the text. Sets `input_text` to
-the constructed prompt always; calls `handle_send()` immediately only when `pendingAutoSend` is
-`True` ("Fix"/"Explain", self-contained requests) -- "Modify..." leaves it in the box unsent so the
-user can finish describing the change before submitting.
-
-**`messages` holds two kinds of entries, distinguished by `m["kind"]`, interleaved in stream
-order -- item 6 of the "Reframed 2026-09-03" AI section (richer agent-session visualization).**
-`"text"` (the pre-existing `role`+`text` shape) and `"tool_step"` (`tool_use_id`, `name`, `input`,
-`status`: `"running"|"done"|"error"`, `result_text`) -- a structured card per tool call instead of
-the old plain `"[Using X...]"` marker spliced into the surrounding text, driven by
-`claude_code_launcher.py`'s three-event tool lifecycle (`tool_use_start`/`tool_use_input`/
-`tool_result`, see that module's own docstring). A `tool_step` is a genuinely separate list entry,
-not folded into the running assistant text bubble the way the old marker was -- `text_delta`
-appends into `messages[-1]` only when it's still an open `"text"` entry; once a `tool_step` lands
-as the last entry, the next `text_delta` starts a fresh `"text"` entry rather than corrupting the
-step card, matching how a real turn actually alternates between talking and acting.
-
-**Tool approval no longer writes a local "[Allowed X]"/"[Denied X]" note.** Found live, confirmed
-via a direct `can_use_tool`-denial probe: a decision -- allow or deny -- always produces a real
-`tool_result` event from the launcher shortly after (the SDK sends a synthetic
-`ToolResultBlock(is_error=True, content=<the deny message>)` for a denial, indistinguishable in
-shape from a real execution's result), which updates the matching `tool_step` card with the
-authentic outcome. A separate optimistic local note was redundant with, and could race, that
-authoritative update -- `handle_approval_decision` now only forwards the decision and clears the
-pending-approval card; the step card itself carries the result.
-
-**First real-user QA pass (2026-09-05, post-Phase-5-closure), a real fix + polish round, not new
-scope** -- see `docs/phases/phase-5-ai-integrations.md`'s own addendum for the full record:
-
-- **`cwd` is now resolved by the caller and passed into `start_chat_turn` as a plain argument,
-  never queried from inside its generator.** A real user hit two failures from the same root cause:
-  a turn silently answered based on the *server process's own* cwd instead of the real open
-  workspace, and a follow-up turn in the same conversation hit a genuine, uncaught
-  `PgWireError: connection lost mid-transaction`. Both trace to `get_current_workspace()` (a real
-  `root`-scoped graph query) having been called from inside `start_chat_turn`'s own SSE generator --
-  see `claude_code_client.jac`'s docstring and tracker entry
-  `2026-09-05-sse-generator-root-scoped-graph-query-unreliable` for the full root-cause writeup.
-  This component now calls `get_current_workspace()` itself, as a plain `await`ed RPC call, right
-  before `fetch`ing `/function/start_chat_turn`.
-- **Tool-step cards are collapsed by default** (`m["expanded"]`, set `False` at `tool_use_start`,
-  toggled by clicking the card's header row) -- a one-line summary (`_tool_step_summary`, the most
-  relevant single input value: `command`/`file_path`/`pattern`/`path`, whichever the tool actually
-  has) plus a status icon and a chevron, matching how VS Code's own Copilot Chat renders a
-  collapsed tool call rather than always showing full JSON input/result inline.
-- **The primary identity is "AI Chat," with a small "via Claude Code" caption, not "Claude Code" as
-  the headline.** A real user flagged that hardcoding the specific provider's name everywhere reads
-  oddly given `roadmap.md`'s own stated intent to eventually support more than one (Copilot,
-  OpenCode, a native `by llm()` "Jac Agent" -- see `jac-agent.md`). **Deliberately not a full
-  provider-selector UI** -- with only one working provider today, a dropdown with nothing real to
-  switch to would be premature, not helpful; this is a light naming fix, not new provider-selection
-  infrastructure. The pending-approval card's "Claude Code wants to use X" and the input
-  placeholder also dropped the specific provider name for the same reason, as did the "Fix"/
-  "Explain"/"Modify" Quick Fix menu items (`ai_code_action_provider.jac`) and inline chat's own
-  header/placeholder (`inline_chat_widget.jac`).
-- **The sidebar is now resizable** (wrapped in a `ResizablePanel`/`ResizableHandle`, the same
-  primitive editor-group splitting already uses) -- applies to every sidebar view (Explorer/Search/
-  SCM/Outline/AI Chat), not just this one, since they all share the same column.
-- **A "maximize" toggle gives this panel the whole workbench area on demand** (the
-  `codicon-screen-full`/`codicon-screen-normal` button next to the header, `maximized`/
-  `onToggleMaximize` props owned by `workbench.jac`) -- real VS Code's own "maximize panel"
-  (double-click a panel tab) is the precedent, not upstream's separate auxiliary-bar Chat panel
-  (still Phase 6 scope, unbuilt). **Deliberately a pure CSS/style toggle on this same mounted
-  instance** (`position: fixed; inset: 0 0 0 48px` when maximized, covering everything right of the
-  activity bar), **not a second mount point (a real tab, a portal, ...)** -- the point is more room
-  for the exact same live conversation a user might already be mid-turn in; anything that
-  unmounts/remounts this component to get there would lose `messages`/`session_id`/
-  `pending_approvals` in the process. `zIndex: 30` -- above ordinary in-flow content (the sidebar's
-  own `zIndex: 20`) but below dialogs/menus/toasts (Radix's own `z-50` convention throughout this
-  project), so the command palette and other overlays still correctly sit on top even while this
-  panel is maximized.
-
-**Second QA pass on the same branch (2026-09-05), after manually testing the first round above --
-two more real, live-found gaps:**
-
-- **Assistant text now renders as real markdown** (`markdown_message.jac`, shared with
-  `inline_chat_widget.jac`) instead of raw pre-wrap text. Found live: a response's own literal
-  ```` ``` ````/`**` markdown syntax was showing up unrendered in the panel, not interpreted --
-  confirmed via a real screenshot, not assumed. User's own messages stay plain text (matching real
-  chat UIs -- markdown rendering is for the *assistant's* formatted output, not literal
-  interpretation of what a user typed).
-- **A `ThinkingIndicator` (spinner + a rotating status word + elapsed seconds, e.g.
-  "Pondering… (7s)") now shows for the whole duration `is_streaming` is true**, docked at the
-  bottom of the message list -- found live: nothing in the UI indicated the agent was actively
-  working between hitting Send and the first token/tool call arriving. **Refined twice on the same
-  day, both from live feedback**: a first version was a single static "Thinking…" label; shown a
-  real screenshot of Claude Code's own extension UI (a rotating whimsical verb next to its own
-  spinner, not a fixed word), `thinking_indicator.jac` now cycles through a similarly-spirited word
-  list every 2.5s and counts elapsed seconds, shared with `inline_chat_widget.jac`'s own popover
-  rather than duplicated. Not a byte-for-byte reproduction of Anthropic's own exact internal word
-  list (unverifiable from here) -- see that module's own docstring.
-
-**Third QA pass (2026-09-05), two more small but real UI bugs found live, both fixed here:**
-
-- **Tool-step cards (and, defensively, plain text entries too) now carry an explicit
-  `flexShrink: "0"`.** Found live via two screenshots of the same conversation before/after a
-  follow-up message: tool-step cards visibly collapsed to razor-thin bars once the message list
-  grew past the visible area, while plain text bubbles didn't. Root cause: each tool-step card's
-  outer wrapper has `overflow: "hidden"` (needed for its own collapse/expand animation-adjacent
-  clipping) -- per the CSS flexbox spec, a flex item's *automatic* minimum size in the main axis is
-  0 when it has `overflow` other than `visible`, instead of its content size. In a `flexDirection:
-  column` list under real content pressure, that makes exactly the entries with `overflow: hidden`
-  (the tool-step cards, not the plain-text ones) the first to get squeezed toward zero height. Not
-  a guess -- confirmed against the exact styles below and the spec's own "automatic minimum size"
-  rule. `pending_approvals`' own cards already had `flexShrink: "0"` from PR #72; this extends the
-  same guard to every entry in the main `messages` list, which never had it.
-- **The message list no longer shows a visible scrollbar** (`className="no-scrollbar"`, an
-  existing Tailwind `@utility` in `styles/global.css` that was defined but never actually applied
-  anywhere in this project until now) -- `overflow: "auto"` still scrolls via wheel/touch/keyboard,
-  it just doesn't reserve a visible OS-chrome scrollbar gutter in a column this narrow. Same
-  treatment applied to `inline_chat_widget.jac`'s own scrollable response area for consistency.
-
-**Fourth QA pass (2026-09-05), two more real gaps found live against a real VS Code Claude Code
-extension screenshot for direct comparison:**
-
-- **The message list now auto-scrolls to the latest content.** Found live: without scrolling
-  manually, the panel stayed pinned at the top of the conversation as new turns/tool steps/text
-  streamed in below the visible area -- real chat UIs (the reference screenshot included) always
-  keep the latest content in view. `messages_list_ref` (a plain `Ref[any]` on the message-list
-  container) plus a `useEffect` keyed on `[messages, is_streaming, pending_approvals]` sets
-  `scrollTop = scrollHeight` on every change that could add content -- covers a new/updated
-  message, the thinking indicator appearing, and a new approval card, not just `messages` alone.
-  Same fix applied to `inline_chat_widget.jac`'s own response area.
-- **User messages now render inside a distinct card** (`background: "#2A2B2C"`, rounded), instead
-  of a plain-text line with only a small uppercase "user" label above it -- found live via a direct
-  side-by-side screenshot comparison against the real Claude Code VS Code extension's own chat UI,
-  where the user's own prompt is visually boxed and the assistant's response flows as plain
-  markdown-rendered text below it, unboxed. Matches that same asymmetry here: only `role == "user"`
-  gets the card treatment (and drops its own now-redundant role label, since the card itself
-  signals "this is what you typed"); assistant/error entries are unchanged."""
+"""AI Chat sidebar view: streams `start_chat_turn`'s SSE frames and renders the turn log.
+`cwd` must be resolved here and passed in -- a `root`-scoped graph query from inside the SSE
+generator is unreliable (tracker 2026-09-05-sse-generator-root-scoped-graph-query-unreliable).
+Conversation continuity is the round-tripped `session_id`, not client-side history replay;
+approval decisions are never echoed locally, the launcher's own `tool_result` carries the outcome."""
 
 import from "react" { useState, useEffect }
 import from src.workbench.ai.claude_code_client { start_chat_turn, approve_tool_call }
@@ -182,10 +11,7 @@ import from src.workbench.ai.markdown_message { app as MarkdownMessage }
 import from src.workbench.ai.thinking_indicator { app as ThinkingIndicator }
 import from src.workbench.workspace.workspace_service { get_current_workspace }
 
-"""One-line summary for a collapsed tool-step card's header -- the single input value most useful
-to see at a glance without expanding, matching how VS Code's own Copilot Chat renders a collapsed
-tool call (`Read file.ts`, not the full JSON args). Falls back to nothing (just the icon+name) for
-a tool shape this hasn't special-cased -- no attempt to guess a summary from an arbitrary shape."""
+"""Header line for a collapsed tool-step card; `""` for a tool with no known summary field."""
 def _tool_step_summary(name: str, input: dict[str, any]) -> str {
     if "command" in input {
         return str(input["command"]);
@@ -218,6 +44,7 @@ def:pub app(active: bool, pendingPrompt: str, pendingAutoSend: bool, pendingNonc
     def toggle_tool_step_expanded(tool_use_id: str) -> None;
     async def handle_approval_decision(tool_use_id: str, decision: str) -> None;
 
+    # Keyed on the nonce, not the text: a repeated identical prompt must still fire.
     useEffect(lambda {
         if pendingNonce > 0 {
             input_text = pendingPrompt;

@@ -1,33 +1,8 @@
-"""MarkdownMessage: renders a chat message's text as real markdown -- headers, code blocks, lists,
-bold/italic, links -- instead of the raw pre-wrap plain text every message used to get. A real user
-testing the shipped Claude Code integration found this live: a response's own literal ```/**
-markdown syntax was showing up unrendered in the chat panel, not interpreted. Shared by
-`ai_chat.jac`'s sidebar (assistant text entries) and `inline_chat_widget.jac`'s popover
-(`response_text`) -- both hit the identical gap, so this is one component, not two copies of the
-same styling.
-
-**Styled via `react-markdown`'s own `components` override map, not a stylesheet** -- matching every
-other component in this project, which styles with inline `style={{}}` objects, not global CSS
-classes. `react-markdown` renders semantic HTML (`<h1>`, `<pre>`, `<ul>`, ...) with zero built-in
-styling by design, so every tag this project's messages can realistically contain gets its own
-small styled override below, tuned for a narrow, dark chat panel (headings capped at a small size
-that doesn't blow out a ~260-500px column, code blocks matching Monaco's own dark background).
-
-**Not `dangerouslySetInnerHTML` + a separate sanitizer** -- `react-markdown` parses to a real AST
-and renders real React elements itself, so there's no raw-HTML injection step to sanitize in the
-first place; a message containing literal `<script>` text renders as inert text, not markup, by
-construction.
-
-**`{ default as Markdown }`, not a plain `{ Markdown }` -- found live, via a real browser error
-(`E7001: has no export named 'Markdown'`), not assumed from the package's own `.d.ts`.**
-`react-markdown`'s `lib/index.js` genuinely has `Markdown` as a named export, but the package's
-actual `exports` entry point (`index.js`, what `"react-markdown"` resolves to) re-exports it only
-as `Markdown as default` alongside a few others as real named exports (`MarkdownAsync`,
-`MarkdownHooks`) -- so a plain named import compiles fine (the `.d.ts` shows a named `Markdown`
-declaration) but fails to link at runtime, since there's no such binding at the actual resolved
-entry point. The fix matches this project's own documented pattern for exactly this shape
-(`jac guide jac-types`'s own `mermaid` example): bind the default export to a local name via
-`{ default as Markdown }`, inside the same `import from` block."""
+"""Renders chat message text as markdown; shared by `ai_chat.jac` and `inline_chat_widget.jac`.
+Styled through `react-markdown`'s `components` override map, since it ships no styling of its own
+and this project uses inline styles rather than CSS classes.
+The import must be `{ default as Markdown }` -- the package's resolved entry point exports it only
+as the default, so a plain named import compiles but fails to link at runtime (E7001)."""
 
 import from "react-markdown" { default as Markdown }
 

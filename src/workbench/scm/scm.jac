@@ -1,63 +1,7 @@
-"""Scm: Phase 4's source-control sidebar view (`docs/roadmap.md`) -- the third real entry in
-`activity_bar.jac`'s `VIEWS`, mounted mount-once-hide-via-CSS alongside `FileTreeApp`/`SearchApp`
-(`workbench.jac`'s own established convention for a stateful sidebar view since Search landed).
-
-**A provider-agnostic shell over one real provider, matching the roadmap's own framing** -- this
-component only ever talks to `git_service.jac`'s functions, never a shell command directly; a
-second VCS provider later would mean swapping the import, not restructuring this view.
-
-**Four flat sections (Merge Changes / Staged / Changes / Untracked), not a single mixed list** --
-mirrors `git_service.jac`'s own `get_scm_status` response shape
-(`{"conflicted", "staged", "unstaged", "untracked"}`) directly, the same "render the service's own
-grouping, don't re-derive it" call `search.jac` already made for its file-grouped results. Merge
-Changes renders first (matching real VS Code's own ordering -- the most urgent bucket) and its rows
-are the one place `ScmFileRow` behaves differently: `isConflicted` swaps the usual
-discard/stage-or-unstage pair for a single "Mark as Resolved (Stage)" action, and the row's own
-click opens the plain editor (`onOpenFile`, not `onOpenDiff`) -- see `workbench.jac`'s own docstring
-for why a two-way diff doesn't make sense for a three-way conflict.
-
-**No file-watcher-driven live refresh (deliberate v1 scope, matching `file_tree.jac`'s own lack of
-one).** `refresh_status` is called after every mutating action this view itself performs (stage/
-unstage/discard/commit) plus a manual refresh button, the same "the action that changes state is
-responsible for re-fetching it" shape `file_tree.jac`'s context-menu operations already use
-(`refresh_children` after create/rename/delete) -- a change made *outside* the app (editing a file
-in another program, a `git` command run in the integrated terminal) won't appear until the next
-manual refresh or app action. A real file-watcher is a bigger, separate feature (this project has
-none yet, for any view), not a corner silently cut for SCM specifically.
-
-**`active` prop refreshes on activation -- caught live, not assumed (2026-08-31).** This view mounts
-once at workbench startup, hidden via CSS, the same "mount once, hide via CSS" convention every
-other stateful sidebar view uses -- which means a plain `can with entry` fetch (this component's
-first version) fires at that very first mount, *before* the user has opened any folder at all, and
-never again: switching to the Source Control tab later showed a permanently stale "No repository"
-even after opening a real git repo through the Explorer. Confirmed live (`jac browse`): the
-`get_scm_status` endpoint itself returned correct, real data when called directly -- the bug was
-purely this component never re-asking. Fixed the same way `output.jac` already solves the identical
-"mounted early, needs fresh data whenever actually shown" problem: an `active` prop
-(`workbench.jac` passes `active_view_id == "scm"`) drives a `useEffect([active])` that refreshes
-once whenever this view becomes the visible one, not just at first mount.
-
-**Reports a flattened `path -> status letter` map up via `onStatusChange`, for `file_tree.jac`'s
-Explorer decorations** -- the roadmap's own "gutter/tree decorations" phrase names two distinct
-surfaces (`monaco_editor.jac`'s gutter, and the *Explorer* tree, not just this view's own flat
-list), and `workbench.jac` is the natural place to hold that map since it's what already owns both
-`ScmApp` and `FileTreeApp` as siblings. Sent every time `refresh_status` runs (mount-activation,
-after any mutating action, or a manual refresh) -- an Explorer decoration is only ever as fresh as
-this view's own last fetch, the same "no live file-watcher" limitation already scoped above.
-
-**Clicking a file row opens a diff, not the plain file** -- the entire point of the SCM view is
-"what changed," so `onOpenDiff(path, name, staged)` (not a plain `onOpenFile`) is the one click
-action every row shares, whether staged or unstaged. See `scm_diff_editor.jac`'s own docstring for
-how that diff is actually rendered.
-
-**`confirm()` before discard, no confirmation before stage/unstage/commit** -- discarding a
-working-tree change is the one irreversible action here (matches real VS Code's own "Discard
-Changes" confirmation dialog); staging/unstaging/committing are all either reversible or already
-require deliberately typing a commit message, so an extra dialog would just be friction, the same
-calibration `file_tree.jac`'s delete-vs-rename confirmation already applies.
-
-Handler bodies live in the paired `scm.impl.jac` annex, per the client-component "handler annex"
-pattern -- see `jac-studio-code-organization`.
+"""Source-control sidebar view: a shell over `git_service.jac`, rendering its status shape
+(conflicted/staged/unstaged/untracked) as four flat sections.
+Mounts once, hidden via CSS; `useEffect([active])` re-fetches on activation, not just at mount.
+Deliberately ungated unlike tasks/terminal -- see `docs/known-limitations.md`.
 """
 
 import from "react" { useEffect }

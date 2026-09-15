@@ -88,6 +88,19 @@ two additions, both purely presentational like everything else in this file:
   show/hide-on-hover behavior is pure CSS and doesn't need a re-render to drive it. A clean tab's
   close button is unchanged -- always visible, exactly as before this bullet.
 
+**External-change auto-reload (2026-09-04, real-user QA; extended 2026-09-07 to `"gitdiff"` tabs,
+another real, live-reported gap)**: `filesPendingReload` (a `dict[str, int]`, forwarded from
+`workbench.jac` -- see that module's own docstring for the full "never reload a dirty tab" policy,
+and why a `"gitdiff"` tab's own reload is deliberately *not* gated on dirty state there, unlike a
+plain tab's) is looked up per-tab, mirroring `initialCursors`' own lookup shape, and forwarded as
+`reloadNonce` -- keyed by `t["path"]` for a plain tab's `MonacoEditorApp`, by `t["filePath"]` (the
+same real on-disk path) for a `"gitdiff"` tab's `ScmDiffEditorApp` -- defaulting to `0` (no pending
+reload) for a path with no entry either way. The nonce, not any boolean, is what each component's
+own `useEffect` keys off, the same "nonce, not the value" convention `workbench.jac`'s own
+`ai_pending_nonce` already establishes -- see `monaco_editor.jac`'s and `scm_diff_editor.jac`'s own
+docstrings for why a plain boolean wouldn't correctly re-fire on a second, later external change to
+the same still-open tab.
+
 **Go-to-definition (2026-08-31, `docs/roadmap.md` Phase 4's native LSP client bullet)** --
 `onOpenLocation` is forwarded to every mounted `MonacoEditorApp` unmodified, the same "leaf
 reports, parent owns identity" shape `onCursorChange`/`onDirtyChange` already use. It's really
@@ -155,6 +168,7 @@ def:pub app(props: any) -> JsxElement {
     initial_cursors = props["initialCursors"];
     dirty_paths = props["dirtyPaths"];
     on_dirty_change = props["onDirtyChange"];
+    files_pending_reload = props["filesPendingReload"] if "filesPendingReload" in props else {};
     on_open_location = props["onOpenLocation"];
     on_open_command_palette = props["onOpenCommandPalette"];
     on_ask_ai = props["onAskAI"];
@@ -223,13 +237,18 @@ def:pub app(props: any) -> JsxElement {
                         {(
                             <MonacoDiffEditorApp originalPath={t["originalPath"]} modifiedPath={t["modifiedPath"]} />
                         ) if t.get("kind") == "diff" else (
-                            <ScmDiffEditorApp filePath={t["filePath"]} staged={t["staged"]} />
+                            <ScmDiffEditorApp
+                                filePath={t["filePath"]}
+                                staged={t["staged"]}
+                                reloadNonce={files_pending_reload[t["filePath"]] if t["filePath"] in files_pending_reload else 0}
+                            />
                         ) if t.get("kind") == "gitdiff" else (
                             <MonacoEditorApp
                                 path={t["path"]}
                                 onCursorChange={on_cursor_change}
                                 initialCursor={initial_cursors[t["path"]] if t["path"] in initial_cursors else None}
                                 onDirtyChange={on_dirty_change}
+                                reloadNonce={files_pending_reload[t["path"]] if t["path"] in files_pending_reload else 0}
                                 onOpenLocation={on_open_location}
                                 onOpenCommandPalette={on_open_command_palette}
                                 onAskAI={on_ask_ai}

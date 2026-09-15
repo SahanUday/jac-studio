@@ -173,14 +173,126 @@ extension screenshot for direct comparison:**
   where the user's own prompt is visually boxed and the assistant's response flows as plain
   markdown-rendered text below it, unboxed. Matches that same asymmetry here: only `role == "user"`
   gets the card treatment (and drops its own now-redundant role label, since the card itself
-  signals "this is what you typed"); assistant/error entries are unchanged."""
+  signals "this is what you typed"); assistant/error entries are unchanged.
+
+**Fifth QA pass (2026-09-04), testing PRs #71-73 (MCP wiring / tool approval / multi-file edit
+review) surfaced five more real, unrelated gaps -- three genuine feature requests grounded in real
+SDK/product capability, not invented from scratch:**
+
+- **Real model/permission-mode/effort pickers**, not a hardcoded, invisible choice. A user asked
+  for the same controls real Claude Code/Copilot chat surfaces expose. All three map onto fields
+  `ClaudeAgentOptions` already has (confirmed by reading the installed SDK's own dataclass, not
+  assumed) -- see `claude_code_launcher.py`'s own docstring for the full mapping
+  (`permission_mode`'s four values in particular correspond one-to-one to the real extension's own
+  "Manual/Edit automatically/Plan/Auto" mode switcher a side-by-side screenshot showed). `model`
+  still defaults to `"haiku"` on mount, unchanged from before this existed -- this is a picker a
+  user can move off the cheap default for a harder question, not a reversal of that standing
+  choice (see that module's own docstring for why it's pinned as the *default*).
+- **A real `@`-triggered file-attachment picker**, reusing `workspace_service.jac`'s own
+  `list_all_files` (the exact same RPC `quick_open.jac`'s Ctrl+P switcher already calls) rather
+  than a bespoke file-search endpoint. Investigated real VS Code's own file-reference mechanism
+  first, per the request -- reading `chatDynamicVariables.ts`/`chatAttachmentModel.ts` in a real
+  `microsoft/vscode` checkout (`/home/sahan/dev/vs/vscode`) confirmed it resolves a picked file to
+  real content *before* the request goes out, not a hope that inline `@text` gets parsed
+  downstream; `claude_code_client.jac`'s new `_build_prompt_with_attachments` does the same thing
+  here, server-side, right before spawning the launcher. Deliberately not a byte-for-byte port of
+  VS Code's Monaco-decoration-based dynamic-variable system -- this component's input is a plain
+  `<textarea>`, not a Monaco editor instance, so a `CommandDialog` picker (the same primitive
+  `quick_open.jac` already uses) is the proportionate equivalent, not a new editor-embedding
+  exercise. Attachments are one-shot per turn (cleared on send, same as `input_text`) rather than
+  persisted pinned context across a whole conversation -- a deliberate v1 scope cut, not an
+  oversight, to avoid silently re-sending the same file's content (and its token cost) on every
+  follow-up turn.
+- **The sidebar resize/white-background bug** a side-by-side screenshot showed on the Explorer
+  view turned out to be two separate, real gaps in the shadcn `Sidebar` primitive's
+  `collapsible="none"` branch -- see `file_tree.jac`'s and `workbench.jac`'s own docstrings for
+  the full root-cause writeup (a hardcoded `16rem` width regardless of its resizable container, and
+  every one of the five sidebar views' own missing fallback background letting the app's true,
+  never-actually-dark `<body>` show through). Not an AI-chat-specific fix, but found while testing
+  this panel, so recorded here alongside the rest of this pass.
+- **`claude_code_launcher.py`'s `setting_sources` now excludes filesystem settings entirely
+  (`[]`)**, closing a real, live-reproduced bug: asking the agent to create a file literally named
+  `scratch_test.txt` landed it under `~/.claude-scratch/<session-id>/` instead of the open
+  workspace, because this launcher runs as the same OS user as whoever's own separate Claude Code
+  CLI session has a personal global `CLAUDE.md` with exactly that rule. This wasn't a
+  `cwd`-plumbing bug (confirmed `cwd` was correct in the request log), it was inheriting an
+  unrelated person's own tooling preferences purely from running on the same machine. **A first fix
+  attempt, excluding only `"user"`, looked right but re-leaked the identical file live-tested
+  moments later** -- see that module's own docstring for the full, source-verified finding (the
+  `"project"` scope's own CLAUDE.md discovery walks every ancestor directory up to the filesystem
+  root with no special case for `$HOME`, independently rediscovering the exact same global file a
+  different way); full isolation is the only setting that's actually correct here, not a broader
+  fix than necessary.
+
+**Sixth QA pass, same day: a real user confirmed the workspace-file fix above, then found a
+follow-on gap -- a file the agent's own `Write` tool created was genuinely on disk (confirmed with
+their own terminal) but never showed up in the Explorer sidebar, even with the dev server's own
+HMR running (not an HMR gap -- Vite's hot reload only concerns this app's own source recompiling,
+unrelated to workspace files the AI writes).** A first fix wired a dedicated
+`onWorkspaceFileChanged` callback straight from this component's own `tool_result` handling --
+correct, but special-cased to *this app's own AI tool calls* as the only possible cause of an
+external change. **Asked to check how real VS Code handles the general version of this problem,
+and superseded that callback the same day with `workspace_watcher.jac`'s general, cause-agnostic
+file-change watcher instead** (a real `IFileService.onDidFilesChange`-equivalent, covering AI
+writes, terminal commands, `git checkout`, anything) -- see that module's own docstring for the
+full design, and `file_tree.jac`'s for how it consumes the resulting stream. This component no
+longer has any special knowledge of file-tree refreshing at all, which is the correct end state:
+a chat panel reporting its own tool outcomes back to workbench chrome was never really its job."""
 
 import from "react" { useState, useEffect }
 import from src.workbench.ai.claude_code_client { start_chat_turn, approve_tool_call }
 import from src.workbench.ai.ai_tool_diff_preview { app as AiToolDiffPreview }
 import from src.workbench.ai.markdown_message { app as MarkdownMessage }
 import from src.workbench.ai.thinking_indicator { app as ThinkingIndicator }
-import from src.workbench.workspace.workspace_service { get_current_workspace }
+import from src.workbench.workspace.workspace_service { get_current_workspace, list_all_files }
+import from components.ui.command {
+    CommandDialog, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem
+}
+import from src.workbench.file_icons.file_icons { file_icon_class }
+
+glob MODEL_OPTIONS: list[dict[str, str]] = [
+    {"value": "haiku", "label": "Haiku"},
+    {"value": "sonnet", "label": "Sonnet"},
+    {"value": "opus", "label": "Opus"}
+];
+
+"""**History on this list's "Auto" entry, in order, none of it silently dropped:**
+1. Originally sent `"auto"`, on the wrong assumption it was "the SDK's own broadest bypass."
+2. Corrected (same day) to `"bypassPermissions"` on that same wrong assumption, one field
+   (`PermissionMode.ts`'s `external: 'default'`) read in isolation.
+3. **Reverted back to `"auto"`** after a real user, testing this app, contradicted that from their
+   own experience with the real extension -- `permissions.ts`'s actual enforcement code confirmed
+   `"auto"` is a genuine, distinct, classifier-backed mode, nothing like Manual.
+4. **Confirmed live (isolated `claude_agent_sdk.query()` probe, three-way A/B/C, not more source
+   guessing) that `"auto"`'s classifier fast-path is simply inert in the currently-bundled CLI
+   build** -- `"auto"` behaves identically to `"default"` here, for reasons outside this project's
+   control (see `claude_code_launcher.py`'s docstring and tracker entry
+   `2026-09-04-auto-mode-fast-path-not-observed-in-headless-sdk-invocation` for the full,
+   conclusive finding).
+5. **`"bypassPermissions"`, deliberately, again -- this time not a mistake, a considered choice
+   given step 4's finding (2026-09-04, later the same day).** A user, told plainly that "Auto" does
+   nothing useful here right now, asked for what they actually wanted instead: give the agent a
+   complete instruction and let it run end to end, only interrupting the user for a genuine
+   clarifying question (ordinary chat text, not a tool-approval gate) rather than a permission
+   check on every tool call. `"bypassPermissions"` is the real mode that delivers exactly that --
+   confirmed live in step 4's own probe to skip `can_use_tool` unconditionally. This is a materially
+   bigger trust step than `"acceptEdits"`: it also skips Bash and every MCP tool call, not just file
+   writes, with no per-call check at all -- flagged explicitly to the user (and confirmed) before
+   wiring it in, not assumed to be wanted just because "Auto" was the closest existing label."""
+glob PERMISSION_MODE_OPTIONS: list[dict[str, str]] = [
+    {"value": "default", "label": "Manual"},
+    {"value": "acceptEdits", "label": "Edit automatically"},
+    {"value": "plan", "label": "Plan"},
+    {"value": "bypassPermissions", "label": "Auto"}
+];
+
+glob EFFORT_OPTIONS: list[dict[str, str]] = [
+    {"value": "low", "label": "Low"},
+    {"value": "medium", "label": "Medium"},
+    {"value": "high", "label": "High"},
+    {"value": "xhigh", "label": "X-High"},
+    {"value": "max", "label": "Max"}
+];
 
 """One-line summary for a collapsed tool-step card's header -- the single input value most useful
 to see at a glance without expanding, matching how VS Code's own Copilot Chat renders a collapsed
@@ -209,6 +321,12 @@ def:pub app(active: bool, pendingPrompt: str, pendingAutoSend: bool, pendingNonc
     has session_id: str | None = None;
     has pending_approvals: list[dict[str, any]] = [];
     has messages_list_ref: Ref[any] = Ref();
+    has model: str = "haiku";
+    has permission_mode: str = "default";
+    has effort: str = "high";
+    has attach_open: bool = False;
+    has attach_files: list[dict[str, str]] = [];
+    has attached_paths: list[str] = [];
 
     async def handle_send -> None;
     def handle_input_change(e: any) -> None;
@@ -217,6 +335,9 @@ def:pub app(active: bool, pendingPrompt: str, pendingAutoSend: bool, pendingNonc
     def update_tool_step(tool_use_id: str, updates: dict[str, any]) -> bool;
     def toggle_tool_step_expanded(tool_use_id: str) -> None;
     async def handle_approval_decision(tool_use_id: str, decision: str) -> None;
+    async def refresh_attach_files -> None;
+    def handle_attach_select(path: str) -> None;
+    def remove_attached_file(path: str) -> None;
 
     useEffect(lambda {
         if pendingNonce > 0 {
@@ -232,6 +353,12 @@ def:pub app(active: bool, pendingPrompt: str, pendingAutoSend: bool, pendingNonc
             messages_list_ref.current.scrollTop = messages_list_ref.current.scrollHeight;
         }
     }, [messages, is_streaming, pending_approvals]);
+
+    useEffect(lambda {
+        if attach_open {
+            refresh_attach_files();
+        }
+    }, [attach_open]);
 
     can_send = input_text.strip() != "" and not is_streaming;
 
@@ -344,40 +471,107 @@ def:pub app(active: bool, pendingPrompt: str, pendingAutoSend: bool, pendingNonc
                 </div>
                 for a in pending_approvals
             ]}
-            <div style={{"borderTop": "1px solid #2A2B2C", "padding": "0.5rem 0.6rem", "flexShrink": "0", "display": "flex", "gap": "0.4rem", "alignItems": "flex-end"}}>
-                <textarea
-                    value={input_text}
-                    onChange={handle_input_change}
-                    onKeyDown={handle_key_down}
-                    placeholder="Ask AI..."
-                    rows={2}
-                    style={{
-                        "flex": "1",
-                        "background": "#1E1E1E",
-                        "color": "#CCCCCC",
-                        "border": "1px solid #2A2B2C",
-                        "borderRadius": "3px",
-                        "padding": "0.3rem 0.4rem",
-                        "fontFamily": "inherit",
-                        "fontSize": "12px",
-                        "resize": "none"
-                    }}
-                />
-                <button
-                    onClick={handle_send}
-                    disabled={not can_send}
-                    title="Send"
-                    style={{
-                        "background": "transparent",
-                        "border": "none",
-                        "color": "#CCCCCC" if can_send else "#5A5A5A",
-                        "cursor": "pointer" if can_send else "default",
-                        "padding": "0.3rem"
-                    }}
-                >
-                    <span className="codicon codicon-send" style={{"fontSize": "16px"}} />
-                </button>
+            <div style={{"borderTop": "1px solid #2A2B2C", "padding": "0.5rem 0.6rem", "flexShrink": "0", "display": "flex", "flexDirection": "column", "gap": "0.35rem"}}>
+                {(
+                    <div style={{"display": "flex", "flexWrap": "wrap", "gap": "0.3rem"}}>
+                        {[
+                            <span
+                                key={p}
+                                title={p}
+                                style={{"display": "flex", "alignItems": "center", "gap": "0.25rem", "background": "#2A2B2C", "borderRadius": "3px", "padding": "0.1rem 0.4rem", "fontSize": "10px", "color": "#CCCCCC"}}
+                            >
+                                <span className={"codicon " + file_icon_class(p.split("/").pop(), False, False)} style={{"fontSize": "11px"}} />
+                                {p.split("/").pop()}
+                                <span
+                                    role="button"
+                                    onClick={lambda (e: any) { remove_attached_file(p); }}
+                                    className="codicon codicon-close"
+                                    style={{"fontSize": "10px", "cursor": "pointer", "opacity": "0.7"}}
+                                />
+                            </span>
+                            for p in attached_paths
+                        ]}
+                    </div>
+                ) if len(attached_paths) > 0 else None}
+                <div style={{"display": "flex", "gap": "0.4rem", "alignItems": "flex-end"}}>
+                    <textarea
+                        value={input_text}
+                        onChange={handle_input_change}
+                        onKeyDown={handle_key_down}
+                        placeholder="Ask AI... (type @ to attach a file)"
+                        rows={2}
+                        style={{
+                            "flex": "1",
+                            "background": "#1E1E1E",
+                            "color": "#CCCCCC",
+                            "border": "1px solid #2A2B2C",
+                            "borderRadius": "3px",
+                            "padding": "0.3rem 0.4rem",
+                            "fontFamily": "inherit",
+                            "fontSize": "12px",
+                            "resize": "none"
+                        }}
+                    />
+                    <button
+                        onClick={handle_send}
+                        disabled={not can_send}
+                        title="Send"
+                        style={{
+                            "background": "transparent",
+                            "border": "none",
+                            "color": "#CCCCCC" if can_send else "#5A5A5A",
+                            "cursor": "pointer" if can_send else "default",
+                            "padding": "0.3rem"
+                        }}
+                    >
+                        <span className="codicon codicon-send" style={{"fontSize": "16px"}} />
+                    </button>
+                </div>
+                <div style={{"display": "flex", "gap": "0.3rem"}}>
+                    <select
+                        value={permission_mode}
+                        onChange={lambda (e: any) { permission_mode = e.target.value; }}
+                        title="Permission mode"
+                        style={{"flex": "1", "background": "#1E1E1E", "color": "#CCCCCC", "border": "1px solid #2A2B2C", "borderRadius": "3px", "fontSize": "10px", "padding": "0.15rem"}}
+                    >
+                        {[<option key={o["value"]} value={o["value"]}>{o["label"]}</option> for o in PERMISSION_MODE_OPTIONS]}
+                    </select>
+                    <select
+                        value={effort}
+                        onChange={lambda (e: any) { effort = e.target.value; }}
+                        title="Effort"
+                        style={{"flex": "1", "background": "#1E1E1E", "color": "#CCCCCC", "border": "1px solid #2A2B2C", "borderRadius": "3px", "fontSize": "10px", "padding": "0.15rem"}}
+                    >
+                        {[<option key={o["value"]} value={o["value"]}>{o["label"]}</option> for o in EFFORT_OPTIONS]}
+                    </select>
+                    <select
+                        value={model}
+                        onChange={lambda (e: any) { model = e.target.value; }}
+                        title="Model"
+                        style={{"flex": "1", "background": "#1E1E1E", "color": "#CCCCCC", "border": "1px solid #2A2B2C", "borderRadius": "3px", "fontSize": "10px", "padding": "0.15rem"}}
+                    >
+                        {[<option key={o["value"]} value={o["value"]}>{o["label"]}</option> for o in MODEL_OPTIONS]}
+                    </select>
+                </div>
             </div>
         </div>
+        <CommandDialog open={attach_open} onOpenChange={lambda (v: any) { attach_open = v; }}>
+            <CommandInput placeholder="Attach a file by name..." />
+            <CommandList>
+                <CommandEmpty>No matching files.</CommandEmpty>
+                <CommandGroup heading="files">
+                    {[
+                        <CommandItem key={f["path"]} value={f["path"]} onSelect={handle_attach_select}>
+                            <span className={"codicon " + file_icon_class(f["name"], False, False)} style={{"fontSize": "14px", "opacity": "0.85", "flexShrink": "0"}} />
+                            <span>{f["name"]}</span>
+                            <span style={{"marginLeft": "0.5rem", "fontSize": "11px", "color": "#8C8C8C", "overflow": "hidden", "textOverflow": "ellipsis", "whiteSpace": "nowrap"}}>
+                                {f["path"]}
+                            </span>
+                        </CommandItem>
+                        for f in attach_files
+                    ]}
+                </CommandGroup>
+            </CommandList>
+        </CommandDialog>
     </div>
 }

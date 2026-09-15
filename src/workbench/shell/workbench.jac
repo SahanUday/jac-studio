@@ -274,7 +274,60 @@ so triggering the same action twice in a row still fires (a same-value `useEffec
 would silently no-op the second time). `ai_pending_prompt`/`ai_pending_auto_send`/`ai_pending_nonce`
 are deliberately **not** persisted, same call already made for `dirty_paths`/`active_bottom_panel`
 above -- a one-shot request to open the chat panel with a prompt has no meaning to restore after a
-reload."""
+reload.
+
+**The sidebar `ResizablePanel` now carries an explicit `#191A1B` fallback background (2026-09-04,
+real-user QA).** Found live: dragging the sidebar's resize handle wider than the active view's own
+content showed real, stark white, not this app's dark theme -- traced to `styles/global.css`'s
+`:root`/`.dark` split (`main.jac`'s own docstring covers why): `.dark` is applied to a div *inside*
+`body`, so `--background` only flips to its dark value for that div's descendants, while `body`
+itself, an ancestor, keeps `:root`'s light `oklch(1 0 0)` (pure white). Every visible pixel in this
+app is normally covered by some descendant's own explicit dark background (this file's chrome, the
+editor, `ai_chat.jac`'s own `#181818` root, ...) -- but `file_tree.jac`/`scm.jac`/`outline.jac`'s
+plain `<div>` roots never set one of their own, so any area they don't otherwise cover (the file
+tree's own fixed-width bug, see that module's own docstring for the other half of this finding; a
+short result list in Search/SCM/Outline) fell all the way through to that true white `body`. One
+line on the shared container these five views already sit inside, matching the `#191A1B` this
+file's own tab bar/status bar/title bar already use, closes the gap for all of them at once rather
+than patching each view's own root individually.
+
+**Auto-reload an open, undirtied tab when its own file changes on disk externally (2026-09-04,
+real-user QA), matching real VS Code's own `TextFileEditorModelManager.onDidFilesChange` policy --
+"never reload dirty models," confirmed against a real `microsoft/vscode` checkout, not assumed.**
+Reported live: asking the AI Chat to edit a file that was already open in a tab showed "Done" in
+chat, but the open tab kept showing the old content -- `file_tree.jac`'s general watcher
+(`workspace_watcher.jac`) already covered the Explorer tree by this point, but nothing told an
+*already-open editor* its own displayed content was stale. `handle_files_changed_externally` is the
+new receiving end of `FileTreeApp`'s `onFilesChangedExternally` (fed by `workspace_watcher.jac`'s
+own `changed_files`, drawn from real `modified` file-system events, the same OS-level watch the
+Explorer tree already relies on -- see that module's own docstring for why file-level granularity
+was added there specifically for this). VS Code's own policy, read directly from source rather than
+guessed: `TextFileEditorModelManager.onDidFilesChange` reloads a model from disk automatically **only
+if it isn't dirty** -- `if (model.isDirty()) { continue; // never reload dirty models }`, verbatim,
+twice, in that file. This project's own `dirty_paths` (already tracked, see above) is the exact
+equivalent check, applied client-side (see below) rather than in this handler. `MonacoEditorApp`'s
+own docstring covers the client-side half of the plain-tab case (the actual `setValue` call, and why
+it has to suppress its own dirty-tracking `onChange` handler while doing it).
+
+**`"gitdiff"` tabs (2026-09-07, real-user QA) -- a real, live-reported gap in the pass above,
+closed the same day.** Explicitly scoped out at first ("deliberately scoped to plain file tabs
+only... diff/gitdiff tab kinds don't have a single live buffer this reload mechanism targets") --
+but `scm_diff_editor.jac`'s `ScmDiffEditorApp` fetches its diff exactly once at mount and never
+refetches, the identical staleness class, and a real user hit it directly: asked the AI Chat to
+rewrite an already-open-in-a-gitdiff-tab file twice in a row, and the SCM diff view kept showing the
+*first* edit's diff, not the second. `handle_files_changed_externally` now also matches a
+`"gitdiff"`-kind tab (keyed by its own `t["filePath"]`, the same real on-disk path
+`workspace_watcher.jac` reports) into the same shared `files_pending_reload` nonce a plain tab uses.
+**Deliberately does not apply the `dirty_paths` filter here anymore** -- a `"gitdiff"` tab is
+read-only end to end (`scm_diff_editor.jac`'s own docstring: "Read-only, both sides"), has no dirty
+state of its own, and should always refresh; a plain tab sharing the same path stays safe regardless
+of this handler no longer filtering for it, since `MonacoEditorApp`'s own `reload_from_disk` already
+re-checks `dirty` itself immediately before touching anything -- the actual safety guarantee always
+lived there, not in this handler's own filter, so keeping a redundant filter here would only have
+blocked the `"gitdiff"` case for no real reason. `scm_diff_editor.jac`'s own docstring covers the
+client-side half of this case -- simpler than the plain-tab one, since a controlled `DiffEditor`
+component just needs its own `original`/`modified` state reassigned on a fresh fetch, no imperative
+`setValue`/cursor-preservation/dirty-suppression dance needed at all."""
 
 import from "react" { useEffect }
 import from "sonner" { Toaster, toast }
@@ -305,6 +358,8 @@ def:pub app(onToggleTheme: any) -> JsxElement {
     has next_group_id: int = 2;
     has cursor_positions: dict[str, dict[str, int]] = {};
     has dirty_paths: dict[str, bool] = {};
+    has files_pending_reload: dict[str, int] = {};
+    has next_reload_nonce: int = 1;
     has terminal_open: bool = False;
     has active_bottom_panel: str = "terminal";
     has quick_open_open: bool = False;
@@ -336,6 +391,7 @@ def:pub app(onToggleTheme: any) -> JsxElement {
     async def handle_command(command_id: str) -> None;
     def handle_cursor_change(path: str, line: int, column: int) -> None;
     def handle_dirty_change(path: str, is_dirty: bool) -> None;
+    def handle_files_changed_externally(paths: list[str]) -> None;
     def set_context(key: str, value: bool) -> None;
     def context_matches(when: str) -> bool;
     def handle_keydown(e: any) -> None;
@@ -396,6 +452,7 @@ def:pub app(onToggleTheme: any) -> JsxElement {
                     initialCursors={cursor_positions}
                     dirtyPaths={dirty_paths}
                     onDirtyChange={handle_dirty_change}
+                    filesPendingReload={files_pending_reload}
                     onOpenLocation={open_search_result}
                     onOpenCommandPalette={lambda (e: any) { handle_command("workbench.action.showCommands"); }}
                     onAskAI={handle_ask_ai}
@@ -416,9 +473,9 @@ def:pub app(onToggleTheme: any) -> JsxElement {
         <div style={{"display": "flex", "flex": "1", "overflow": "hidden"}}>
             <ActivityBarApp activeViewId={active_view_id} onSelectView={select_view} />
             <ResizablePanelGroup direction="horizontal" style={{"flex": "1"}}>
-                <ResizablePanel defaultSize={18} minSize={12} maxSize={60} style={{"borderRight": "1px solid #2A2B2C", "overflow": "hidden", "position": "relative"}}>
+                <ResizablePanel defaultSize={18} minSize={12} maxSize={60} style={{"borderRight": "1px solid #2A2B2C", "overflow": "hidden", "position": "relative", "background": "#191A1B"}}>
                     <div style={{"display": "block" if active_view_id == "explorer" else "none", "height": "100%"}}>
-                        <FileTreeApp onOpenFile={open_tab} onCompareFiles={open_diff_tab} gitStatus={git_status_by_path} />
+                        <FileTreeApp onOpenFile={open_tab} onCompareFiles={open_diff_tab} gitStatus={git_status_by_path} onFilesChangedExternally={handle_files_changed_externally} />
                     </div>
                     <div style={{"display": "block" if active_view_id == "search" else "none", "height": "100%"}}>
                         <SearchApp onOpenResult={open_search_result} />

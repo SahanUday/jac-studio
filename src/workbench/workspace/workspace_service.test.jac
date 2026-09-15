@@ -153,6 +153,26 @@ test "list_children_by_path collapses two File nodes sharing one path into one e
     assert len(matching) == 1;
 }
 
+"""Regression test for the real, live-reproduced crash (`2026-09-04-list-children-by-path-crashes-
+on-unexpected-contains-target`): a `Workspace` object turning up where a `Contains`-edge target
+should only ever be a `Folder`/`File` used to raise `AttributeError: 'Workspace' object has no
+attribute 'path'` and take the whole call down. The real trigger (some interleaving of concurrent
+requests around `get_or_create_workspace`) wasn't reproducible under `jac test`'s synchronous
+execution -- this constructs the *symptom* directly instead, the same way the duplicate-File test
+above constructs its own symptom rather than the race that would naturally produce it."""
+test "list_children_by_path skips a Contains target that isn't a Folder or File, rather than crashing" {
+    _reset_workspace_cache_for_tests();
+    fixture = make_fixture();
+    ws = get_or_create_workspace(fixture);
+    ws +>:Contains():+> Workspace(root_path="/somewhere/else");
+    ws +>:Contains():+> File(name="a.txt", path=os.path.join(fixture, "a.txt"));
+    ws.scanned = True;
+
+    children = list_children_by_path(fixture);
+
+    assert [c["name"] for c in children] == ["a.txt"];
+}
+
 test "get_current_workspace returns None when nothing has ever been opened" {
     _reset_workspace_cache_for_tests();
 

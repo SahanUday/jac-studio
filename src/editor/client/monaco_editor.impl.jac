@@ -22,7 +22,9 @@ impl app.handle_mount(editor: any, monaco: any) -> None {
         editor.revealPositionInCenter(restored_position);
     }
     position = editor.getPosition();
-    onCursorChange(path, position.lineNumber, position.column);
+    if position {
+        onCursorChange(path, position.lineNumber, position.column);
+    }
     update_breadcrumb();
     decorations_ref.current = editor.createDecorationsCollection([]);
     apply_git_decorations();
@@ -75,6 +77,10 @@ impl app.update_breadcrumb -> None {
         return;
     }
     position = editor_ref.current.getPosition();
+    if not position {
+        breadcrumb_path = [];
+        return;
+    }
     breadcrumb_path = symbol_path_at_position(symbols, position.lineNumber, position.column);
 }
 
@@ -151,10 +157,40 @@ impl app.handle_gutter_click(e: any) -> None {
 }
 
 impl app.handle_content_change(e: any) -> None {
+    if suppress_dirty_ref.current {
+        return;
+    }
     if not dirty {
         dirty = True;
         onDirtyChange(path, True);
     }
+}
+
+"""See this module's own docstring for the full design (why `suppress_dirty_ref`, why cursor
+position is preserved, why `notify_document_save` rather than `notify_document_open`, why `dirty`
+is re-checked here even though `workbench.jac` already filtered for it)."""
+impl app.reload_from_disk -> None {
+    if not editor_ref.current or dirty {
+        return;
+    }
+    result = await open_document(path);
+    fresh_content = result["content"];
+    if fresh_content == content {
+        return;
+    }
+    saved_position = editor_ref.current.getPosition();
+    suppress_dirty_ref.current = True;
+    editor_ref.current.setValue(fresh_content);
+    suppress_dirty_ref.current = False;
+    content = fresh_content;
+    if saved_position {
+        editor_ref.current.setPosition(saved_position);
+        editor_ref.current.revealPositionInCenter(saved_position);
+    }
+    await apply_git_decorations();
+    await notify_document_save(path, fresh_content);
+    await refresh_symbols(fresh_content);
+    update_breadcrumb();
 }
 
 impl app.toggle_inline_chat -> None {

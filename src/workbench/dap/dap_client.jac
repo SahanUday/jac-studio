@@ -1,98 +1,8 @@
-"""DapClient: Phase 4's native Jac Debug Adapter Protocol client (`docs/roadmap.md`'s last Phase 4
-bullet) -- "a debug session can set a breakpoint and step through at least one language's code via
-a real DAP adapter." Confirmed against a real, live end-to-end spike before writing this module (see
-tracker entry `2026-08-31-jaclang-no-native-dap-server-but-debugpy-works-against-compiled-jac-source`
-for the full recipe and the raw DAP transcript this design is drawn from), not assumed from docs.
-
-**jaclang ships no DAP server of its own** -- `jac run --debug` only wires up a bare
-`pdb.Pdb` subclass (`jaclang/runtime/debugger.jac`'s `Jdb`) driven over plain stdio, not a
-JSON-RPC/DAP server the way `jac lsp` is a real LSP server. **`debugpy` (Microsoft's Python DAP
-implementation) works directly against jaclang-compiled bytecode, unverified only until the spike
-above confirmed it live, end to end.** The load-bearing fact: `JacProgram().compile(<f>.jac)
-.gen.py_bytecode`'s resulting code object already has `co_filename` set to the literal `.jac` path
-and a line table that maps 1:1 to real `.jac` source lines -- the same reason `Jdb`'s plain-`pdb`
-breakpoints already work at `.jac` granularity. Since both `pdb` and `debugpy`/pydevd resolve
-breakpoints purely via `frame.f_code.co_filename` + `frame.f_lineno` + `sys.settrace`, a real DAP
-adapter needs zero source-translation step to debug `.jac` files directly -- `dap_launcher.py`
-(this module's sibling, plain Python, not Jac) is the only glue needed: it does the same
-compile-bytecode-then-exec dance `jac run --debug` does internally, exposed as an ordinary `.py`
-entry script debugpy's `--wait-for-client` mode can `runpy.run_path` against.
-
-**Gated behind the same `[terminal] enabled` flag as the terminal and `jac lsp`, for the identical
-reason** -- spawning `python -m debugpy` is a subprocess execution, the same trust class already
-gated project-wide (`lsp_client.jac`'s docstring makes the same call for the same reason).
-
-**Must spawn the embedded runtime's own `python3.14` binary directly, never `sys.executable`.**
-Confirmed live: inside a running `jac run`/`jac run --serve` process, `sys.executable` resolves to
-the `jac` CLI binary itself (a zig-compiled wrapper), not a real Python interpreter -- debugpy's own
-internal adapter-spawn logic can't invoke that (`error: argument COMMAND: invalid choice:
-'.../debugpy/adapter'`, reproduced directly in the spike). `_resolve_embedded_python` instead globs
-`sys.prefix + "/bin/python3*"` for the real interpreter binary jaclang's own runtime is actually
-running under (`~/.cache/jac/rt/<hash>/python/bin/python3.14` on a real dev-mode install) -- derived
-from the live `sys.prefix`, not hardcoded to any one machine's cache hash.
-
-**`PYTHONPATH` must be built from the running process's own `sys.path`, not assumed.** `dap_launcher.py`
-needs `import jaclang...` to resolve inside a *freshly spawned* Python process that starts with no
-knowledge of how the parent `jac` process found jaclang's own source -- confirmed live that omitting
-this fails with a plain `ModuleNotFoundError: No module named 'jaclang'`. `_build_pythonpath` joins
-whatever `sys.path` already contains in the running server process (dev-mode: jaclang's own compiler
-source dir plus the embedded runtime's site dir; a packaged install would have a different but
-equally correct `sys.path` to inherit from) -- this generalizes past dev-mode rather than hardcoding
-either shape.
-
-**The free TCP port is self-allocated, not fixed.** `--listen host:port` needs a real port *before*
-this client can connect (unlike `jac lsp`'s stdio pipes, DAP-over-`--listen` is a TCP client/server
-pair we connect *to*, so there's no "ask the server what port it picked" option -- we'd have nothing
-to connect on to receive that answer). `_find_free_port` binds an ephemeral OS-assigned port,
-immediately releases it, and hands that number to both `--listen` and this client's own connect call
--- the same "find a free port" idiom test frameworks use, with the same small unavoidable
-TOCTOU race (acceptable here: a single local dev-tool session, not a hardened multi-tenant service).
-
-**`-X frozen_modules=off` silences a real debugpy startup warning, not the actual fix for the "runs
-straight through" symptom this project hit live.** debugpy's own first line of stdout is "It seems
-that frozen modules are being used, which may make the debugger miss breakpoints" whenever it isn't
-passed -- debugpy's own documented mitigation, kept here defensively since there's no reason not
-to. The *actual* cause of that symptom in this project, found only after that flag alone didn't fix
-it: `start_debug_session`'s own event loop (see its docstring) treated any DAP event it didn't
-explicitly handle -- `process`, `thread`, `module`, `debugpySockets`, all normal, expected
-handshake chatter -- as a termination signal, breaking out of the loop long before the real
-`stopped` event (which always arrives *after* `thread`) ever had a chance to.
-
-**`start_debug_session` is the one function that must stay a raw SSE stream, not an RPC stub --
-same reasoning as `terminal_service.jac`'s `run_in_terminal`.** A debug session is fundamentally
-server-push: `stopped`/`continued`/`output`/`terminated` events arrive on the adapter's own
-schedule (when a breakpoint fires, when the debuggee prints), not in response to a client request.
-
-**A `Generator`-returning SSE function runs in a genuinely separate OS process from every other
-`def:pub`/`async def:pub` in the same module -- confirmed live, and the reason
-`continue_execution`/`step_over`/`step_into`/`step_out`/`stop_session` can't just reach into a
-shared `glob` the way `lsp_client.jac`'s `_lsp_processes[jid(root)]` does.** A plain `glob` written
-by one RPC call was still empty when read moments later from inside `start_debug_session`'s own
-body in the same browser session -- confirmed by comparing `id()` on both sides (different
-objects) and by one side's `print()` never reaching the other's stdout at all. See
-`_DAP_COMMAND_FILE`'s own docstring (right before `_watch_dap_commands`) for the actual fix: a
-file-based command channel, not shared memory. Logged as tracker entry
-`2026-08-31-sse-generator-endpoint-runs-in-isolated-process-no-shared-glob-state`.
-
-**A real ordering quirk in debugpy's own adapter, confirmed by reading its source
-(`debugpy/adapter/clients.py`), not assumed from the DAP spec.** Its own comment there says it
-outright: pydevd doesn't send `initialized` right after responding to `initialize` the way the DAP
-spec's usual example flow suggests -- it sends `initialized` only while *handling* the `attach`
-request, and doesn't respond to `attach` itself until `configurationDone` arrives. A client that
-`await`s the `attach` response before moving on deadlocks. `_spawn_session` fires `attach` without
-awaiting its response (`_write_dap_request`, not `_send_dap_request`), waits on a dedicated
-`initialized_event` (set by `_read_loop` when it sees that event, kept off the general
-`event_queue` since it's a handshake-internal signal no caller of `start_debug_session` needs to
-see), *then* sends `setBreakpoints`/`configurationDone` -- `attach`'s own response arrives later,
-resolved by the still-running `_read_loop` the normal way, and nothing needs to wait on it.
-
-**A `stopped` event is enriched with `stackTrace`/`scopes`/`variables` before it's yielded, not
-left as the bare DAP event.** The raw DAP `stopped` event only carries a thread id and a reason
-(`"breakpoint"`, `"step"`, ...) -- everything a debugging UI actually needs to *show* (which file
-and line, the call stack, the top frame's local variables) takes three more request/response round
-trips against the same process. Bundling those into one richer event here means the client gets
-everything it needs to render a "stopped here, with these values" view from a single SSE frame,
-rather than the UI having to fire three more RPC calls itself every time execution pauses."""
+"""DAP client for `.jac` files. jaclang ships no DAP server, but debugpy works directly against
+compiled `.jac` bytecode -- `co_filename`/line table already map 1:1 to `.jac` source (tracker
+2026-08-31-jaclang-no-native-dap-server-but-debugpy-works-against-compiled-jac-source).
+Must spawn the embedded runtime's own `python3*`: inside `jac run`, `sys.executable` is the zig
+`jac` wrapper, not an interpreter. Gated on `[terminal] enabled`."""
 
 import asyncio;
 import glob as glob_module;
@@ -121,9 +31,7 @@ def _dap_enabled -> bool {
     return bool(section.get("enabled", False));
 }
 
-"""Picks the embedded runtime's own Python binary from a list of glob-matched candidates --
-factored out as a pure function so the "which one, if several" policy (lexicographically first,
-stable and deterministic) is unit-testable without touching the filesystem."""
+"""Lexicographically first, so the choice among several candidates is deterministic."""
 def:pub _pick_python_binary(candidates: list[str]) -> str | None {
     if len(candidates) == 0 {
         return None;
@@ -136,10 +44,7 @@ def _resolve_embedded_python -> str | None {
     return _pick_python_binary(glob_module.`glob(pattern));
 }
 
-"""Joins `path_entries` (the caller's own `sys.path`) into a `PYTHONPATH` string, dropping empty
-entries (a leading `""` in `sys.path` means "current directory," meaningless once copied into a
-different process's `PYTHONPATH` env var). Takes the list as a parameter rather than reading
-`sys.path` itself so this stays a pure, directly testable function."""
+"""The spawned launcher cannot `import jaclang` without inheriting this process's own `sys.path`."""
 def:pub _build_pythonpath(path_entries: list[str]) -> str {
     entries = [p for p in path_entries if p];
     return os.pathsep.join(entries);
@@ -171,40 +76,16 @@ obj DapProcess {
     has debug_path: str = "";
 }
 
-"""Stores `path`'s breakpoints for the gutter to restore on a later file open -- an ordinary
-`glob`, safe here because every reader/writer of it (`get_breakpoints`, `set_breakpoints`) is a
-plain `async def:pub`/`def:pub` RPC function, never the `Generator`-returning `start_debug_session`
-(see that function's own docstring for why it deliberately never reads this dict)."""
+"""Gutter-restore only; a plain `glob` is safe because `start_debug_session` never reads it."""
 glob _dap_breakpoints: dict[str, list[int]] = {};
 
-"""**A `Generator`-returning SSE function runs in a genuinely separate execution context from every
-other `def:pub`/`async def:pub` in the same module -- confirmed live, not assumed, and the reason
-this module has no `_dap_session`-style glob at all.** A `glob` written by `set_breakpoints` (a
-plain RPC call) was still an empty `{}` when read from *inside* `start_debug_session`'s own body
-moments later in the same browser session -- confirmed by comparing `id(_dap_breakpoints)` on both
-sides (different objects) and by `set_breakpoints`'s own `print()` never appearing in the server's
-stdout log at all, only `start_debug_session`'s did -- the two aren't just different Python module
-instances, they don't even share a stdout stream, which only happens across a real OS process
-boundary. This isn't `jid(root)`-specific either (an earlier, narrower theory) -- a bare unkeyed
-glob shows the identical split. Logged as tracker entry
-`2026-08-31-sse-generator-endpoint-runs-in-isolated-process-no-shared-glob-state`.
-
-**The fix: a file-based command channel, not shared memory.** `start_debug_session` receives
-`lines` as an explicit argument (the client already tracks them) instead of reading
-`_dap_breakpoints`, sidestepping the isolation for the *initial* breakpoint set entirely.
-Mid-session control (`continue`/step/stop) has no such shortcut -- those calls arrive as separate,
-later RPC requests, in the *other* process, needing to reach the live subprocess handle that only
-exists inside `start_debug_session`'s own process. `_DAP_COMMAND_FILE` (a fixed `/tmp` path, not
-`tempfile.gettempdir()` -- caught live: the RPC-process and SSE-process instances disagreed on
-where that resolved to, so a command written by one was never at the path the other polled;
-hardcoding `/tmp` sidesteps needing to know why. Acceptable for a genuinely single-user local dev
-tool, the same scope this module's "one global session" design already assumes) is real, OS-level
-shared state neither process's own memory needs to agree on:
-`continue_execution`/`step_over`/`step_into`/`step_out`/`stop_session`
-each just write a JSON `{"seq", "cmd"}` command to it; `_watch_dap_commands`, a background task
-`start_debug_session` spawns alongside its own event-reading loop, polls that same file (every
-200ms) from *inside* the process that actually holds the live `DapProcess` handle, and dispatches
-each new `seq` it sees as a real DAP request against it."""
+"""Cross-process command channel. `start_debug_session` (SSE generator) runs in a genuinely
+separate OS process from the RPC control calls and shares no `glob` with them (tracker
+2026-08-31-sse-generator-endpoint-runs-in-isolated-process-no-shared-glob-state), so the control
+calls write `{"seq", "cmd"}` here and `_watch_dap_commands` polls it from inside the process that
+holds the live handle. `/tmp` is hardcoded, not `tempfile.gettempdir()` -- the two processes
+disagreed on where that resolved, so a command written by one was never at the path the other
+polled."""
 glob _DAP_COMMAND_FILE: str = "/tmp/jac_studio_dap_command.json";
 
 def:pub _reset_dap_for_tests {
@@ -250,13 +131,8 @@ def _reset_dap_command_file -> None {
     } except Exception {}
 }
 
-"""Polls `_DAP_COMMAND_FILE` for new commands written by `continue_execution`/`step_over`/
-`step_into`/`step_out`/`stop_session` (each running as a separate, later RPC call, in a different
-process -- see this module's own docstring) and dispatches each one against `handle`, the live
-session this task shares a closure with. `last_seq` starts at whatever the file already held when
-the watcher started (not 0) so a stale command left over from a previous session/page load is never
-replayed into a fresh one. Stops on `disconnect` (after actually disconnecting) or once the process
-has exited on its own."""
+"""`last_seq` starts at whatever the file already held, not 0, so a stale command from a previous
+session is never replayed into a fresh one."""
 async def _watch_dap_commands(handle: DapProcess) -> None {
     starting = _read_dap_command();
     last_seq = starting.get("seq", 0) if starting is not None else 0;
@@ -292,10 +168,9 @@ async def _watch_dap_commands(handle: DapProcess) -> None {
     }
 }
 
-"""Writes a DAP `request` frame and registers its pending future, but does **not** await the
-response -- the low-level primitive `_send_dap_request` builds on. Exists as its own function only
-because `attach` (see this module's own docstring) must be fired without waiting for its response,
-unlike every other request this client sends."""
+"""Writes a request without awaiting its response -- `attach` must be fired this way: pydevd sends
+`initialized` while *handling* `attach` and only answers `attach` after `configurationDone`, so
+awaiting it deadlocks (debugpy's own `adapter/clients.py` says so)."""
 async def _write_dap_request(handle: DapProcess, command: str, arguments: dict[str, any]) -> (int, any) {
     seq = handle.next_seq;
     handle.next_seq += 1;
@@ -318,11 +193,8 @@ async def _send_dap_request(handle: DapProcess, command: str, arguments: dict[st
     return result;
 }
 
-"""The background task started once per session, alongside it -- reads every message the adapter
-sends for the rest of the session's life. Responses resolve their matching pending future by
-`request_seq`; the `initialized` event (handshake-internal, see this module's own docstring) sets
-`initialized_event` directly rather than going through `event_queue`; every other event is queued
-for whichever coroutine is draining it (`start_debug_session`'s own stream)."""
+"""Responses resolve their pending future by `request_seq`; `initialized` sets its own event
+(handshake-internal), every other event goes on `event_queue`."""
 async def _read_loop(handle: DapProcess) {
     while True {
         try {
@@ -357,12 +229,8 @@ async def _read_loop(handle: DapProcess) {
     await handle.event_queue.put({"type": "event", "event": "__reader_closed__", "body": {}});
 }
 
-"""Drains the spawned `python -m debugpy` process's own stdout/stderr (piped together, matching
-`terminal_service.jac`'s own `stderr=STDOUT` convention) -- this is the debuggee's real program
-output (a `.jac` file's own `print()` calls, plus debugpy's own startup diagnostics), a genuinely
-different channel from the DAP `stopped`/`continued`/... events `_read_loop` handles, piped
-directly to `event_queue` as a synthetic `output` event so `start_debug_session`'s stream shows it
-without depending on whether the adapter also happens to forward it as a DAP `output` event."""
+"""The debuggee's own stdout -- a different channel from the DAP events `_read_loop` handles,
+queued as a synthetic `output` event rather than relying on the adapter to forward it."""
 async def _drain_process_output(handle: DapProcess) {
     stdout = handle.process.stdout;
     while True {
@@ -377,9 +245,6 @@ async def _drain_process_output(handle: DapProcess) {
     }
 }
 
-"""Converts a raw `stackTrace` response into this module's own `{id, name, line, path}` shape --
-factored out as a pure function, unit-testable against a hand-built response dict, the same role
-`lsp_client.jac`'s `_lsp_location_to_dict` plays for LSP responses."""
 def:pub _dap_stack_frames_from_response(response: any) -> list[dict[str, any]] {
     if not isinstance(response, dict) or not response.get("success") {
         return [];
@@ -396,8 +261,7 @@ def:pub _dap_stack_frames_from_response(response: any) -> list[dict[str, any]] {
     return frames;
 }
 
-"""Converts a raw `scopes` response into the top scope's `variablesReference` (the id `variables`
-needs next) -- `None` when there's no scope at all (a frame with no locals to show)."""
+"""`None` when the frame has no scope at all."""
 def:pub _dap_top_scope_variables_reference(response: any) -> int | None {
     if not isinstance(response, dict) or not response.get("success") {
         return None;
@@ -409,7 +273,6 @@ def:pub _dap_top_scope_variables_reference(response: any) -> int | None {
     return scopes[0].get("variablesReference");
 }
 
-"""Converts a raw `variables` response into this module's own `{name, value, type}` shape."""
 def:pub _dap_variables_from_response(response: any) -> list[dict[str, any]] {
     if not isinstance(response, dict) or not response.get("success") {
         return [];
@@ -421,22 +284,9 @@ def:pub _dap_variables_from_response(response: any) -> list[dict[str, any]] {
     return variables;
 }
 
-"""Runs `python_bin -c "import debugpy"` (with `PYTHONPATH` already pointed at the same env
-`_spawn_session` is about to use) as a cheap, fast preflight before the real spawn-and-connect
-dance -- **the concrete failure this exists for, caught live**: `jac.toml` declares
-`debugpy = ">=1.8.0"`, but that only lands in this project's own `.jac/venv` after an actual
-`jac install` run -- it is not bundled into the embedded runtime cache `_resolve_embedded_python`
-targets. When `.jac/venv` is missing or stale (pruned by this machine's own periodic
-build-artifact cleanup, or simply never installed on a fresh checkout -- see this project's own
-`jac-language` skill for the identical `.jac/venv`-wiped-by-`clean --all` gotcha), the *real*
-`-m debugpy` subprocess spawned further down still starts, but crashes near-instantly with its own
-`ModuleNotFoundError: No module named 'debugpy'` and never binds its listen port -- invisible to
-this client, since `_drain_process_output` isn't wired up until *after* the TCP connect below
-succeeds. Without this preflight, that failure was indistinguishable from a slow adapter: the
-client just sat at "Starting..." for the full `_DAP_CONNECT_TIMEOUT_SECONDS` (15s) before falling
-back to the same generic message every other failure path already produced. Confirmed live (this
-exact scenario, reproduced by emptying `.jac/venv` and hitting Start): five seconds, one specific,
-actionable message, instead of fifteen seconds of silence and a dead end."""
+"""Preflight: debugpy lands in `.jac/venv` via `jac install`, not the runtime cache, and a missing
+one makes the real spawn crash before binding its port -- indistinguishable from a slow adapter
+until the 15s connect timeout expires."""
 async def _check_debugpy_available(python_bin: str, env: dict[str, str]) -> bool {
     try {
         proc = await asyncio.create_subprocess_exec(
@@ -459,16 +309,8 @@ async def _check_debugpy_available(python_bin: str, env: dict[str, str]) -> bool
     }
 }
 
-"""Spawns `python -m debugpy --listen <port> --wait-for-client dap_launcher.py <path>`, connects to
-it as a DAP client, and drives the handshake through `configurationDone` -- see this module's own
-docstring for why each step is shaped the way it is (embedded interpreter, `PYTHONPATH`, the
-`attach`/`initialized` ordering quirk). Returns `(None, reason)` on any failure along the way (no
-embedded Python found, debugpy not installed, spawn failed, connect timed out, handshake timed out)
-rather than raising -- matching this project's established "nothing to attach to" convention for a
-feature that can't proceed, but **carrying the specific reason back to the caller (2026-09-02),
-not just a bare `None`** -- every branch here used to discard *why* it failed, collapsing every
-distinct cause into `start_debug_session`'s one generic "Failed to start the debug session."
-message, exactly the gap that made the missing-`debugpy` case above so slow to diagnose."""
+"""Spawns debugpy and drives the handshake through `configurationDone`; returns `(None, reason)`
+rather than raising, and every branch must carry a specific reason back."""
 async def _spawn_session(path: str, lines: list[int]) -> (DapProcess | None, str) {
     python_bin = _resolve_embedded_python();
     if python_bin is None {
@@ -548,12 +390,8 @@ async def _spawn_session(path: str, lines: list[int]) -> (DapProcess | None, str
     return (handle, "");
 }
 
-"""Stores `lines` as `path`'s breakpoints, purely for the gutter to restore on a later file open --
-does **not** reach a live session (there is no in-memory way to, see this module's own docstring);
-a breakpoint toggled while a session is already running only takes effect on the *next* session,
-a deliberate, small v1 scope cut (live mid-session breakpoint edits are real follow-up work, not
-silently broken -- the caller still gets each line back with `verified: false`, an honest signal
-nothing confirmed it yet)."""
+"""Does not reach a live session -- a breakpoint toggled mid-session applies to the next one, and
+`verified: false` says nothing has confirmed it."""
 async def:pub set_breakpoints(path: str, lines: list[int]) -> list[dict[str, any]] {
     _dap_breakpoints[path] = lines;
     return [{"line": l, "verified": False} for l in lines];
@@ -563,17 +401,9 @@ def:pub get_breakpoints(path: str) -> list[int] {
     return _dap_breakpoints.get(path, []);
 }
 
-"""The one SSE-streamed entry point (see this module's own docstring for why) -- spawns a fresh
-session debugging `path` with `lines` as its breakpoints (passed explicitly by the caller, not read
-from `_dap_breakpoints` -- see this module's own docstring for why), then streams
-`output`/`stopped`/`continued`/`terminated`/`error` events, JSON-encoded one per line, for the rest
-of the session's life, while `_watch_dap_commands` (spawned alongside) handles mid-session control.
-Refuses non-`.jac` paths (this client only knows how to debug the one language `dap_launcher.py`
-knows how to run) with an `error` event rather than raising -- an SSE stream that raises
-mid-response is a worse experience than a stream that explains itself and ends cleanly. Does not
-guard against a second concurrent session server-side (the isolated-process constraint means there
-is no reliable in-memory way to check) -- the client only ever offers one "Start" button, disabled
-while a session is already open, which is enough for this project's single-user scope."""
+"""The one SSE-streamed entry point. `lines` must be passed by the caller, not read from
+`_dap_breakpoints` -- this runs in a separate process (see `_DAP_COMMAND_FILE`). Failures yield an
+`error` event rather than raising, and nothing guards server-side against a second session."""
 async def:pub start_debug_session(path: str, lines: list[int]) -> Generator {
     async def stream -> AsyncGenerator[str, None] {
         if not _dap_enabled() {
@@ -591,12 +421,8 @@ async def:pub start_debug_session(path: str, lines: list[int]) -> Generator {
             yield json.dumps({"type": "error", "message": spawn_error if spawn_error != "" else "Failed to start the debug session."});
             return;
         }
-        # Stored on `handle`, not discarded -- asyncio only holds a *weak* reference to a task once
-        # nothing else references it, so an orphaned `create_task(...)` call can be garbage
-        # collected before it ever does real work. Caught live: the very first version of this line
-        # didn't keep the return value, and every `continue_execution`/step call after a real
-        # breakpoint hit silently did nothing (`handle.reader_task` above already gets the same
-        # treatment for the identical reason).
+        # Must stay referenced: asyncio holds only a weak reference, so an orphaned task is
+        # garbage collected before it does any work.
         handle.watcher_task = asyncio.create_task(_watch_dap_commands(handle));
         yield json.dumps({"type": "started", "path": path});
 
@@ -646,22 +472,15 @@ async def:pub start_debug_session(path: str, lines: list[int]) -> Generator {
                 break;
             }
 
-            # Every other event (process/thread/module/debugpySockets/debugpyWaitingForServer/...)
-            # is normal, expected DAP chatter -- ignored, not a termination signal. Treating any
-            # unhandled event as "terminated" here was a real, live-caught bug: `thread`
-            # ("reason": "started") always arrives *before* the first real `stopped` event, so this
-            # branch broke the loop before a breakpoint ever had a chance to fire.
+            # Unhandled events are normal chatter, never a termination signal -- `thread` always
+            # arrives before the first `stopped`, so breaking here loses every breakpoint.
             continue;
         }
     }
     report stream();
 }
 
-"""Each of these five just writes one command to `_DAP_COMMAND_FILE` -- see this module's own
-docstring for why that's the whole mechanism, and `_watch_dap_commands` for where it's actually
-consumed. None of them can check "is a session even running" (no shared memory to check against);
-the client only offers these controls while its own last-known SSE event said `stopped`, which is
-enough for this project's single-user scope."""
+"""These five write to `_DAP_COMMAND_FILE`; none can check whether a session is running."""
 async def:pub continue_execution -> None {
     _write_dap_command("continue");
 }

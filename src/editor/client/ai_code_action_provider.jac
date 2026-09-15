@@ -1,40 +1,8 @@
-"""register_ai_code_action_provider: the AI code-actions bullet from `docs/architecture.md`'s
-"Reframed 2026-09-03" AI section -- the lightbulb "Fix"/"Explain"/"Modify" menu Copilot's own
-`inlineChatCodeActions.ts` offers (see `docs/research/vscode-copilot-architecture.md`), confirmed
-there to be an ordinary `vscode.CodeActionProvider` with no Copilot-specific mechanism at all: every
-action just builds a prompt and hands it to a generic "start a chat turn" entry point. Monaco's own
-`languages.registerCodeActionProvider` is the identical mechanism, already reachable -- this module
-is that provider, and every action it offers routes to the *already-shipped* `start_chat_turn`
-(via `AIChatApp`, see `onAskAI`'s own note below), not a new backend concept.
-
-**Registered for every language (`"*"`), not just `"jac"`** -- the same call
-`git_conflict_codelens_provider.jac` already made for the identical reason: "Explain this code" or
-"Fix this diagnostic" is just as useful in a `.py`/`.md`/`.ts` file as a `.jac` one, unlike the
-LSP-backed providers in this directory (completion/hover/definition/references/rename), which are
-genuinely jac-specific because `jac lsp` only understands Jac source.
-
-**Routes through `AIChatApp`'s own sidebar panel, not a new backend call or a new UI surface.**
-`docs/architecture.md` names inline chat (a Monaco content-widget popover) as a separate, later
-item -- until that exists, "hand a constructed prompt to chat" means the one chat surface this
-project already has. `onAskAI(promptText, autoSend)` is threaded down from `workbench.jac`
-(`editor_tabs.jac` -> `monaco_editor.jac` -> here), the same "leaf reports, parent owns state" prop
-shape `onOpenLocation`/`onOpenCommandPalette` already use in this same file -- it switches
-`active_view_id` to `"ai_chat"` and hands the prompt to `AIChatApp` as a new prop pair
-(`pendingPrompt`/`pendingNonce`), which that component picks up via `useEffect`. See
-`ai_chat.jac`'s own docstring for the receiving half.
-
-**`autoSend` distinguishes a self-contained request from an open-ended one, matching upstream's own
-`autoSend: true/false` distinction on `editorChat.start(...)` (confirmed in the research doc's own
-reading of `inlineChatCodeActions.ts`).** "Fix" and "Explain" are complete requests the moment
-they're built (a diagnostic's own text, or the selected code) -- sent immediately. "Modify..." only
-prefills an instruction template around the selection; the user still has to say *what* to change,
-so it's deliberately left in the input box, unsent, for them to finish.
-
-**Idempotent by the same `_registered` guard every other provider in this directory uses** --
-`onAskAI` is captured once at first registration, the same established shape
-`jac_definition_provider.jac`'s own `onOpenLocation` capture already relies on (that module's
-docstring covers why a single capture holds up: the callback is a stable method reference that
-reads live component state on each call, not a value snapshotted at registration time)."""
+"""Lightbulb "Fix"/"Explain"/"Modify" code actions via Monaco's `registerCodeActionProvider`.
+Registered for every language (`"*"`), not just `"jac"`, unlike this directory's LSP-backed
+providers. Routes through the existing `AIChatApp` sidebar (`onAskAI`, threaded down from
+`workbench.jac`) rather than a new chat surface. `autoSend` marks "Fix"/"Explain" as complete
+requests sent immediately; "Modify..." only prefills the input box for the user to finish."""
 
 glob _registered: bool = False;
 

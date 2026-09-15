@@ -1,9 +1,6 @@
-"""A dict literal with a variable (non-literal) key -- `{some_var: value}` -- miscompiles client-
-side: `jac2js` emits `{__jacS_some_var.val: value}`, which is invalid JS (a reactive wrapper used
-directly as an object key without `[...]`). Every dict update below goes through a copy-then-
-bracket-assign instead (`updated = {**d}; updated[key] = value; d = updated;`), which avoids
-computed keys inside a literal entirely while still reassigning the whole object each time, per
-this project's reactivity convention (see `text_editor.impl.jac`'s `lines = new_lines;`)."""
+"""Handler bodies for `file_tree.jac`. A dict literal with a variable key (`{some_var: value}`)
+miscompiles client-side -- `jac2js` emits an unbracketed computed key -- so every dict update
+copies, bracket-assigns, then reassigns the field, which also satisfies the reactivity convention."""
 
 impl app._open_path_into_tree(path: str) -> None {
     result = await open_workspace(path);

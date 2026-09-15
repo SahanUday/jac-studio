@@ -1,14 +1,6 @@
-"""CLI entry point for the jac-studio TS->Jac translator tooling.
+"""CLI for the TS->Jac translator: add, status, extract, verify, block.
 
-Five subcommands, each a thin wrapper over src/*.jac:
-  add      eligibility-check a TS source file and queue it in the manifest
-  status   print the manifest grouped by status
-  extract  run structural extraction (exports, signatures, doc comments) for a queued module
-  verify   jac check + jac test a module's Jac output, land or block it
-  block    mark a module blocked and scaffold a tracker-entry draft
-
-See README.md for usage and docs/translator-strategy.md (main jac-studio branch) for the design.
-"""
+Each subcommand is a thin wrapper over src/*.jac. Usage is in README.md."""
 
 import argparse;
 import sys;

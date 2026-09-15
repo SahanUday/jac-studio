@@ -1,21 +1,7 @@
-"""Output: the panel half of VS Code's Output view (`workbench/contrib/output`), rendering
-`output_service.jac`'s channels -- see that module's docstring for why it ships with no real
-producer yet (the task runner/LSP/DAP clients later in this same Phase 4 are the intended first
-callers) and why a channel is a bounded, non-persisted server-side cache rather than a graph node.
-
-**Polls only while actually the visible tab, not always.** This component is mounted once and
-hidden via CSS the same "mount once, hide via CSS" convention `terminal.jac`'s panel already uses
-(see `workbench.jac`'s panel-tab-strip docstring) -- so it can't rely on mount/unmount to know when
-it's the thing the user is actually looking at. `active` is the signal instead: the poll interval
-only runs while this panel is both the selected bottom-panel tab *and* the panel area is open,
-clearing itself the moment either stops being true, so a background producer logging away in
-`output_service.jac` doesn't cost a fetch every 2s for a panel nobody has open.
-
-**Channel selector is a plain native `<select>`, not a shadcn primitive** -- this project has no
-`Select` component installed (`components/ui/` doesn't ship one), and a two-to-few-item dropdown of
-plain text channel names doesn't need Radix's positioning/portal machinery to render correctly;
-matches the same "hand-build the small chrome pieces no primitive fits" call already made for the
-activity bar and the file tree's folder-path input.
+"""Output panel: renders `output_service.jac`'s channels.
+Polls only while `active` (selected tab and panel open), since this mounts once and hides via CSS.
+Channel selector is a plain native `<select>`: no `Select` primitive is installed, and a few-item
+text dropdown doesn't need Radix's positioning machinery.
 """
 
 import from "react" { useEffect }

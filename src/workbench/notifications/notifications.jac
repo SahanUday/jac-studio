@@ -1,41 +1,8 @@
-"""Notifications: the toast + notification-center pair from VS Code's
-`workbench/browser/parts/notifications` (`docs/vscode-complete-triage.md`'s "workbench/browser/parts"
-section, found 2026-08-28 -- see `docs/architecture.md`'s Workbench Shell table, which flags this row
-as having no direct shadcn primitive equivalent for the *center* half; `sonner`
-(`jac install --shadcn sonner`) covers the *toast* half only).
-
-Promoted to the front of Phase 4 (`docs/roadmap.md`) ahead of search/SCM/tasks/LSP, per this
-project's own re-prioritization note: those features all need a way to report background
-success/failure, and there was no UI surface for that at all before this PR.
-
-**State lives in `workbench.jac`, not here** -- `notifications`/`notification_panel_open` follow
-the same "leaf reports, parent owns state" shape every other controlled workbench dialog already
-uses (`CommandPaletteApp`, `QuickOpenApp`): this component is purely presentational, taking the list
-and the open/dismiss/clear callbacks as props. The reason isn't just consistency for its own sake --
-Phase 4's own remaining bullets (search, SCM, task runner, LSP client) will all need to push a
-notification from wherever they're mounted under `WorkbenchApp`, the same way `FileTreeApp` already
-receives `onOpenFile`/`onCompareFiles`; keeping the source of truth at the top means a future feature
-gets `onNotify` threaded to it the same way, not a second, competing state owner.
-
-**The ephemeral toast pop and the persistent history are two different rendered surfaces, both
-driven from the one `add_notification` call site in `workbench.impl.jac`** -- `sonner`'s own
-`toast()` function is a self-contained singleton (no props/context needed to call it from anywhere
-`<Toaster/>` is mounted once), so `workbench.impl.jac` calls it directly at the same point it appends
-to the `notifications` list, rather than this component re-deriving "a new item arrived" from a
-list diff. This module only renders the *history* half: the status-bar bell (badge = current
-history count -- VS Code's own bell badge is also just an unread count, not a separate unread/read
-model this project has any consumer for yet) and the flyout panel listing every notification with
-its severity icon, message, source, and a per-item dismiss button, via the shadcn `Sheet` primitive
-(side="right", matching VS Code's own notification-center placement) rather than a hand-rolled
-overlay.
-
-**Hand-styled hex chrome, not shadcn's `Button`/CSS-variable palette, for the bell trigger itself**
--- matches `status_bar.jac`'s own convention (this component mounts *inside* the status bar), and
-the same acknowledged-but-not-yet-fixed inconsistency `activity_bar.jac`'s docstring already
-documents for every other hand-built piece of chrome. The flyout panel's *content* (header, list,
-footer) uses real shadcn `Sheet*` parts, same as `command_palette.jac` composes `Dialog`/`Command` --
-only the always-visible trigger needs to match its hex-styled status-bar neighbors.
-"""
+"""Notifications: status-bar bell + flyout history panel; `sonner` (mounted elsewhere) covers the
+ephemeral toast half, this renders the persistent history only.
+State lives in `workbench.jac`, not here -- purely presentational, same "leaf reports, parent owns
+state" shape as other controlled dialogs.
+Bell trigger is hand-styled hex to match `status_bar.jac`; flyout content uses real shadcn `Sheet*`."""
 
 import from components.ui.sheet { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetFooter }
 

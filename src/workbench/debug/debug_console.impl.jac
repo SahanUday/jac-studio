@@ -34,6 +34,7 @@ impl app.handle_start -> None {
         buf = raw_frames.pop();
         for frame in raw_frames {
             for line in frame.split(nl) {
+                # Skip event: frames -- the dispatcher's trailing event:end breaks the JSON.parse chain.
                 if line.startswith("data: ") and not frame.startswith("event:") {
                     chunk = JSON.parse(line[6:]) as str;
                     event = JSON.parse(chunk) as dict[str, any];

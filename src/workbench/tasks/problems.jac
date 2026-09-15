@@ -1,30 +1,8 @@
-"""Problems: the Problems panel (`workbench/contrib/markers`, `docs/vscode-complete-triage.md`'s
-`markers` row) -- the read side of `diagnostics.jac`'s `Diagnostic` node type staged in Phase 3, now
-that Phase 4's task runner is the first real producer.
-
-**A third bottom-panel tab, next to Terminal and Output** -- not a sidebar view. Real VS Code's
-Problems panel lives in the same bottom-panel area as its own Terminal/Output, and
-`workbench.jac`'s `_toggle_panel`/`active_bottom_panel` mechanism (generalized in Phase 4's Output
-bullet specifically so a third tab would be a one-branch addition, not new plumbing) already
-anticipated exactly this -- see that module's own docstring.
-
-**Polls only while active, same as `output.jac`** -- mounted once, hidden via CSS, refetching
-`list_all_diagnostics()` via `useEffect([active])` plus a light interval while visible so a task run
-triggered from the picker (which this component has no direct signal from) still shows up without
-requiring a manual reopen. Diagnostics don't change anywhere near output-log frequency, so the
-interval is longer than `output.jac`'s (5s here vs. 2s there) -- there's no benefit to polling
-project-wide diagnostics as aggressively as a live log tail.
-
-**Grouped by file, matching `search.jac`'s own "which files, and where in each" shape** -- a
-Problems list is naturally the same shape as a search-results list (a set of files, each with one
-or more located hits), so this reuses that rendering pattern rather than inventing a flat sorted-by-
-severity table VS Code's own richer Problems view has room for.
-
-**Clicking a row reuses `open_search_result`, not a new handler** -- `workbench.jac`'s
-`open_search_result(path, name, line, column)` already does exactly "open or activate this file's
-tab and seed the cursor at a specific line/column," the same thing clicking a diagnostic needs; a
-`Diagnostic`'s own `path`/`line`/`column` fields map onto that signature directly, so this component
-takes an `onOpenLocation` prop that's really that same method, not a new one."""
+"""Problems panel: the bottom-panel read side of `diagnostics.jac`'s `Diagnostic` node type,
+grouped by file like `search.jac`'s results.
+Polls only while active (`useEffect([active])`, 5s interval) since a task run has no direct signal
+to this component otherwise. Clicking a row reuses `workbench.jac`'s `open_search_result`.
+"""
 
 import from "react" { useEffect }
 import from src.workbench.diagnostics.diagnostics { list_all_diagnostics }

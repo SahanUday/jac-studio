@@ -1,18 +1,8 @@
-"""ThinkingIndicator: the spinner + rotating status word + elapsed-time counter shown while a chat
-turn is in flight -- matches the real Claude Code CLI/extension's own such indicator (a rotating
-whimsical verb like "Pondering… (12s)", not a single static "Thinking…" for the whole turn), shared
-by `ai_chat.jac`'s sidebar and `inline_chat_widget.jac`'s popover since both hit the identical need.
-Not a byte-for-byte reproduction of Anthropic's own exact internal word list (unverifiable from
-here) -- a similarly-spirited rotating set instead, in the same idiom as the real tool's own visible
-UI text.
-
-**Always mounted by the parent (`active={is_streaming}`), not conditionally created/destroyed** --
-internally renders nothing (a bare `<>` fragment) while `active` is false, and resets its own
-`word`/`elapsed` state itself via `useEffect([active])` firing on every false-to-true transition.
-This is what makes a brand-new turn start its own elapsed counter back at 0 and pick a fresh word,
-without the parent needing to manage a remount key or any of that timing itself -- the same
-"parent just passes the current boolean, the leaf owns its own animation state" shape
-`monaco_editor.jac`'s cursor-blink-adjacent timers already use elsewhere in this project."""
+"""ThinkingIndicator: spinner + rotating status word + elapsed-time counter shown while a chat turn
+streams; shared by `ai_chat.jac` and `inline_chat_widget.jac`.
+Always mounted by the parent (`active={is_streaming}`), not conditionally created/destroyed --
+renders nothing while inactive and resets its own `word`/`elapsed` via `useEffect([active])` on
+each false-to-true transition, so a new turn restarts its counter without a parent-managed remount."""
 
 import from "react" { useState, useEffect }
 

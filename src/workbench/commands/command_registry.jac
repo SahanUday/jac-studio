@@ -1,60 +1,8 @@
-"""CommandRegistry: the graph as the contribution registry, per `docs/architecture.md`'s
-"Extension nodes ... Contribute Command/View/Menu nodes (the graph *is* the contribution
-registry)" -- this is Phase 2's first real consumer of that pattern, promoted (same structural
-shape) from the Phase 0 validation in `internal/service-registry-spike/src/command_registry.jac`.
-
-**Metadata lives here; execution doesn't.** A `Command` node holds `command_id`/`title` --
-genuinely persistent, query-reachable, multi-consumer state (what the palette lists, what a
-future extension could contribute into). *Running* a command is a different question: every
-command Phase 2 actually has (split the active editor group, close the active tab, toggle the
-terminal) is a client-side workbench UI-state mutation, not something with a server-side effect to
-invoke -- so unlike the spike's speculative `_handlers`/`run_command`, this version has no handler
-table at all. `src/workbench/command_palette/command_palette.jac` fetches `list_commands()` over
-RPC for display and dispatches execution through `workbench.jac`'s own `handle_command`, entirely
-client-side. Add a server-side `run_command` here only once a real command needs one.
-
-**Seeded lazily, not from a startup hook.** There's no dynamic extension-loading system yet
-(Phase 2 has no `Extension` nodes contributing at runtime), so the fixed Phase 2 command set is
-seeded the first time `list_commands` is called in a given `root`'s lifetime -- `register_command`
-already de-dupes by id, so reseeding on every call is cheap and idempotent, and needs no explicit
-app-boot wiring.
-
-**Keybindings (2026-08-25, `docs/roadmap.md` Phase 2's "when clause" bullet)** -- each `Command`
-carries zero or more `{"key", "when"}` pairs, a list rather than one scalar pair because a single
-command legitimately wants more than one binding (`workbench.action.terminal.toggle` below has
-both an always-on shortcut and one scoped to a specific context). This module still only holds
-*metadata*, matching the split above: `workbench.jac` is what actually matches a keydown's combo
-string against these, evaluates `when`, and dispatches -- see its docstring for the
-context-evaluation layer itself. `when` is a single optionally-`!`-negated context-key name
-(`"terminalFocus"`, `"!terminalFocus"`), not a full boolean-expression grammar like upstream's
-`src/vs/platform/contextkey` (`&&`/`||` per `vscode-feature-gap-analysis.md`) -- nothing here
-needs a compound condition yet, and a single-flag check is a two-line addition to extend into `&&`
-later if something ever does.
-
-**Keybinding overrides (2026-08-28, `docs/roadmap.md` Phase 3's "keybindings as graph-attached
-objects" bullet)** -- `KeybindingOverrides` is a second, separate root-attached node rather than a
-field bolted onto `CommandRegistry`, because it has a different lifecycle: `register_command`
-already re-syncs a `Command`'s `title`/`keybindings` from `BUILTIN_COMMANDS` on every call (so a
-later code change to a command's *default* binding always wins), and mixing a user's persisted
-override into that same resync path would mean every deploy silently reverts it. Keeping the
-override store separate, and applying it only at the `list_commands` read boundary (mirroring
-upstream's own `keybindings.json`-overrides-`package.json`-contributed-defaults model), means a
-built-in default can keep evolving in code without ever touching what a user already customized.
-An override for a `command_id` replaces that command's whole `keybindings` list rather than
-patching one entry -- nothing here needs upstream's more granular add/remove-one-binding model yet.
-
-**`KeybindingOverrides` caches the jid, not the node, and resolves via `jobj()` before mutating
-(2026-08-28).** A raw node object reused across separate requests silently drops any `has`-field
-mutation made through it -- verified live against a real `jac run --serve --dev` restart, not just
-a page reload; see `settings_service.jac`'s docstring for the full finding and tracker entry
-`2026-08-28-field-mutation-on-cached-node-not-persisted`. `get_command_registry`'s own cached
-`CommandRegistry` node does **not** need this fix -- it's only ever used for graph traversal
-(`[reg->:Contributes:->[?:Command]]`), never field-mutated directly, and traversal reads/edge
-creation through a cached object are unaffected by this finding (verified separately). Likewise
-`register_command`'s `existing_command.title = title;` is safe as written: `existing_command` comes
-from a *fresh* traversal query evaluated fresh on every call, never held in a cross-request cache,
-which is the actual distinction this finding turns on.
-"""
+"""Command metadata as graph contributions; execution is entirely client-side in `workbench.jac`.
+Commands are seeded lazily on the first `list_commands` call; user keybinding overrides live in their
+own node so `register_command`'s per-call resync from `BUILTIN_COMMANDS` can't revert them, and that
+node caches the jid and re-resolves via `jobj()` before mutating
+(`2026-08-28-field-mutation-on-cached-node-not-persisted`)."""
 
 import threading;
 
@@ -128,8 +76,7 @@ def get_keybinding_overrides -> KeybindingOverrides {
     return jobj(_cached_keybinding_overrides_jid[key]) as KeybindingOverrides;
 }
 
-"""Replacing, not merging, `keybindings` -- see the module docstring's "Keybinding overrides"
-section for why a whole-list replace is the right granularity today."""
+"""Replaces a command's whole `keybindings` list; there is no per-entry patch."""
 def:pub set_keybinding_override(command_id: str, keybindings: list[dict[str, str]]) {
     store = get_keybinding_overrides();
     updated = {**store.overrides};
@@ -147,23 +94,8 @@ def:pub clear_keybinding_override(command_id: str) -> None {
     store.overrides = updated;
 }
 
-"""Narrows, but does not close, the window for `list_commands`'s check-existing-else-create race
-(two genuinely concurrent callers -- `workbench.jac` and `command_palette.jac` both fetch
-`list_commands()` from their own `can with entry` on the same page load -- can each pass
-`register_command`'s existence check before either finishes creating). **Confirmed insufficient by
-itself, live**: `asyncio.to_thread` (`jaclang/runtimelib/serving/app.jac`) does serialize the
-Python-level function body correctly, but the actual Postgres commit for a `def:pub` happens in
-`_finalize_call_response` *after* the function returns (`jaclang/runtimelib/impl/server.impl.jac`)
--- this lock is released before that commit, so a second call can legitimately start executing
-after the first one's Python code finished and still read a pre-commit view of the graph. jaseci's
-own docs promise a `SERIALIZABLE`-transaction-plus-replay-from-start mechanism for exactly this
-case, but `WriteConflict` is never actually raised anywhere in the current runtime, and
-`Session.commit`'s own conflict recovery blindly re-flushes the same (already-decided) writes
-rather than re-running the check -- so that promised protection doesn't currently fire either. Kept
-because it still narrows the race window for free, but `list_commands` also de-dupes its *return
-value* by `command_id` (see there) as the actual guarantee against a user-visible duplicate, since
-that's the layer this module can control without reaching into unsupported jaseci transaction
-internals."""
+"""Only narrows the create-duplicate race -- a `def:pub`'s commit happens after this lock releases,
+so `list_commands`'s de-dup of its return value is the actual guarantee."""
 glob _registry_lock: threading.Lock = threading.Lock();
 
 def:pub _reset_command_registry_cache_for_tests {
@@ -181,13 +113,9 @@ def get_command_registry -> CommandRegistry {
     return reg;
 }
 
-"""De-dupes by `command_id` but still syncs `title`/`keybindings` onto an already-persisted node
-every call, not just on first creation -- the workspace graph outlives a single dev-server process
-(persisted, not in-memory-only), so a `Command` node created under an older build of
-`BUILTIN_COMMANDS` would otherwise keep serving whatever metadata it had at creation time forever,
-silently ignoring later changes to that command's declared title or keybindings. Caught live: a
-`Command` node for `workbench.action.terminal.toggle` created before this file had a `keybindings`
-field kept returning `[]` after the field was added, until this fix."""
+"""Resyncs `title`/`keybindings` on every call, not just at creation: the graph outlives the process,
+so a node created under an older `BUILTIN_COMMANDS` would otherwise serve its creation-time metadata
+forever."""
 def register_command(command_id: str, title: str, keybindings: list[dict[str, str]]) -> Command {
     reg = get_command_registry();
     matches = [reg->:Contributes:->[?:Command]];
@@ -203,13 +131,8 @@ def register_command(command_id: str, title: str, keybindings: list[dict[str, st
     return fresh;
 }
 
-"""The lock above narrows but doesn't close the race that can leave two `Command` nodes sharing one
-`command_id` (see its docstring for why -- a real, currently-unfixable-upstream gap between when a
-`def:pub`'s Python code finishes and when its write actually commits). De-duping here, on the
-*read* path, is the actual guarantee: even if the graph ends up holding a duplicate node, the
-palette never sees it. Keeps the first match per id and drops the rest, which is safe because any
-duplicate was created from the exact same `BUILTIN_COMMANDS` entry, so their fields are identical
--- there's no "which one is more correct" question to resolve."""
+"""De-dupes by `command_id` on the read path -- keeping the first match is safe since any duplicate
+came from the same `BUILTIN_COMMANDS` entry."""
 def:pub list_commands -> list[dict[str, any]] {
     with _registry_lock {
         for spec in BUILTIN_COMMANDS {

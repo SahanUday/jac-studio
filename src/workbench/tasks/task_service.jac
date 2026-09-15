@@ -1,63 +1,8 @@
-"""TaskService: Phase 4's task-runner-with-problem-matchers deliverable (`docs/roadmap.md`) --
-"proves the contribution model handles a feature with its own persistent config format (a
-task-definitions equivalent to `tasks.json`), not just UI."
+"""Task runner with problem matchers; definitions are project config read off disk from
+`<workspace_root>/.jac-studio/tasks.json`, not this app's settings node.
 
-**Config lives in the workspace, not this app's own graph/settings store.** Unlike
-`settings_service.jac`'s `Settings` node (this *app's* preferences, root-scoped, private to one
-user's session), task definitions are project config in the same spirit as real VS Code's own
-`.vscode/tasks.json` -- meant to be authored once and, realistically, checked into the repo and
-shared with a team, not tied to one user's server-side graph. `<workspace_root>/.jac-studio/
-tasks.json` is this project's native equivalent: a plain JSON array of `{"label", "command",
-"problemMatcher"}` dicts, read/written straight off disk the same way `git_service.jac` reads a
-repo's actual `.git` state rather than caching a shadow copy server-side.
-
-**Gated behind the same `[terminal] enabled` flag as the integrated terminal -- deliberately NOT
-the ungated posture `git_service.jac` took.** A task's `command` is an arbitrary, user-authored
-shell string (`subprocess.run(command, shell=True, ...)`), the same trust class as anything typed
-into the terminal -- unlike git_service's fixed, narrow allowlist of `git` subcommands invoked as
-argument lists, never a shell string, which is what justified that module's own ungated posture.
-Reuses the identical `[terminal]` section (not a second config knob) since running a task and
-running the same command by hand in the terminal are the same risk, just triggered differently.
-
-**Runs to completion, not streamed -- a deliberate v1 scope cut, not the terminal's own reason for
-staying one-shot-per-call.** `terminal_service.jac` streams because its dispatcher offloads only
-the *initial* call onto a worker thread, so a plain sync generator would block the whole event loop
-for a long-running command's full runtime (see that module's own docstring). A **non-generator**
-sync `def:pub`, by contrast, has its *entire* body run via `asyncio.to_thread` -- exactly what
-`git_service.jac`'s own blocking `subprocess.run` calls already rely on safely. So a task's output
-only ever appears all at once, after it finishes, not incrementally while it runs. Real VS Code
-streams task output live; that's real, useful polish worth adding once this lands, not a
-correctness gap in what ships here -- the roadmap's own exit criterion ("a build task's errors show
-up in a Problems panel") doesn't require live streaming to be true.
-
-**Two built-in problem matchers, not an arbitrary user-configurable regex DSL.** VS Code's own
-`problemMatcher` format supports named built-ins (`$tsc`, `$eslint-stylish`, ...) or a full custom
-pattern object; matching that whole surface is out of scope for proving the contribution model
-works. `"generic"` covers the extremely common single-line `file:line:col: severity: message` shape
-(gcc/clang/many linters/most compilers). `"jac"` is this project's own dogfooding case -- parses
-`jac check`'s real two-line output shape (`error[CODE]: message` immediately followed by a
-`  --> path:line:col` line, the exact format seen throughout this project's own development), so
-running `jac check src` as a configured task surfaces this project's *own* compiler diagnostics in
-its own Problems panel. `""`/unset means "no problem matcher" -- output still lands in the Output
-channel, just nothing is parsed into diagnostics.
-
-**Diagnostics are attached via `workspace_service.ensure_path_reachable`, not `get_file_node_by_path`
-directly** -- a problem matcher can name any file in the project, not just ones already expanded in
-the Explorer tree; see that function's own docstring for why `diagnostics.jac`'s existing
-"attach only to an already-reachable File" contract needed a real fix here, not a workaround.
-
-**Every diagnostic from one run shares a single `batch` marker (`time.time()`, generated once per
-`run_task` call), and every path this same task label previously reported on -- not just the ones
-this run's matches still touch -- gets `clear_diagnostics` called on it first.** Both halves are
-needed for "re-running a task shows exactly the current state, nothing stale": the shared `batch`
-is what lets `diagnostics.jac`'s `list_diagnostics` tell a fresh run's diagnostics apart from an
-older run's on a file that's *still* broken (see that module's own docstring for the two failed
-attempts before landing on this -- an unreliable `Reports` edge deletion, then an in-memory index
-that turned out no more reliable across separate requests); clearing every *previously*-reported
-path (via `list_all_diagnostics()`, filtered to `source == label`) is what makes a file that *used*
-to have errors from this task but doesn't anymore actually go quiet, since nothing new would ever
-be attached to supersede its stale batch otherwise.
-"""
+Gated behind `[terminal] enabled` because a task's `command` is an arbitrary shell string. Runs to
+completion, not streamed: a non-generator sync `def:pub` gets its whole body on `asyncio.to_thread`."""
 
 import os;
 import json;
@@ -145,20 +90,9 @@ def _parse_generic(output: str) -> list[dict[str, any]] {
     return results;
 }
 
-"""`jac check`'s real diagnostic shape is two lines: a header immediately followed by a location
-line (`  --> path:line:col`). Scans line-by-line rather than a single multi-line regex -- easier to
-reason about than a `re.MULTILINE` pattern spanning two lines with different leading whitespace, and
-this output isn't large enough for the extra pass to matter.
-
-**The header line is not just `error[CODE]: message` -- caught live against a real `jac check`
-run, not assumed from the docs.** The CLI's own pretty-printer prefixes every header with a glyph
-and a capitalized label (`✖ Error: error[E0013]: 'entry' is a keyword...`, `⚠ warning[W2003]: ...`
-for a warning), so an anchored `^(?:error|warning)\\[...` pattern (this function's first version)
-never matched a single real diagnostic -- confirmed by running the actual fixture used in this
-module's test file through the real CLI and finding zero results instead of the expected one.
-`_JAC_HEADER_PATTERN` uses `re.search` (unanchored) rather than `re.match` for this one line so the
-glyph/label prefix doesn't matter; the location-line pattern stays anchored (`re.match`), since that
-line genuinely has nothing before it."""
+"""`jac check` emits a header line followed by a `  --> path:line:col` line. The header is matched
+unanchored because the CLI prefixes it with a glyph and label (`✖ Error: error[E0013]: ...`); the
+location line stays anchored."""
 def _parse_jac(output: str) -> list[dict[str, any]] {
     lines = output.splitlines();
     results = [];
@@ -194,11 +128,8 @@ def _run_matcher(name: str, output: str) -> list[dict[str, any]] {
     return [];
 }
 
-"""Runs the configured task named `label`, streams its combined stdout/stderr into an
-`"Task: " + label` output channel, then runs the task's own `problemMatcher` (if any) over that
-output and refreshes the `Diagnostic`s for every file the matches touch. Returns a small result
-summary for the caller to report as a toast (`onNotify`), matching the roadmap's own exit criterion
-that a task's completion surfaces one."""
+"""Runs `label`, logs its output to a `"Task: " + label` channel, then refreshes diagnostics for every
+file its `problemMatcher` touches. Every diagnostic from one run shares one `batch` marker."""
 def:pub run_task(label: str) -> dict[str, any] {
     if not _task_runner_enabled() {
         return {"success": False, "exitCode": -1, "diagnosticCount": 0, "error": "The task runner is disabled. Set [terminal] enabled = true in jac.toml to turn it on."};
@@ -248,10 +179,7 @@ def:pub run_task(label: str) -> dict[str, any] {
         abs_path = hit["file"] if os.path.isabs(hit["file"]) else os.path.join(ws["root_path"], hit["file"]);
         touched_paths.add(os.path.normpath(abs_path));
     }
-    # Also clear every path this same task previously reported on, even if this run's matches no
-    # longer touch it -- otherwise a file that HAD errors on the last run but is now clean would
-    # keep showing its stale diagnostics forever (they'd never be superseded by a fresher batch,
-    # since nothing new is being attached to them this run). See this function's own docstring.
+    # a file this run no longer matches gets no fresh batch to supersede its stale one -- clear it here
     previously_reported_paths = set([
         d["path"] for d in list_all_diagnostics() if d["source"] == label
     ]);

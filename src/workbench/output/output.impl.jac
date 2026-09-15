@@ -1,8 +1,5 @@
-"""`refresh` re-fetches both the channel list and the selected channel's content on every poll tick
--- a channel list read is cheap (one server-side dict's keys) and doing it every tick, not just on
-first mount, is what lets a brand-new channel a background producer just started writing to (the
-task runner/LSP client, once they exist) show up in the dropdown without the user having to close
-and reopen the panel."""
+"""Re-fetches the channel list every tick, not just at mount, so a newly created channel appears
+without closing and reopening the panel."""
 
 impl app.refresh -> None {
     fetched_channels = await list_channels();

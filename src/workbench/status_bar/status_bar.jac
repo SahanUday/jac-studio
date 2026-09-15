@@ -1,30 +1,6 @@
-"""StatusBar: Phase 2's fourth workbench-shell deliverable (`docs/roadmap.md`) -- a docked bar
-that echoes the active editor's cursor position. Roadmap scope for this bullet is deliberately
-narrow ("no contributions yet beyond cursor position") -- unlike the command registry, this isn't
-a contribution target yet, so there's nothing here but a render of what `workbench.jac` already
-computed and handed down, same "leaf reports, parent owns state" shape every other workbench-shell
-piece uses.
-
-Purely presentational, like `editor_tabs.jac` -- takes `line`/`column`/`path` and renders, owns no
-state of its own, so there's no paired `.impl.jac` annex.
-
-**Not bright blue anymore (2026-08-28, Phase 3's visual-identity bullet).** This bar used to be
-hardcoded to `#007acc`, matching the classic Dark+ theme's most recognizable signature -- but
-checking VS Code's actual current default theme directly (`extensions/theme-defaults/themes/
-2026-dark.json` in `microsoft/vscode`, confirmed as the real default via
-`ThemeSettingDefaults.COLOR_THEME_DARK` in `workbenchThemeService.ts`) found that VS Code dropped
-the blue status bar as of "Dark 2026": `statusBar.background` is the same flat `#191A1B` as every
-other chrome surface there, with blue (`#3994BC`) reserved only for the debugging-session state.
-See `docs/architecture.md`'s Visual identity section for the full correction -- this project's
-earlier assumption that "Dark+/Light+" was still VS Code's default was wrong, found while doing
-this work, not assumed going in.
-
-**Notification bell (2026-08-31, Phase 4's toast-notifications bullet)** -- `NotificationsApp`
-mounts as one more flex child at the far right, matching VS Code's own bell placement at the
-status bar's right edge. Still purely presentational: `notifications`/`notificationPanelOpen`/
-the three callback props all just forward straight through from `workbench.jac`, which owns the
-actual state (see `notifications.jac`'s own docstring for why the state lives there).
-"""
+"""StatusBar: docked bar echoing the active editor's cursor position, plus the notification bell.
+Purely presentational -- renders what `workbench.jac` hands down, no own state, no `.impl.jac`.
+Flat `#191A1B` background, not classic VS Code blue: current default theme dropped it. See ADR 0033."""
 
 import from src.workbench.notifications.notifications { app as NotificationsApp }
 

@@ -1,9 +1,5 @@
-"""Consumes `start_chat_turn`'s raw SSE stream (`app`'s own docstring explains why this isn't an
-RPC stub) and drives every state update from the events it yields. Mirrors
-`debug_console.impl.jac`'s exact `fetch` + `ReadableStream` reading loop, including the
-two-`JSON.parse` unwrap and the `and not frame.startswith("event:")` guard against the trailing
-`event: end` frame jaclang's own SSE dispatcher always sends -- see that module's own docstring for
-the live-reproduced bug this guard exists to prevent."""
+"""Raw `fetch` over the SSE stream, not an RPC stub: needs the two-`JSON.parse` unwrap and the
+`event:` guard against jaclang's trailing `event: end` frame (as in `debug_console.impl.jac`)."""
 impl app.handle_send -> None {
     if not (input_text.strip() != "" and not is_streaming) {
         return;
@@ -140,11 +136,7 @@ impl app.handle_event(event: dict[str, any]) -> None {
     }
 }
 
-"""Finds the `tool_step` entry with a matching `tool_use_id` and merges `updates` into it in place
-(same shallow-copy-and-replace shape every other `messages`/`pending_approvals` mutation in this
-file already uses). Returns whether a match was found, so a caller can fall back if the step
-somehow isn't there -- a defensive check, not an expected path, since `tool_use_start` always
-creates the step before `tool_use_input`/`tool_result` can reference its id."""
+"""Merges `updates` into the matching `tool_step`; returns whether one was found."""
 impl app.update_tool_step(tool_use_id: str, updates: dict[str, any]) -> bool {
     for (i, m) in enumerate(messages) {
         if m.get("kind") == "tool_step" and m["tool_use_id"] == tool_use_id {
@@ -156,10 +148,6 @@ impl app.update_tool_step(tool_use_id: str, updates: dict[str, any]) -> bool {
     return False;
 }
 
-"""Collapsed by default (`tool_use_start` sets `expanded: False`) -- click the card's header row
-to see the full input/result. Reuses `update_tool_step` rather than a bespoke lookup, at the cost
-of one extra scan to read the current value before flipping it -- this list is at most a handful of
-entries long, not a hot path worth a second bookkeeping structure for."""
 impl app.toggle_tool_step_expanded(tool_use_id: str) -> None {
     current = [m for m in messages if m.get("kind") == "tool_step" and m["tool_use_id"] == tool_use_id];
     if len(current) == 0 {
@@ -168,17 +156,8 @@ impl app.toggle_tool_step_expanded(tool_use_id: str) -> None {
     update_tool_step(tool_use_id, {"expanded": not current[0].get("expanded", False)});
 }
 
-"""Sends the user's decision to `claude_code_client.jac`'s `approve_tool_call` (an ordinary RPC
-call, not part of the SSE stream -- see `app`'s own docstring for why the approval card and the
-message log are kept as separate lists) and removes the resolved card.
-
-**No longer writes a local note into `messages` at all -- see `app`'s own docstring for why.** The
-launcher always follows a decision with a real `tool_result` event (a genuine execution outcome for
-an allow, or the SDK's own synthetic denial `ToolResultBlock` for a deny -- confirmed live via a
-direct `can_use_tool`-denial probe), which lands on the matching `tool_step` card through
-`handle_event`'s own `tool_result` branch. A second, local, optimistic note here would be redundant
-with that authoritative update and could race it -- this method's only remaining job is forwarding
-the decision and clearing the resolved approval card."""
+"""Forwards the decision and clears the card only -- the launcher's own `tool_result` event
+carries the real outcome, so a local note here would race that authoritative update."""
 impl app.handle_approval_decision(tool_use_id: str, decision: str) -> None {
     await approve_tool_call(tool_use_id, decision);
     pending_approvals = [a for a in pending_approvals if a["tool_use_id"] != tool_use_id];

@@ -1,26 +1,8 @@
-"""TaskPicker: the "Tasks: Run Task" flow (`docs/roadmap.md` Phase 4) -- a second `CommandDialog`
-picker, mirroring `command_palette.jac`'s exact shape (fetch a list on mount, `onSelect` reports the
-picked item up, the parent owns what running it actually means) rather than teaching the command
-palette itself about a second, differently-shaped data source.
-
-**Reads `list_tasks()` fresh every time it opens, not once on first mount** -- unlike
-`command_palette.jac`'s `commands` (a fixed, build-time-registered list that never changes within a
-session), `.jac-studio/tasks.json` is a plain file a user can hand-edit at any time; showing a stale
-list from whenever this component first mounted would be actively wrong, not just imprecise. Reruns
-`list_tasks()` on every `open` transition to `True` via `useEffect([open])`, the same "refetch on
-becoming visible" pattern `scm.jac` already established for the identical class of problem (see its
-own docstring for why a plain `can with entry` isn't enough for state that can go stale after
-mount).
-
-**No default keybinding, matching real VS Code's own "Tasks: Run Task" command** -- only "Run Build
-Task" (`Ctrl+Shift+B`, a different, narrower command that auto-picks a single build-group task) has
-one out of the box; the generic picker is reachable through the Command Palette only. Not
-overclaiming a shortcut this project doesn't actually give special build-task-group treatment to.
-
-**Running a task is fire-and-forget from this component's own perspective** -- `onRunTask` (really
-`workbench.jac`'s `run_selected_task`) is called and the dialog closes immediately, the same
-"select, then let the parent do the slow part" shape `command_palette.jac`'s `handle_select`
-already uses; nothing here awaits the task's own completion or blocks the dialog closing on it."""
+"""The "Tasks: Run Task" picker, a `CommandDialog` mirroring `command_palette.jac`'s shape.
+Rereads `list_tasks()` on every `open` transition, not once at mount, since
+`.jac-studio/tasks.json` is a plain file a user can hand-edit at any time.
+`onRunTask` fires and the dialog closes immediately; nothing here awaits task completion.
+"""
 
 import from "react" { useEffect }
 import from src.workbench.tasks.task_service { list_tasks }

@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(jac test:*)",
+      "Bash(jac guide:*)",
+      "Bash(jac clean)",
+      "Bash(gh pr view:*)",
+      "Bash(gh pr list:*)",
+      "Bash(gh pr diff:*)"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/prose-budget.py"
+          }
+        ]
+      }
+    ]
+  }
+}

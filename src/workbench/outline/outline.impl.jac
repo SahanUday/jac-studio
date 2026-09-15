@@ -9,9 +9,7 @@ impl app.refresh_outline -> None {
     loading = False;
 }
 
-"""A variable-key dict literal (`{id: value}`) miscompiles client-side (see `jac-language` skill's
-gotcha list) -- built via a spread copy plus a bracket assignment instead, the same workaround
-`file_tree.impl.jac`'s own toggle uses."""
+"""A variable-key dict literal (`{id: value}`) miscompiles client-side; copy, then bracket-assign."""
 impl app.toggle_symbol(id: str) -> None {
     updated: dict[str, bool] = {**expanded};
     updated[id] = not (expanded[id] if id in expanded else True);

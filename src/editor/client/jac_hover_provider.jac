@@ -1,18 +1,6 @@
-"""register_jac_hover_provider: wires Monaco's own hover-provider API
-(`monaco.languages.registerHoverProvider`) to `lsp_client.jac`'s `get_hover` RPC -- the second
-consumer of Phase 4's native Jac LSP client (`docs/roadmap.md`), following the exact shape
-`jac_completion_provider.jac` already established (idempotent `_registered` guard, a named `async
-def` rather than an inline lambda since the RPC round-trip genuinely returns a `Promise`).
-
-**No cross-file navigation concern here, unlike go-to-definition/find-references (a later PR)** --
-hover is answered entirely in terms of the buffer already open under the cursor, so this file needs
-no `open_search_result`-style callback threaded down from `workbench.jac`, just the `monaco`
-instance `handle_before_mount` already has in hand.
-
-**Returns `None` (not an empty contents array) when `get_hover` has nothing to say.** Monaco's own
-`IHoverProvider` contract treats a falsy return as "no hover here" and shows nothing, the correct
-behavior for whitespace or a token `jac lsp` couldn't resolve a symbol for -- an empty-but-present
-`contents` array would instead render a visible, empty hover widget."""
+"""Wires Monaco's `registerHoverProvider` to `lsp_client.jac`'s `get_hover` RPC. Returns `None`,
+not an empty `contents` array, when there's nothing to say — Monaco renders a visible empty widget
+for the latter."""
 
 import from src.workbench.lsp.lsp_client { get_hover }
 

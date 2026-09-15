@@ -1,20 +1,8 @@
-"""Exercises the pure, stateless pieces directly -- the same scope `lsp_client.test.jac` covers for
-its own module, for the identical reason: the real subprocess lifecycle (`_spawn_session`,
-`_read_loop`, a live `debugpy` handshake) needs `[terminal] enabled = true` and a real spawned
-process, which this repo's own `jac.toml` ships disabled by default. That's verified live instead
-(`jac browse` against a real `jac run --serve --dev` server with the flag temporarily flipped on,
-never committed that way, plus the standalone spike this module's own docstring cites) -- see the
-PR description.
-
-`FakeStream`/`_wrap_read_message` duplicate `lsp_client.test.jac`'s own small helpers rather than
-importing them -- each `.test.jac` annex in this project stays self-contained (see that file's own
-docstring for the two real jaclang bugs `_wrap_read_message`'s shape sidesteps: a bare `await`
-inside a `test` block fails bytecode compilation, and `asyncio.run` on a cross-module async call's
-result mis-infers its type).
-
-No `import from src.workbench.dap.dap_client { ... }` here -- this is `dap_client.jac`'s own
-`.test.jac` annex, which already sees its declarations (and whatever names it imports at module
-scope, `_encode_message`/`_read_message` included) directly."""
+"""Exercises the pure, stateless pieces only, same scope as `lsp_client.test.jac`. Real subprocess
+lifecycle (`_spawn_session`, a live `debugpy` handshake) needs `[terminal] enabled = true`; verified
+live instead (PR description). `FakeStream`/`_wrap_read_message` duplicate `lsp_client.test.jac`'s
+helpers rather than importing them -- see that file's docstring for the jaclang bugs they sidestep.
+"""
 
 import asyncio;
 import os;

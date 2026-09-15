@@ -1,14 +1,7 @@
-"""symbol_icon_class: one shared helper so `outline.jac`'s tree rows and `monaco_editor.jac`'s
-breadcrumb bar pick the same codicon glyph for the same LSP `SymbolKind`, rather than two
-components independently guessing at a mapping and drifting apart -- the same reasoning
-`file_icons.jac`'s own docstring gives for file-type icons.
-
-**Only the five `SymbolKind` values `jac lsp`'s own outline builder ever emits, not the full LSP
-enum.** Confirmed against `utils.impl.jac`'s `kind_map`: `Function`(12)/`Enum`(10)/`Class`(5)/
-`Module`(2)/`Variable`(13) are the only kinds `get_symbols_for_outline` produces, so mapping the
-rest of LSP's ~26-value `SymbolKind` enum would be dead code until `jac lsp` itself grows richer
-outline data -- `codicon-symbol-misc` is the honest fallback for anything else, not a silently
-wrong guess."""
+"""symbol_icon_class: shared codicon mapping so `outline.jac` and `monaco_editor.jac`'s breadcrumb
+agree on a symbol's icon. Only covers the 5 `SymbolKind` values `jac lsp`'s outline builder ever
+emits (Function/Enum/Class/Module/Variable) -- `codicon-symbol-misc` is the honest fallback, not
+full LSP `SymbolKind` coverage."""
 
 glob _SYMBOL_KIND_ICON: dict[int, str] = {
     2: "codicon-symbol-module",

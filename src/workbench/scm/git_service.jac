@@ -1,45 +1,8 @@
-"""GitService: Phase 4's source-control provider (`docs/roadmap.md`) -- a first, git-specific
-implementation of the "provider-agnostic SCM view" the roadmap describes, talking to the real
-`git` CLI as a subprocess the same way `terminal_service.jac` talks to any other process
-(per `vscode-feature-gap-analysis.md` and `docs/architecture.md`'s Process Execution section).
+"""Source-control provider over the real `git` CLI, one-shot `subprocess.run` per call.
 
-**Not gated behind `[terminal] enabled` (deliberate, distinct from `terminal_service.jac`'s own
-deny-by-default posture).** The terminal's gate exists because an arbitrary shell command is a
-generic remote-code-execution surface; source control is a fixed, narrow set of well-known `git`
-subcommands (status/diff/add/restore/checkout/commit) invoked with argument lists, never a shell
-string -- `asyncio.create_subprocess_shell` vs. `subprocess.run(["git", ...])` is the same
-distinction real VS Code's own bundled Git extension draws (it talks to `git` unconditionally, with
-no separate opt-in, while the *integrated terminal* is its own, separately-gated feature). Matching
-that split here rather than folding SCM behind the terminal flag too.
-
-**One-shot `subprocess.run` per call, not the terminal's streamed async-generator shape.** Every
-git operation here (`status`, `diff`, `add`, `commit`, ...) is a short, bounded command whose full
-output is needed before the caller can do anything useful with it (parse status lines, build a
-diff view) -- there's no "stream partial output to the user as it arrives" requirement the way a
-long-running build/watch command in the terminal has, so a plain synchronous `def:pub` (dispatched
-via `asyncio.to_thread` like any other sync call, per `jaclang/runtimelib/serving/app.jac`) is the
-right shape, matching `search_service.jac`'s own plain-sync precedent over `terminal_service.jac`'s
-async-generator one.
-
-**Resolves the repo root fresh on every call (`git rev-parse --show-toplevel`), not cached.** Unlike
-`workspace_service.jac`'s `jid(root)`-keyed node cache (needed there because resolving/creating a
-graph node is comparatively expensive), a `git rev-parse` call is itself just as cheap as any other
-one-shot git invocation this module already makes per call -- caching it would only save one of the
-several subprocess spawns a single SCM action already costs, not eliminate the dominant cost.
-Keeps every function here trivially stateless and correct across the workspace being closed/reopened
-mid-session, with no cache-invalidation bookkeeping to get wrong.
-
-**Diff content is fetched by content, not by real file path (2026-08-31)** -- see
-`scm_diff_editor.jac`'s docstring for why `get_diff_content` returns raw original/modified strings
-rather than paths for `document_service.open_document` to load: the "original" side (a `git show
-HEAD:<path>` blob) has no real filesystem path to give it.
-
-**Line-level gutter decorations (`get_line_changes`) reuse `difflib.SequenceMatcher`** against the
-same HEAD-blob-vs-working-tree-content pair `get_diff_content` computes for the unstaged case,
-rather than shelling out to `git diff --unified=0`'s own hunk-header format -- Python's stdlib
-opcode output (`"equal"|"replace"|"delete"|"insert"`, each with `(i1, i2, j1, j2)`) is already
-exactly the shape a gutter decoration needs (a contiguous added/modified/removed line range in the
-*current* buffer), with no hunk-header parsing to get subtly wrong."""
+Deliberately not gated behind `[terminal] enabled`: this is a fixed set of `git` subcommands invoked
+as argument lists, never a shell string. The repo root is resolved fresh per call rather than cached
+-- `git rev-parse` costs no more than the other spawns an SCM action already makes."""
 
 import os;
 import subprocess;
@@ -91,26 +54,13 @@ glob _EMPTY_STATUS: dict[str, any] = {
     "is_repo": False, "branch": "", "repo_root": "", "staged": [], "unstaged": [], "untracked": [], "conflicted": []
 };
 
-"""The seven porcelain `XY` codes git itself only ever emits for an unresolved merge conflict --
-confirmed against git's own `git-status` documentation, not guessed from the two-letter shape alone
-(an ordinary `MM`, staged-then-further-modified, is a completely normal non-conflict state that
-happens to also have two non-space letters -- these seven are the actual, complete, closed set)."""
+"""The complete, closed set of porcelain `XY` codes meaning an unresolved merge conflict -- not every
+two-letter code is one (`MM` is ordinary staged-then-modified)."""
 glob _CONFLICT_CODES: set[str] = {"UU", "AA", "DD", "AU", "UA", "DU", "UD"};
 
-"""Parses `git status --porcelain=v1 -z` -- the `-z` (NUL-separated, unquoted paths) form
-specifically so a path containing a space or unusual character round-trips correctly, unlike the
-default human-oriented, potentially-quoted format. Each entry is `"XY " + path`, or for a rename/
-copy, `"XY " + new_path + "\\0" + old_path` (an extra NUL-delimited field this loop consumes and
-discards -- old-path history isn't surfaced in this v1 UI). `X` is the index/staged status, `Y` is
-the working-tree/unstaged status; a bare `??` means untracked, handled as its own bucket rather than
-appearing in both.
-
-**A conflicted file is checked and routed to its own `conflicted` bucket before the ordinary
-staged/unstaged split -- not left to fall through into them.** Without this, `_CONFLICT_CODES`'
-own docstring's real example (`UU`, both letters non-space/non-`?`) would previously have landed in
-*both* `staged` and `unstaged` with a nonsense `status: "U"` in each -- confirmed by reading the
-old logic, not just theorized. The merge-conflict UI (`git_conflict_codelens_provider.jac`) is what
-actually consumes this bucket."""
+"""Parses `git status --porcelain=v1 -z`; `-z` is required so paths with spaces round-trip unquoted,
+and a rename/copy entry carries an extra NUL-delimited old path this loop consumes and discards.
+Conflicts are routed out before the staged/unstaged split, which would otherwise put `UU` in both."""
 def:pub get_scm_status -> dict[str, any] {
     repo_root = _repo_root();
     if repo_root is None {
@@ -162,12 +112,8 @@ def:pub get_scm_status -> dict[str, any] {
     return {"is_repo": True, "branch": branch, "repo_root": repo_root, "staged": staged, "unstaged": unstaged, "untracked": untracked, "conflicted": conflicted};
 }
 
-"""Returns `{"original", "modified"}` content for a git diff view -- `original` is always the
-`HEAD` blob (empty string for a file that doesn't exist there yet: a new/untracked file). `modified`
-is the index (staged) blob for `staged=True`, or the real on-disk working-tree content otherwise.
-Never raises on a missing blob/file -- both sides fall back to `""`, which a diff view renders as
-"everything on the other side was added/removed", the correct display for a brand-new or deleted
-file."""
+"""Returns raw content, not paths -- the `HEAD` blob side has no filesystem path to give. A missing
+blob or file falls back to `""` rather than raising, which renders as a whole-file add/delete."""
 def:pub get_diff_content(path: str, staged: bool) -> dict[str, str] {
     repo_root = _repo_root();
     if repo_root is None {
@@ -190,12 +136,8 @@ def:pub get_diff_content(path: str, staged: bool) -> dict[str, str] {
     return {"original": original, "modified": modified};
 }
 
-"""Line-range decorations for `monaco_editor.jac`'s gutter, computed against `HEAD` vs. the current
-on-disk working-tree content (never the staged/index blob -- a plain open file's gutter should
-reflect what's changed since the last commit, regardless of staging state, matching real VS Code's
-own editor gutter). Returns `[]` for anything that isn't a clean two-content diff (no repo, unreadable
-file) rather than raising -- a gutter with no decorations is the correct display for "nothing to
-compare", not an error state."""
+"""Gutter line ranges, diffed against `HEAD` vs. the working tree -- never the index, so the gutter
+shows what changed since the last commit regardless of staging. Returns `[]` instead of raising."""
 def:pub get_line_changes(path: str) -> list[dict[str, any]] {
     repo_root = _repo_root();
     if repo_root is None {
@@ -261,10 +203,7 @@ def:pub unstage_all -> None {
     _run_git(["restore", "--staged", "."], repo_root);
 }
 
-"""`is_untracked` files have no committed/index version to revert to -- "discard" for those means
-deleting the file itself (matching real VS Code's own confirmation-then-delete behavior for an
-untracked file's Discard Changes action), never `git checkout --`, which only knows how to restore
-a *tracked* file's working-tree copy from the index."""
+"""An untracked file has no version to restore, so discarding it means deleting it, not `git checkout`."""
 def:pub discard_path(path: str, is_untracked: bool) -> None {
     repo_root = _repo_root();
     if repo_root is None {

@@ -16,6 +16,7 @@ impl app.handle_mount(editor: any, monaco: any) -> None {
     _focused_editor_handlers[path] = {"save": handle_save, "toggleInlineChat": toggle_inline_chat};
     _register_global_editor_keybindings(editor, monaco);
     editor.onDidChangeCursorPosition(handle_cursor_change);
+    # must precede the mount-time onCursorChange below, or the restore is clobbered by Monaco's (1, 1)
     if initialCursor {
         restored_position = {"lineNumber": initialCursor["line"], "column": initialCursor["column"]};
         editor.setPosition(restored_position);
@@ -49,28 +50,18 @@ impl app.handle_save -> None {
     update_breadcrumb();
 }
 
-"""Fetches `path`'s current symbol outline (`lsp_client.jac`'s `get_document_symbols`) -- called
-once alongside content load and again after every save, the same freshness policy
-`apply_git_decorations` already uses for the gutter, and for the same reason: a live keystroke-by-
-keystroke refresh would mean a `jac lsp` round trip on every edit, the exact cost this project's
-Monaco integration already refuses to pay for its own content sync."""
+"""Refetched at content load and after every save, never per keystroke."""
 impl app.refresh_symbols(current_content: str) -> None {
     fetched = await get_document_symbols(path, current_content);
     symbols = fetched;
 }
 
-"""The scheduled retry `can with entry` fires once if the first `refresh_symbols` came back empty
--- see this module's own docstring for why. `update_breadcrumb` runs afterward so the visible
-breadcrumb actually picks up newly-arrived symbols without needing another cursor move."""
+"""Fires once when the first symbol fetch came back empty; refreshes the visible breadcrumb too."""
 impl app.retry_refresh_symbols(current_content: str) -> None {
     await refresh_symbols(current_content);
     update_breadcrumb();
 }
 
-"""Recomputes `breadcrumb_path` from the live editor's current cursor position against whatever
-`symbols` currently holds -- called at mount, on every cursor move, and after a save's fresh
-`refresh_symbols` (a save can shift symbol ranges out from under the previously-computed chain, not
-just leave it stale in content)."""
 impl app.update_breadcrumb -> None {
     if not editor_ref.current {
         breadcrumb_path = [];
@@ -94,9 +85,6 @@ impl app.handle_breadcrumb_click(target_line: int, target_column: int) -> None {
     editor_ref.current.focus();
 }
 
-"""Fetches the current `HEAD`-vs-working-tree line ranges and paints them into the gutter --
-called once at mount and again after every save, never on a live keystroke (matching this file's
-own "no per-keystroke round-trip" convention for content itself)."""
 impl app.apply_git_decorations -> None {
     if not decorations_ref.current or not monaco_ref.current {
         return;
@@ -119,9 +107,6 @@ impl app.handle_cursor_change(e: any) -> None {
     update_breadcrumb();
 }
 
-"""Paints a red dot into the glyph margin for every line in `breakpoint_lines` -- called once at
-mount (after the stored breakpoints load) and again after every toggle, the same "the action that
-changes state re-applies the decorations" convention `apply_git_decorations` already uses."""
 impl app.apply_breakpoint_decorations -> None {
     if not breakpoints_ref.current or not monaco_ref.current {
         return;
@@ -137,10 +122,6 @@ impl app.apply_breakpoint_decorations -> None {
     breakpoints_ref.current.set(js_decorations);
 }
 
-"""Toggles a breakpoint on the clicked line and persists it via `dap_client.jac`'s
-`set_breakpoints` -- only reacts to a click inside the glyph margin specifically
-(`MouseTargetType.GUTTER_GLYPH_MARGIN`), not the line-decorations lane the git gutter already owns
-or a click on the line's own text."""
 impl app.handle_gutter_click(e: any) -> None {
     if not monaco_ref.current {
         return;
@@ -166,9 +147,8 @@ impl app.handle_content_change(e: any) -> None {
     }
 }
 
-"""See this module's own docstring for the full design (why `suppress_dirty_ref`, why cursor
-position is preserved, why `notify_document_save` rather than `notify_document_open`, why `dirty`
-is re-checked here even though `workbench.jac` already filtered for it)."""
+# re-checks `dirty` even though workbench.jac already filtered -- closes the race where typing
+# starts between that filter's decision and this effect running.
 impl app.reload_from_disk -> None {
     if not editor_ref.current or dirty {
         return;

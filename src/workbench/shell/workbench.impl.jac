@@ -159,6 +159,35 @@ impl app.handle_dirty_change(path: str, is_dirty: bool) -> None {
     dirty_paths = updated_dirty_paths;
 }
 
+# bumps a shared nonce for any open path (plain tab by `path`, gitdiff tab by `filePath`) whose
+# file changed. No dirty_paths filter here -- reload_from_disk itself re-checks dirty (ADR 0072).
+impl app.handle_files_changed_externally(paths: list[str]) -> None {
+    open_paths = set();
+    for g in groups {
+        for t in g["tabs"] {
+            if not t.get("kind") {
+                open_paths.add(t["path"]);
+            } elif t.get("kind") == "gitdiff" {
+                open_paths.add(t["filePath"]);
+            }
+        }
+    }
+    updated_reload = {**files_pending_reload};
+    next_nonce = next_reload_nonce;
+    any_changed = False;
+    for p in paths {
+        if p in open_paths {
+            updated_reload[p] = next_nonce;
+            next_nonce = next_nonce + 1;
+            any_changed = True;
+        }
+    }
+    if any_changed {
+        files_pending_reload = updated_reload;
+        next_reload_nonce = next_nonce;
+    }
+}
+
 impl app.handle_command(command_id: str) -> None {
     if command_id == "workbench.action.splitEditorRight" {
         await split_group(active_group_id);

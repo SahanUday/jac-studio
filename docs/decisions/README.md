@@ -79,3 +79,13 @@ exist only because a passing test suite lied and a live reproduction found the t
 | [0065](0065-panel-identity-is-ai-chat.md) | The panel's identity is "AI Chat" | 2026-09-05 | accepted |
 | [0066](0066-maximize-is-a-css-overlay-not-a-remount.md) | Maximize is a CSS overlay, not a remount | 2026-09-05 | accepted |
 | [0067](0067-reuse-proven-libraries-for-solved-problems.md) | Reuse proven libraries for solved problems | 2026-09-15 | accepted |
+| [0068](0068-paint-theme-colors-at-the-root-div.md) | Paint background/color from CSS vars at the one root div | 2026-09-04 | accepted |
+| [0069](0069-ai-chat-fully-isolates-from-host-claude-md.md) | The AI chat subprocess fully isolates from the host's global CLAUDE.md | 2026-09-15 | accepted |
+| [0070](0070-ai-launcher-sets-explicit-system-prompt-preset.md) | The AI launcher sets an explicit system prompt preset | 2026-09-15 | accepted |
+| [0071](0071-workspace-watched-via-os-level-events.md) | Workspace changes are watched via OS-level events, polled from the client | 2026-09-15 | accepted |
+| [0072](0072-auto-reload-clean-tabs-on-external-change.md) | Auto-reload open tabs on a clean external change, never a dirty one | 2026-09-15 | accepted |
+| [0073](0073-sidebar-width-override-via-style-not-classname.md) | Route the sidebar width override through `style`, not `className` | 2026-09-15 | accepted |
+| [0074](0074-null-check-monaco-getposition-everywhere.md) | Null-check `editor.getPosition()` everywhere, matching upstream | 2026-09-15 | accepted |
+| [0075](0075-auto-mode-sends-bypasspermissions.md) | Auto mode sends `bypassPermissions`; real `auto` confirmed inert in this CLI build | 2026-09-15 | accepted |
+| [0076](0076-resolve-chat-attachments-server-side-before-sending.md) | Resolve chat file attachments server-side before sending | 2026-09-15 | accepted |
+| [0077](0077-inline-chat-uses-fixed-permission-mode.md) | Inline chat uses fixed model/permission-mode/effort, not a second picker set | 2026-09-15 | accepted |

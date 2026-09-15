@@ -127,7 +127,10 @@ def:pub get_current_workspace -> dict[str, str] | None {
 The `os.path.exists` filter is load-bearing, not defensive: edge deletion does not reliably commit
 across separate real HTTP requests, so deleted and renamed-away nodes keep reappearing
 (`2026-08-28-edge-deletion-not-committed-across-real-http-requests`). The filesystem is authoritative
-here, and the path de-dup likewise guarantees the display regardless of what the graph holds."""
+here, and the path de-dup likewise guarantees the display regardless of what the graph holds. Also
+skips any `Contains`-edge target that isn't actually a `Folder`/`File` -- a real crash otherwise
+(`2026-09-04-list-children-by-path-crashes-on-unexpected-contains-target`; why one turns up there
+at all is still open)."""
 def:pub list_children_by_path(parent_path: str) -> list[dict] {
     key = jid(root);
     if key not in _path_index or parent_path not in _path_index[key] {
@@ -140,6 +143,9 @@ def:pub list_children_by_path(parent_path: str) -> list[dict] {
     seen_paths: set[str] = set();
     deduped_children = [];
     for child in children {
+        if not hasattr(child, "path") {
+            continue;
+        }
         if child.path in seen_paths or not os.path.exists(child.path) {
             continue;
         }
@@ -275,7 +281,8 @@ node. Returns `None` for a path outside the workspace, the root itself, or one n
 Reads each level off the `Contains` edge, not `_path_index`: `_ensure_scanned` creates nodes without
 indexing them, so an index lookup finds nothing it just scanned. Falls back to a graph query on a
 cache miss for the same reason `list_all_files` does
-(`2026-08-31-cross-module-def-pub-call-sees-empty-glob-cache`)."""
+(`2026-08-31-cross-module-def-pub-call-sees-empty-glob-cache`). Also guards the same
+non-`Folder`/`File` `Contains`-edge case `list_children_by_path` does, closed proactively here too."""
 def:pub ensure_path_reachable(path: str) -> File | None {
     key = jid(root);
     if key in _cached_workspace_jid {
@@ -308,7 +315,10 @@ def:pub ensure_path_reachable(path: str) -> File | None {
     for idx in range(len(parts)) {
         _ensure_scanned(current);
         children = [current->:Contains:->];
-        matches = [c for c in children if c.name == parts[idx] and os.path.exists(c.path)];
+        matches = [
+            c for c in children
+            if hasattr(c, "path") and c.name == parts[idx] and os.path.exists(c.path)
+        ];
         if len(matches) == 0 {
             return None;
         }

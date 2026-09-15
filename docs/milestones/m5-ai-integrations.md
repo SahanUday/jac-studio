@@ -43,3 +43,28 @@ credentials.
 - No mid-turn cancel, a deliberate v1 scope cut, tracked in `roadmap.md`'s M8.
 - Post-closure QA (2026-09-05, sponsor's hands-on testing) fixed: collapsed-by-default tool-step cards, "AI Chat" as the primary identity (not "Claude Code"), a resizable sidebar with a maximize toggle, real markdown rendering for assistant messages, a "Thinking…" status row for in-flight turns, a `Math.floor()` cast compile error, a `react-markdown` default-export mismatch, tool-step cards collapsing to thin bars under flex pressure, and a visible OS scrollbar in the message column.
 - Still unconfirmed, no tracker entry yet: a genuine compile error in one client file may silently strip exports from unrelated files in the client bundle, based on one incident (`workspace_service.jac` losing `create_file`'s export after an unrelated `thinking_indicator.jac` compile error) — not yet reproduced in isolation.
+
+## Second post-closure QA round (2026-09-04 to 2026-09-07)
+
+Further hands-on testing surfaced a longer list of real bugs and product decisions, closed as its
+own PR (#80) after this milestone's own closure. Decisions: [ADR 0068](../decisions/0068-paint-theme-colors-at-the-root-div.md)
+(white-gap bugs, paint theme colors at the root), [0069](../decisions/0069-ai-chat-fully-isolates-from-host-claude-md.md)
+(full CLAUDE.md isolation), [0070](../decisions/0070-ai-launcher-sets-explicit-system-prompt-preset.md)
+(explicit system prompt preset), [0071](../decisions/0071-workspace-watched-via-os-level-events.md)
+(OS-level workspace watcher, replacing SSE then polling), [0072](../decisions/0072-auto-reload-clean-tabs-on-external-change.md)
+(auto-reload clean tabs, extended to `"gitdiff"` tabs), [0073](../decisions/0073-sidebar-width-override-via-style-not-classname.md)
+(sidebar width via `style`), [0074](../decisions/0074-null-check-monaco-getposition-everywhere.md)
+(null-check `getPosition()`), [0075](../decisions/0075-auto-mode-sends-bypasspermissions.md) (Auto
+mode sends `bypassPermissions`), [0076](../decisions/0076-resolve-chat-attachments-server-side-before-sending.md)
+(server-side attachment resolution), [0077](../decisions/0077-inline-chat-uses-fixed-permission-mode.md)
+(inline chat's fixed permission mode).
+
+Blockers logged: `2026-09-04-list-children-by-path-crashes-on-unexpected-contains-target` (a
+`Contains`-edge target that isn't a `Folder`/`File` crashed the whole Explorer tree; also found
+`isinstance` fails identically to the field access it was guarding against — use `hasattr`),
+`2026-09-07-save-session-hits-readonly-transaction-race-upstream` (a real jaseci concurrency bug,
+not fixable from this project's `.jac` source — logged and left open by the sponsor's own call).
+
+An indefinite SSE stream for the first watcher version broke `list_children_by_path` server-wide —
+the same known SSE-generator-isolation risk, but the first time from a stream that never
+disconnects on its own; fixed by polling a stateless `def:pub` function instead (ADR 0071).

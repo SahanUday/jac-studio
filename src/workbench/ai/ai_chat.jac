@@ -2,14 +2,66 @@
 `cwd` must be resolved here and passed in -- a `root`-scoped graph query from inside the SSE
 generator is unreliable (tracker 2026-09-05-sse-generator-root-scoped-graph-query-unreliable).
 Conversation continuity is the round-tripped `session_id`, not client-side history replay;
-approval decisions are never echoed locally, the launcher's own `tool_result` carries the outcome."""
+approval decisions are never echoed locally, the launcher's own `tool_result` carries the outcome.
+Model/permission-mode/effort pickers and the `@`-file-attachment picker (ADR 0076) are the client's
+own per-turn state, sent fresh on every call. Resizable and maximizable (a CSS overlay on this same
+mounted instance, never a remount -- ADR 0066); "AI Chat" is the primary identity, "via Claude Code"
+a caption, since more providers are planned (ADR 0063)."""
 
 import from "react" { useState, useEffect }
 import from src.workbench.ai.claude_code_client { start_chat_turn, approve_tool_call }
 import from src.workbench.ai.ai_tool_diff_preview { app as AiToolDiffPreview }
 import from src.workbench.ai.markdown_message { app as MarkdownMessage }
 import from src.workbench.ai.thinking_indicator { app as ThinkingIndicator }
-import from src.workbench.workspace.workspace_service { get_current_workspace }
+import from src.workbench.workspace.workspace_service { get_current_workspace, list_all_files }
+import from components.ui.command {
+    CommandDialog, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem
+}
+import from src.workbench.file_icons.file_icons { file_icon_class }
+
+glob MODEL_OPTIONS: list[dict[str, str]] = [
+    {"value": "haiku", "label": "Haiku"},
+    {"value": "sonnet", "label": "Sonnet"},
+    {"value": "opus", "label": "Opus"}
+];
+
+"""**History on this list's "Auto" entry, in order, none of it silently dropped:**
+1. Originally sent `"auto"`, on the wrong assumption it was "the SDK's own broadest bypass."
+2. Corrected (same day) to `"bypassPermissions"` on that same wrong assumption, one field
+   (`PermissionMode.ts`'s `external: 'default'`) read in isolation.
+3. **Reverted back to `"auto"`** after a real user, testing this app, contradicted that from their
+   own experience with the real extension -- `permissions.ts`'s actual enforcement code confirmed
+   `"auto"` is a genuine, distinct, classifier-backed mode, nothing like Manual.
+4. **Confirmed live (isolated `claude_agent_sdk.query()` probe, three-way A/B/C, not more source
+   guessing) that `"auto"`'s classifier fast-path is simply inert in the currently-bundled CLI
+   build** -- `"auto"` behaves identically to `"default"` here, for reasons outside this project's
+   control (see `claude_code_launcher.py`'s docstring and tracker entry
+   `2026-09-04-auto-mode-fast-path-not-observed-in-headless-sdk-invocation` for the full,
+   conclusive finding).
+5. **`"bypassPermissions"`, deliberately, again -- this time not a mistake, a considered choice
+   given step 4's finding (2026-09-04, later the same day).** A user, told plainly that "Auto" does
+   nothing useful here right now, asked for what they actually wanted instead: give the agent a
+   complete instruction and let it run end to end, only interrupting the user for a genuine
+   clarifying question (ordinary chat text, not a tool-approval gate) rather than a permission
+   check on every tool call. `"bypassPermissions"` is the real mode that delivers exactly that --
+   confirmed live in step 4's own probe to skip `can_use_tool` unconditionally. This is a materially
+   bigger trust step than `"acceptEdits"`: it also skips Bash and every MCP tool call, not just file
+   writes, with no per-call check at all -- flagged explicitly to the user (and confirmed) before
+   wiring it in, not assumed to be wanted just because "Auto" was the closest existing label."""
+glob PERMISSION_MODE_OPTIONS: list[dict[str, str]] = [
+    {"value": "default", "label": "Manual"},
+    {"value": "acceptEdits", "label": "Edit automatically"},
+    {"value": "plan", "label": "Plan"},
+    {"value": "bypassPermissions", "label": "Auto"}
+];
+
+glob EFFORT_OPTIONS: list[dict[str, str]] = [
+    {"value": "low", "label": "Low"},
+    {"value": "medium", "label": "Medium"},
+    {"value": "high", "label": "High"},
+    {"value": "xhigh", "label": "X-High"},
+    {"value": "max", "label": "Max"}
+];
 
 """Header line for a collapsed tool-step card; `""` for a tool with no known summary field."""
 def _tool_step_summary(name: str, input: dict[str, any]) -> str {
@@ -35,6 +87,12 @@ def:pub app(active: bool, pendingPrompt: str, pendingAutoSend: bool, pendingNonc
     has session_id: str | None = None;
     has pending_approvals: list[dict[str, any]] = [];
     has messages_list_ref: Ref[any] = Ref();
+    has model: str = "haiku";
+    has permission_mode: str = "default";
+    has effort: str = "high";
+    has attach_open: bool = False;
+    has attach_files: list[dict[str, str]] = [];
+    has attached_paths: list[str] = [];
 
     async def handle_send -> None;
     def handle_input_change(e: any) -> None;
@@ -43,6 +101,9 @@ def:pub app(active: bool, pendingPrompt: str, pendingAutoSend: bool, pendingNonc
     def update_tool_step(tool_use_id: str, updates: dict[str, any]) -> bool;
     def toggle_tool_step_expanded(tool_use_id: str) -> None;
     async def handle_approval_decision(tool_use_id: str, decision: str) -> None;
+    async def refresh_attach_files -> None;
+    def handle_attach_select(path: str) -> None;
+    def remove_attached_file(path: str) -> None;
 
     # Keyed on the nonce, not the text: a repeated identical prompt must still fire.
     useEffect(lambda {
@@ -59,6 +120,12 @@ def:pub app(active: bool, pendingPrompt: str, pendingAutoSend: bool, pendingNonc
             messages_list_ref.current.scrollTop = messages_list_ref.current.scrollHeight;
         }
     }, [messages, is_streaming, pending_approvals]);
+
+    useEffect(lambda {
+        if attach_open {
+            refresh_attach_files();
+        }
+    }, [attach_open]);
 
     can_send = input_text.strip() != "" and not is_streaming;
 
@@ -171,40 +238,107 @@ def:pub app(active: bool, pendingPrompt: str, pendingAutoSend: bool, pendingNonc
                 </div>
                 for a in pending_approvals
             ]}
-            <div style={{"borderTop": "1px solid #2A2B2C", "padding": "0.5rem 0.6rem", "flexShrink": "0", "display": "flex", "gap": "0.4rem", "alignItems": "flex-end"}}>
-                <textarea
-                    value={input_text}
-                    onChange={handle_input_change}
-                    onKeyDown={handle_key_down}
-                    placeholder="Ask AI..."
-                    rows={2}
-                    style={{
-                        "flex": "1",
-                        "background": "#1E1E1E",
-                        "color": "#CCCCCC",
-                        "border": "1px solid #2A2B2C",
-                        "borderRadius": "3px",
-                        "padding": "0.3rem 0.4rem",
-                        "fontFamily": "inherit",
-                        "fontSize": "12px",
-                        "resize": "none"
-                    }}
-                />
-                <button
-                    onClick={handle_send}
-                    disabled={not can_send}
-                    title="Send"
-                    style={{
-                        "background": "transparent",
-                        "border": "none",
-                        "color": "#CCCCCC" if can_send else "#5A5A5A",
-                        "cursor": "pointer" if can_send else "default",
-                        "padding": "0.3rem"
-                    }}
-                >
-                    <span className="codicon codicon-send" style={{"fontSize": "16px"}} />
-                </button>
+            <div style={{"borderTop": "1px solid #2A2B2C", "padding": "0.5rem 0.6rem", "flexShrink": "0", "display": "flex", "flexDirection": "column", "gap": "0.35rem"}}>
+                {(
+                    <div style={{"display": "flex", "flexWrap": "wrap", "gap": "0.3rem"}}>
+                        {[
+                            <span
+                                key={p}
+                                title={p}
+                                style={{"display": "flex", "alignItems": "center", "gap": "0.25rem", "background": "#2A2B2C", "borderRadius": "3px", "padding": "0.1rem 0.4rem", "fontSize": "10px", "color": "#CCCCCC"}}
+                            >
+                                <span className={"codicon " + file_icon_class(p.split("/").pop(), False, False)} style={{"fontSize": "11px"}} />
+                                {p.split("/").pop()}
+                                <span
+                                    role="button"
+                                    onClick={lambda (e: any) { remove_attached_file(p); }}
+                                    className="codicon codicon-close"
+                                    style={{"fontSize": "10px", "cursor": "pointer", "opacity": "0.7"}}
+                                />
+                            </span>
+                            for p in attached_paths
+                        ]}
+                    </div>
+                ) if len(attached_paths) > 0 else None}
+                <div style={{"display": "flex", "gap": "0.4rem", "alignItems": "flex-end"}}>
+                    <textarea
+                        value={input_text}
+                        onChange={handle_input_change}
+                        onKeyDown={handle_key_down}
+                        placeholder="Ask AI... (type @ to attach a file)"
+                        rows={2}
+                        style={{
+                            "flex": "1",
+                            "background": "#1E1E1E",
+                            "color": "#CCCCCC",
+                            "border": "1px solid #2A2B2C",
+                            "borderRadius": "3px",
+                            "padding": "0.3rem 0.4rem",
+                            "fontFamily": "inherit",
+                            "fontSize": "12px",
+                            "resize": "none"
+                        }}
+                    />
+                    <button
+                        onClick={handle_send}
+                        disabled={not can_send}
+                        title="Send"
+                        style={{
+                            "background": "transparent",
+                            "border": "none",
+                            "color": "#CCCCCC" if can_send else "#5A5A5A",
+                            "cursor": "pointer" if can_send else "default",
+                            "padding": "0.3rem"
+                        }}
+                    >
+                        <span className="codicon codicon-send" style={{"fontSize": "16px"}} />
+                    </button>
+                </div>
+                <div style={{"display": "flex", "gap": "0.3rem"}}>
+                    <select
+                        value={permission_mode}
+                        onChange={lambda (e: any) { permission_mode = e.target.value; }}
+                        title="Permission mode"
+                        style={{"flex": "1", "background": "#1E1E1E", "color": "#CCCCCC", "border": "1px solid #2A2B2C", "borderRadius": "3px", "fontSize": "10px", "padding": "0.15rem"}}
+                    >
+                        {[<option key={o["value"]} value={o["value"]}>{o["label"]}</option> for o in PERMISSION_MODE_OPTIONS]}
+                    </select>
+                    <select
+                        value={effort}
+                        onChange={lambda (e: any) { effort = e.target.value; }}
+                        title="Effort"
+                        style={{"flex": "1", "background": "#1E1E1E", "color": "#CCCCCC", "border": "1px solid #2A2B2C", "borderRadius": "3px", "fontSize": "10px", "padding": "0.15rem"}}
+                    >
+                        {[<option key={o["value"]} value={o["value"]}>{o["label"]}</option> for o in EFFORT_OPTIONS]}
+                    </select>
+                    <select
+                        value={model}
+                        onChange={lambda (e: any) { model = e.target.value; }}
+                        title="Model"
+                        style={{"flex": "1", "background": "#1E1E1E", "color": "#CCCCCC", "border": "1px solid #2A2B2C", "borderRadius": "3px", "fontSize": "10px", "padding": "0.15rem"}}
+                    >
+                        {[<option key={o["value"]} value={o["value"]}>{o["label"]}</option> for o in MODEL_OPTIONS]}
+                    </select>
+                </div>
             </div>
         </div>
+        <CommandDialog open={attach_open} onOpenChange={lambda (v: any) { attach_open = v; }}>
+            <CommandInput placeholder="Attach a file by name..." />
+            <CommandList>
+                <CommandEmpty>No matching files.</CommandEmpty>
+                <CommandGroup heading="files">
+                    {[
+                        <CommandItem key={f["path"]} value={f["path"]} onSelect={handle_attach_select}>
+                            <span className={"codicon " + file_icon_class(f["name"], False, False)} style={{"fontSize": "14px", "opacity": "0.85", "flexShrink": "0"}} />
+                            <span>{f["name"]}</span>
+                            <span style={{"marginLeft": "0.5rem", "fontSize": "11px", "color": "#8C8C8C", "overflow": "hidden", "textOverflow": "ellipsis", "whiteSpace": "nowrap"}}>
+                                {f["path"]}
+                            </span>
+                        </CommandItem>
+                        for f in attach_files
+                    ]}
+                </CommandGroup>
+            </CommandList>
+        </CommandDialog>
     </div>
 }

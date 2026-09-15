@@ -3,11 +3,17 @@ graph. Children are fetched per folder on first expand and cached in `children_b
 whole-workspace traversal was measured too slow (tracker
 `2026-08-24-workspace-graph-eager-traversal-too-slow-at-scale`). `gitStatus` is owned by
 `workbench.jac` and only consumed here. `<Sidebar collapsible="none">` is required -- the default
-offcanvas variant is `position: fixed` at the viewport edge and swallows activity-bar clicks."""
+offcanvas variant is `position: fixed` at the viewport edge and swallows activity-bar clicks. Its
+own width override must go through `style`, not `className` (ADR 0073). Owns the workspace watch
+connection (ADR 0071), polling and refreshing only the directories it has loaded."""
 
+import from "react" { useEffect }
 import from src.workbench.workspace.workspace_service {
     open_workspace, list_children_by_path, get_current_workspace,
     create_file, create_folder, rename_path, delete_path
+}
+import from src.workbench.workspace.workspace_watcher {
+    check_workspace_changes, start_or_switch_watch
 }
 import from src.workbench.file_icons.file_icons { file_icon_class }
 
@@ -157,6 +163,7 @@ def:pub FileTreeNode(props: any) -> JsxElement {
 def:pub app(props: any) -> JsxElement {
     has on_open_file: any = props["onOpenFile"];
     has on_compare_files: any = props["onCompareFiles"];
+    has on_files_changed_externally: any = props["onFilesChangedExternally"] if "onFilesChangedExternally" in props else None;
     has opened: bool = False;
     has root_path: str = "";
     has root_name: str = "";
@@ -179,6 +186,16 @@ def:pub app(props: any) -> JsxElement {
     async def create_new_folder(parent_path: str) -> None;
     async def rename_item(path: str, parent_path: str, current_name: str) -> None;
     async def delete_item(path: str, parent_path: str, is_dir: bool) -> None;
+    async def poll_workspace_changes -> None;
+
+    useEffect(lambda {
+        if root_path == "" {
+            return;
+        }
+        poll = lambda { poll_workspace_changes(); };
+        timer = setInterval(poll, 1000);
+        return lambda { clearInterval(timer); };
+    }, [root_path]);
 
     async can with entry {
         restored = await get_current_workspace();
@@ -188,7 +205,7 @@ def:pub app(props: any) -> JsxElement {
     }
 
     <SidebarProvider>
-        <Sidebar collapsible="none">
+        <Sidebar collapsible="none" style={{"width": "100%", "minWidth": "0"}}>
             <SidebarHeader>
                 <div style={{"padding": "0.5rem", "display": "flex", "gap": "0.4rem", "fontFamily": "system-ui, sans-serif"}}>
                     <input

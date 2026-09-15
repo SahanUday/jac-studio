@@ -9,7 +9,8 @@ def _build_prompt(editor: any, path: str, instruction: str) -> str {
     return "In " + path + ":\n\n" + instruction;
 }
 
-"""SSE reading loop shared with `ai_chat.impl.jac`/`debug_console.impl.jac`."""
+"""SSE reading loop shared with `ai_chat.impl.jac`/`debug_console.impl.jac`. Fixed
+model/permission-mode/effort, no attachment picker -- see ADR 0077."""
 impl app.handle_submit -> None {
     editor = editorRef.current;
     if not editor or input_text.strip() == "" or is_streaming {
@@ -27,7 +28,15 @@ impl app.handle_submit -> None {
     resp = await fetch("/function/start_chat_turn", {
         "method": "POST",
         "headers": {"Content-Type": "application/json"},
-        "body": JSON.stringify({"prompt": prompt, "session_id": session_id, "cwd": cwd})
+        "body": JSON.stringify({
+            "prompt": prompt,
+            "session_id": session_id,
+            "cwd": cwd,
+            "attached_paths": [],
+            "model": "haiku",
+            "permission_mode": "default",
+            "effort": "high"
+        })
     });
     reader = resp.body.getReader();
     decoder = new(TextDecoder);

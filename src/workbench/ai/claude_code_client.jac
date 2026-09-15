@@ -46,8 +46,37 @@ def _launcher_path -> str {
     return os.path.join(os.path.dirname(os.path.abspath(__file__)), "claude_code_launcher.py");
 }
 
-"""The one SSE-streamed entry point; `session_id` continues an existing conversation via `resume`."""
-async def:pub start_chat_turn(prompt: str, session_id: str | None, cwd: str | None) -> Generator {
+glob _ATTACHMENT_MAX_CHARS: int = 50000;
+
+"""Reads each attached file and prepends its content to the prompt. See ADR 0076."""
+def _build_prompt_with_attachments(prompt: str, attached_paths: list[str]) -> str {
+    if len(attached_paths) == 0 {
+        return prompt;
+    }
+    blocks = [];
+    for path in attached_paths {
+        name = os.path.basename(path);
+        try {
+            with open(path, "r", encoding="utf-8", errors="replace") as f {
+                content = f.read();
+            }
+        } except Exception as exc {
+            blocks.append(f"--- Attached file: {name} ({path}) ---\n[could not be read: {exc}]");
+            continue;
+        }
+        if len(content) > _ATTACHMENT_MAX_CHARS {
+            content = content[:_ATTACHMENT_MAX_CHARS] + "\n[... truncated]";
+        }
+        blocks.append(f"--- Attached file: {name} ({path}) ---\n{content}\n--- end of {name} ---");
+    }
+    return "\n\n".join(blocks) + "\n\n" + prompt;
+}
+
+"""The one SSE-streamed entry point; `session_id` continues an existing conversation via `resume`.
+`attached_paths`/`model`/`permission_mode`/`effort` are the client's current picker state, sent
+fresh each turn and threaded straight to the launcher's matching flags -- no validation here beyond
+what the launcher's own `ClaudeAgentOptions` already does."""
+async def:pub start_chat_turn(prompt: str, session_id: str | None, cwd: str | None, attached_paths: list[str], model: str, permission_mode: str, effort: str) -> Generator {
     async def stream -> AsyncGenerator[str, None] {
         if not _ai_enabled() {
             yield json.dumps({"type": "error", "message": "AI tool integrations are disabled. Set [terminal] enabled = true in jac.toml to turn them on."});
@@ -65,7 +94,8 @@ async def:pub start_chat_turn(prompt: str, session_id: str | None, cwd: str | No
         env = dict(os.environ);
         env["PYTHONPATH"] = _build_pythonpath(sys.path);
 
-        args = [python_bin, _launcher_path(), prompt];
+        full_prompt = _build_prompt_with_attachments(prompt, attached_paths);
+        args = [python_bin, _launcher_path(), full_prompt];
         if session_id {
             args.append("--resume");
             args.append(session_id);
@@ -74,6 +104,12 @@ async def:pub start_chat_turn(prompt: str, session_id: str | None, cwd: str | No
             args.append("--cwd");
             args.append(cwd);
         }
+        args.append("--model");
+        args.append(model);
+        args.append("--permission-mode");
+        args.append(permission_mode);
+        args.append("--effort");
+        args.append(effort);
 
         try {
             proc = await asyncio.create_subprocess_exec(

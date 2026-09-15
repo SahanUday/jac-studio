@@ -1,9 +1,11 @@
 """MonacoEditorApp: one `@monaco-editor/react` `<Editor>` per open tab, with breadcrumb bar, git
 gutter and breakpoint glyph margin. Monaco owns the text after mount (`defaultValue`, never a
 controlled `value`). `options.glyphMargin` must stay `True` or glyph decorations silently never
-render. Monaco's shared-model and keybinding gotchas: `docs/libraries/monaco.md`.
+render. Auto-reloads on a clean external change (ADR 0072), never a dirty tab. Monaco's
+shared-model, keybinding and null-`getPosition()` gotchas: `docs/libraries/monaco.md`, ADR 0074.
 Handler bodies: `monaco_editor.impl.jac`."""
 
+import from "react" { useEffect }
 import from "@monaco-editor/react" { Editor }
 import from src.editor.document_service { open_document, save_document }
 import from src.editor.client.jac_language { register_jac_language }
@@ -55,7 +57,7 @@ def _register_global_editor_keybindings(editor: any, monaco: any) -> None {
     });
 }
 
-def:pub app(path: str, onCursorChange: any, initialCursor: any, onDirtyChange: any, onOpenLocation: any, onOpenCommandPalette: any, onAskAI: any) -> JsxElement {
+def:pub app(path: str, onCursorChange: any, initialCursor: any, onDirtyChange: any, onOpenLocation: any, onOpenCommandPalette: any, onAskAI: any, reloadNonce: any) -> JsxElement {
     has content: str = "";
     has loaded: bool = False;
     has dirty: bool = False;
@@ -63,6 +65,7 @@ def:pub app(path: str, onCursorChange: any, initialCursor: any, onDirtyChange: a
     has monaco_ref: Ref[any] = Ref();
     has decorations_ref: Ref[any] = Ref();
     has breakpoints_ref: Ref[any] = Ref();
+    has suppress_dirty_ref: Ref[any] = Ref();
     has symbols: list[dict[str, any]] = [];
     has breadcrumb_path: list[dict[str, any]] = [];
     has breakpoint_lines: list[int] = [];
@@ -81,6 +84,18 @@ def:pub app(path: str, onCursorChange: any, initialCursor: any, onDirtyChange: a
         }
         breakpoint_lines = await get_breakpoints(path);
     }
+
+    async def reload_from_disk -> None;
+
+    # reloadNonce == 0 means "nothing pending" (workbench.jac's default for a path with no entry in
+    # filesPendingReload); also skips the mount-time firing every useEffect gets for free, since
+    # content is already freshly loaded by can with entry above at that point.
+    useEffect(lambda {
+        if reloadNonce == 0 or not loaded {
+            return;
+        }
+        reload_from_disk();
+    }, [reloadNonce]);
 
     def handle_before_mount(monaco: any) -> None;
     def handle_mount(editor: any, monaco: any) -> None;

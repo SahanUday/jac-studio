@@ -14,8 +14,9 @@ import from src.workbench.dap.dap_client { start_debug_session }
 import from src.workbench.settings.settings_service { get_setting, set_setting }
 import from src.workbench.ai.claude_code_client { start_chat_turn }
 
-"""The theme class must be applied here, at the true root. `global.css` gates dark values behind
-`@custom-variant dark (&:is(.dark *))`, so every shadcn surface needs a `.dark` ancestor."""
+"""The theme class must be applied here, at the true root, which also paints `background`/`color`
+from theme CSS vars directly so no descendant gap can fall through to the page's own default
+background. See ADR 0068."""
 def:pub app -> JsxElement {
     has theme: str = "dark";
 
@@ -25,7 +26,7 @@ def:pub app -> JsxElement {
 
     async def toggle_theme -> None;
 
-    <div className={theme}>
+    <div className={theme} style={{"background": "var(--background)", "color": "var(--foreground)", "height": "100vh"}}>
         <WorkbenchApp onToggleTheme={toggle_theme} />
     </div>
 }

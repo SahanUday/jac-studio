@@ -74,6 +74,14 @@ Each entry: symptom → fix. Tracker ids point to the full writeup; don't re-der
   unisolated, **still open** — don't assume a keyed cache is reliable across that boundary.
   `2026-08-31-cross-module-def-pub-call-sees-empty-glob-cache`
 
+- **`isinstance(x, ArchetypeType)` can fail with the same field-access error as using the missing
+  field directly** — checking `isinstance(child, (Folder, File))` against a value that is actually
+  a different archetype (`Workspace`, lacking `Folder`/`File`'s own fields) raised the identical
+  `'Workspace' object has no attribute 'path'` the direct field access did, one line earlier than
+  expected. `isinstance` against an archetype apparently isn't a plain type comparison the way
+  Python's is. Use `hasattr(x, "field")` to guard instead.
+  `2026-09-04-list-children-by-path-crashes-on-unexpected-contains-target`
+
 ## Testing
 
 - **Never name a file `test_*.jac`** — collides with Python test discovery. Use `<mod>.test.jac`
@@ -91,6 +99,13 @@ Each entry: symptom → fix. Tracker ids point to the full writeup; don't re-der
   anything needing a clean slate. `2026-08-24-jac-run-persists-state-jac-clean-does-not-reset`
 - **`jac test .` ignores `[test] directory` and sweeps nested subprojects.** Use `jac test` or
   `jac test src`. `2026-08-25-root-test-sweep-crosses-internal-subproject-boundary`
+
+- **Subclassing a Python library class as a Jac `obj` works, including virtual dispatch.**
+  `obj _DirtyDirHandler(FileSystemEventHandler)` overriding `on_any_event`, scheduled against a real
+  `watchdog.Observer`, fires correctly across the Jac/Python boundary — confirmed with a real `jac
+  run`, not assumed. A small, real dependency like this is safe to import at `.jac` module scope;
+  contrast with `claude_agent_sdk`'s dependency closure, which is not (see the `python-interop`
+  entry above).
 
 ## Client / jac2js
 

@@ -29,6 +29,11 @@ Root cause not isolated. Don't assume these are fixed.
 - **Diagnostics duplicated** under an in-memory index that had the same `jid(root)` shape as a
   working one. Only a graph-only `batch` field fixed it; why the index failed is still open.
 
+- **A directory deleted and recreated at the exact same path fast enough to coalesce the watcher
+  events** can leave its new contents unwatched until the workspace is reopened. Rare, not yet hit
+  in practice, and the cost is a stale nested subtree, not a crash — not worth defensive bookkeeping
+  until it's a real, reproduced problem.
+
 ## Accepted trade-offs
 
 These are deliberate. Don't "fix" them without a reason.

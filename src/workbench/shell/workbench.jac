@@ -2,7 +2,9 @@
 `active_group_id`, `cursor_positions`, notifications, sidebar/panel selection) and routes every
 command id through `handle_command`. Sidebar views and bottom panels mount once and hide via CSS,
 never conditional render, so each keeps its own state across switches. Structural mutations
-persist through `session_service.jac`. See `docs/roadmap.md` Phases 2-4."""
+persist through `session_service.jac`. Reloads a clean tab (plain or `"gitdiff"`) on an external
+file change reported by the workspace watcher, never a dirty one (ADR 0072). See `docs/roadmap.md`
+Phases 2-4."""
 
 import from "react" { useEffect }
 import from "sonner" { Toaster, toast }
@@ -33,6 +35,8 @@ def:pub app(onToggleTheme: any) -> JsxElement {
     has next_group_id: int = 2;
     has cursor_positions: dict[str, dict[str, int]] = {};
     has dirty_paths: dict[str, bool] = {};
+    has files_pending_reload: dict[str, int] = {};
+    has next_reload_nonce: int = 1;
     has terminal_open: bool = False;
     has active_bottom_panel: str = "terminal";
     has quick_open_open: bool = False;
@@ -64,6 +68,7 @@ def:pub app(onToggleTheme: any) -> JsxElement {
     async def handle_command(command_id: str) -> None;
     def handle_cursor_change(path: str, line: int, column: int) -> None;
     def handle_dirty_change(path: str, is_dirty: bool) -> None;
+    def handle_files_changed_externally(paths: list[str]) -> None;
     def set_context(key: str, value: bool) -> None;
     def context_matches(when: str) -> bool;
     def handle_keydown(e: any) -> None;
@@ -123,6 +128,7 @@ def:pub app(onToggleTheme: any) -> JsxElement {
                     initialCursors={cursor_positions}
                     dirtyPaths={dirty_paths}
                     onDirtyChange={handle_dirty_change}
+                    filesPendingReload={files_pending_reload}
                     onOpenLocation={open_search_result}
                     onOpenCommandPalette={lambda (e: any) { handle_command("workbench.action.showCommands"); }}
                     onAskAI={handle_ask_ai}
@@ -143,9 +149,9 @@ def:pub app(onToggleTheme: any) -> JsxElement {
         <div style={{"display": "flex", "flex": "1", "overflow": "hidden"}}>
             <ActivityBarApp activeViewId={active_view_id} onSelectView={select_view} />
             <ResizablePanelGroup direction="horizontal" style={{"flex": "1"}}>
-                <ResizablePanel defaultSize={18} minSize={12} maxSize={60} style={{"borderRight": "1px solid #2A2B2C", "overflow": "hidden", "position": "relative"}}>
+                <ResizablePanel defaultSize={18} minSize={12} maxSize={60} style={{"borderRight": "1px solid #2A2B2C", "overflow": "hidden", "position": "relative", "background": "#191A1B"}}>
                     <div style={{"display": "block" if active_view_id == "explorer" else "none", "height": "100%"}}>
-                        <FileTreeApp onOpenFile={open_tab} onCompareFiles={open_diff_tab} gitStatus={git_status_by_path} />
+                        <FileTreeApp onOpenFile={open_tab} onCompareFiles={open_diff_tab} gitStatus={git_status_by_path} onFilesChangedExternally={handle_files_changed_externally} />
                     </div>
                     <div style={{"display": "block" if active_view_id == "search" else "none", "height": "100%"}}>
                         <SearchApp onOpenResult={open_search_result} />

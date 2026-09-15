@@ -2,7 +2,9 @@
 active path and every callback come from `workbench.jac`, and `groupId` is forwarded as the first
 argument of each callback. Every tab's editor stays mounted and is hidden with `display: none`, so
 switching tabs never refetches content or loses Monaco undo history. A tab's optional `kind`
-(`"diff"` / `"gitdiff"`) selects which editor component renders its panel.
+(`"diff"` / `"gitdiff"`) selects which editor component renders its panel; both reload on a clean
+external change via `filesPendingReload` (ADR 0072), a `"gitdiff"` tab unconditionally since it has
+no dirty state of its own.
 Hide-on-hover here must use opacity, never `display`: codicon's own
 `.codicon[class*='codicon-']{display:inline-block}` outranks Tailwind's `.hidden` on specificity."""
 
@@ -42,6 +44,7 @@ def:pub app(props: any) -> JsxElement {
     initial_cursors = props["initialCursors"];
     dirty_paths = props["dirtyPaths"];
     on_dirty_change = props["onDirtyChange"];
+    files_pending_reload = props["filesPendingReload"] if "filesPendingReload" in props else {};
     on_open_location = props["onOpenLocation"];
     on_open_command_palette = props["onOpenCommandPalette"];
     on_ask_ai = props["onAskAI"];
@@ -110,13 +113,18 @@ def:pub app(props: any) -> JsxElement {
                         {(
                             <MonacoDiffEditorApp originalPath={t["originalPath"]} modifiedPath={t["modifiedPath"]} />
                         ) if t.get("kind") == "diff" else (
-                            <ScmDiffEditorApp filePath={t["filePath"]} staged={t["staged"]} />
+                            <ScmDiffEditorApp
+                                filePath={t["filePath"]}
+                                staged={t["staged"]}
+                                reloadNonce={files_pending_reload[t["filePath"]] if t["filePath"] in files_pending_reload else 0}
+                            />
                         ) if t.get("kind") == "gitdiff" else (
                             <MonacoEditorApp
                                 path={t["path"]}
                                 onCursorChange={on_cursor_change}
                                 initialCursor={initial_cursors[t["path"]] if t["path"] in initial_cursors else None}
                                 onDirtyChange={on_dirty_change}
+                                reloadNonce={files_pending_reload[t["path"]] if t["path"] in files_pending_reload else 0}
                                 onOpenLocation={on_open_location}
                                 onOpenCommandPalette={on_open_command_palette}
                                 onAskAI={on_ask_ai}

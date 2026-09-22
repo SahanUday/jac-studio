@@ -15,6 +15,17 @@ impl app.open_search -> None {
     search_open = True;
 }
 
+impl app.paste_from_clipboard -> None {
+    term = term_ref.current;
+    if not term {
+        return;
+    }
+    try {
+        text = await navigator.clipboard.readText();  # jac:ignore[E1032,E1001]
+        term.paste(text);
+    } except Exception {}
+}
+
 impl app.close_search -> None {
     search_open = False;
     search_query = "";

@@ -35,6 +35,7 @@ def:pub app(onFocusChange: any, onNotify: any) -> JsxElement {
     def handle_search_key(e: any) -> None;
     def close_search -> None;
     def open_search -> None;
+    async def paste_from_clipboard -> None;
 
     can with entry {
         # allowProposedApi: Unicode11Addon's version-switching API is still proposed in xterm.js.
@@ -54,6 +55,10 @@ def:pub app(onFocusChange: any, onNotify: any) -> JsxElement {
         term.open(container_ref.current);
         # Let native browser copy fire when text is selected; otherwise Ctrl/Cmd+C is SIGINT.
         # Ctrl/Cmd+F opens in-terminal search instead of the browser's own page find.
+        # Paste is explicit, not left to the browser's default: xterm.js has no built-in
+        # Ctrl+V handling, so an unhandled Ctrl+V is read as the raw control byte \x16 and sent
+        # to the shell as literal input -- confirmed live (a real paste attempt sent \x16, not
+        # clipboard text). Ctrl+V, Ctrl+Shift+V and Cmd+V all paste explicitly instead.
         term.attachCustomKeyEventHandler(lambda (ev: any) {
             is_copy_chord = (ev.ctrlKey or ev.metaKey) and not ev.shiftKey and ev.key == "c";
             if is_copy_chord and term.hasSelection() {
@@ -61,6 +66,11 @@ def:pub app(onFocusChange: any, onNotify: any) -> JsxElement {
             }
             if (ev.ctrlKey or ev.metaKey) and ev.key == "f" {
                 open_search();
+                return False;
+            }
+            is_paste_chord = ev.key == "v" or ev.key == "V";
+            if (ev.ctrlKey or ev.metaKey) and is_paste_chord {
+                paste_from_clipboard();
                 return False;
             }
             return True;

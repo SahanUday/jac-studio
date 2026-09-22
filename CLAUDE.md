@@ -42,6 +42,20 @@ This codebase is kept deliberately lean. Text earns its place or it goes.
 | Does VS Code have X, do we cover it | `docs/vscode-complete-triage.md` |
 | What broke in Jac and what we did | challenge tracker (`jac-studio-challenge-tracking`) |
 
+## Don't work around jac/jaseci bugs — need to fix them upstream
+
+A core goal of QuakePassion is to exercise and improve **jac/jaseci** itself (the `jaseci` submodule). Working around a jac bug hides the defect and defeats that goal.
+
+When a reasonable Jac idiom — especially Object-Spatial Programming (OSP) constructs — fails, errors, or behaves unexpectedly:
+
+1. First verify it's actually a jac/jaseci defect, not a misuse (check docs/examples/tests in the submodule).
+2. If it is the language/runtime, **pause the affected work and create a proper upstream fix**: isolate a minimal repro, investigate the root cause on on upstream `jac` main.
+3. Create the github issue on `jaseci-labs/jac`. Report the issue with repro script and validation results. The issue should be readable and easy to understand, so don't add too much unnecessary texts, but it should be informative. Also you can you flowcharts and diagrams to explain complex parts, it will help to get the better understanding easily.
+4. **Resume the original QuakePassion work using the locally fixed compiler/runtime** until make the PR and awaits review. Do not wait for the upstream merge unless it is technically necessary. Keep track of the local compiler patches required for validation.
+5. Do **not** rewrite engine code to avoid the construct. If an reported issue and its suggested fix cannot be completed, explain the concrete blocker and continue any independent work that remains possible.
+
+After you can log those blockers on challenge tracker (`jac-studio-challenge-tracking`) with the issue link.
+
 Skills carry the detail and load themselves when relevant: `jac-language` before writing any
 `.jac`, `jac-studio-architecture` before designing a component, `jac-studio-code-style` before a
 module of real size, `jac-studio-testing` before touching tests, `jac-studio-libraries` before

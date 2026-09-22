@@ -15,6 +15,9 @@ impl app.open_search -> None {
     search_open = True;
 }
 
+"""Surfaces a failed clipboard read instead of swallowing it -- a silently-blocked
+`navigator.clipboard.readText()` (permissions, an unfocused document) would otherwise look
+identical to a successful paste of empty text: nothing visibly happens either way."""
 impl app.paste_from_clipboard -> None {
     term = term_ref.current;
     if not term {
@@ -23,7 +26,11 @@ impl app.paste_from_clipboard -> None {
     try {
         text = await navigator.clipboard.readText();  # jac:ignore[E1032,E1001]
         term.paste(text);
-    } except Exception {}
+    } except Exception as e {
+        if onNotify {
+            onNotify(f"Couldn't read the clipboard: {e}", "error", "Terminal");
+        }
+    }
 }
 
 impl app.close_search -> None {

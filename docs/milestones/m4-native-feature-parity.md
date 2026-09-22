@@ -45,6 +45,6 @@ in-process, build-time-loaded Jac modules.
 
 ## Left open
 - `2026-08-31-workspace-rescan-orphans-reports-edges-on-repeat-open` needs a dedicated isolated repro.
-- The contribution-model gap should be resolved or explicitly re-scoped before M11's dynamic extension loading.
+- The contribution-model gap should be resolved or explicitly re-scoped before M12's dynamic extension loading.
 - "Docstring describes correct behavior, code doesn't" is an unautomated failure class, hit twice this milestone.
 - `vscode`-API compatibility scope and VS-Code theme extension support remain open in `architecture.md`.

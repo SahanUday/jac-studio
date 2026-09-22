@@ -9,7 +9,7 @@ import from src.workbench.shell.workbench { app as WorkbenchApp }
 # These four are consumed by raw SSE `fetch` calls, not generated RPC stubs. With no client-side
 # reference to trigger manifest self-registration, these top-level imports are the only thing that
 # registers their /function/... routes. See jac-sv-streaming, "streams need an entry-module import".
-import from src.workbench.terminal.terminal_service { run_in_terminal }
+import from src.workbench.terminal.terminal_service { attach_session }
 import from src.workbench.dap.dap_client { start_debug_session }
 import from src.workbench.settings.settings_service { get_setting, set_setting }
 import from src.workbench.ai.claude_code_client { start_chat_turn }

@@ -30,6 +30,13 @@ its own nested git repo that demonstrates everything jac-studio has shipped. It'
 - **It stays gitignored, and its own git state is part of the fixture** — deliberately uncommitted
   changes give SCM something real to show. Don't `git add` or commit inside it to tidy up, and
   don't regenerate it wholesale.
+- **Give it its own `jac.toml`** (`[project] name = "testing-workspace"`, no `kind` needed — infers
+  `cli`). Without one, `jac run <file>` inside it walks up and "takes over" jac-studio's own
+  `jac.toml`, spawning a second full dev server on a random port instead of just executing the
+  file — confirmed live, tracker entry
+  `2026-09-22-jac-run-takeover-spawns-competing-dev-server-from-a-nested-project-less-directory`.
+  Untracked (matches the rest of the fixture), so this doesn't ship in any PR — just don't skip it
+  when setting the fixture up fresh.
 
 ## Ending a milestone
 

@@ -54,6 +54,7 @@ def:pub app(onToggleTheme: any) -> JsxElement {
     has ai_pending_auto_send: bool = False;
     has ai_pending_nonce: int = 0;
     has ai_chat_maximized: bool = False;
+    has bottom_panel_height: int = 220;
 
     async def _save_session -> None;
     async def _toggle_panel(panel_id: str) -> None;
@@ -84,6 +85,7 @@ def:pub app(onToggleTheme: any) -> JsxElement {
     async def run_selected_task(label: str) -> None;
     def handle_ask_ai(promptText: str, autoSend: bool) -> None;
     def toggle_ai_chat_maximized -> None;
+    def start_panel_resize(e: any) -> None;
 
     async can with entry {
         commands = await list_commands();
@@ -187,10 +189,19 @@ def:pub app(onToggleTheme: any) -> JsxElement {
                 </ResizablePanel>
             </ResizablePanelGroup>
         </div>
+        {terminal_open and (
+            <div
+                onMouseDown={start_panel_resize}
+                style={{
+                    "height": "4px", "flexShrink": "0", "cursor": "ns-resize",
+                    "background": "transparent", "position": "relative", "zIndex": "21"
+                }}
+            />
+        )}
         <div style={{
             "display": "flex" if terminal_open else "none",
             "flexDirection": "column",
-            "height": "220px",
+            "height": f"{bottom_panel_height}px",
             "flexShrink": "0",
             "borderTop": "1px solid #2A2B2C",
             "background": "#191A1B",

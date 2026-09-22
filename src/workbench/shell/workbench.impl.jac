@@ -334,6 +334,34 @@ impl app.context_matches(when: str) -> bool {
     return context.get(when, False);
 }
 
+"""Plain mousedown/mousemove/mouseup drag, not `react-resizable-panels` -- the bottom panel's four
+content views are already `display:none`-toggled independently of this container (the established
+mount-once, hide-via-CSS pattern every panel here uses), and folding that into the library's own
+collapse/expand state would fight it rather than compose with it."""
+impl app.start_panel_resize(e: any) -> None {
+    start_y = e.clientY;
+    start_height = bottom_panel_height;
+    handle_move = lambda (move_e: any) {
+        delta = start_y - move_e.clientY;
+        next_height = start_height + delta;
+        min_height = 100;
+        max_height = window.innerHeight - 150;
+        if next_height < min_height {
+            next_height = min_height;
+        }
+        if next_height > max_height {
+            next_height = max_height;
+        }
+        bottom_panel_height = next_height;
+    };
+    handle_up = lambda (up_e: any) {
+        window.removeEventListener("mousemove", handle_move);
+        window.removeEventListener("mouseup", handle_up);
+    };
+    window.addEventListener("mousemove", handle_move);
+    window.addEventListener("mouseup", handle_up);
+}
+
 impl app.handle_keydown(e: any) -> None {
     parts = [];
     if e.ctrlKey or e.metaKey {

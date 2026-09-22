@@ -90,3 +90,4 @@ exist only because a passing test suite lied and a live reproduction found the t
 | [0076](0076-resolve-chat-attachments-server-side-before-sending.md) | Resolve chat file attachments server-side before sending | 2026-09-15 | accepted |
 | [0077](0077-inline-chat-uses-fixed-permission-mode.md) | Inline chat uses fixed model/permission-mode/effort, not a second picker set | 2026-09-15 | accepted |
 | [0078](0078-terminal-real-pty-sessions.md) | Terminal moves to real, reconnectable PTY sessions over SSE-down/POST-up | 2026-09-22 | accepted |
+| [0079](0079-panel-resize-is-plain-mousedown-not-resizable-panels.md) | Bottom panel resize is a plain mousedown drag, not `react-resizable-panels` | 2026-09-22 | accepted |

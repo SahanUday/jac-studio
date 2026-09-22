@@ -1,11 +1,6 @@
-"""Owns one real PTY session for the integrated terminal, run detached from any Jac request
-process -- a session must outlive any single SSE connection to support reconnect. Talks to
-terminal_service.jac only through files under --session-dir (see
-docs/decisions/0078-terminal-real-pty-sessions.md): no `glob` state crosses the SSE-generator
-process boundary (tracker
-2026-09-22-websocket-walkers-batch-not-stream-and-serialize-messages cites the underlying
-2026-09-01 isolation finding), so this is the same file-based-channel pattern dap_client.jac's
-`_DAP_COMMAND_FILE` uses, generalized to carry PTY output as well as input.
+"""Owns one real PTY session, run detached from any Jac request so it outlives a single
+connection (reconnect). Talks to terminal_service.jac only through files under --session-dir --
+see ADR 0078 and dap_client.jac's `_DAP_COMMAND_FILE` for why.
 
 Usage: terminal_session_daemon.py --session-dir DIR --cwd DIR --cols N --rows N
        [--shell PATH] [--idle-timeout SECONDS]

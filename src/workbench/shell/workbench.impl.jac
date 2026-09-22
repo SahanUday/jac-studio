@@ -334,10 +334,7 @@ impl app.context_matches(when: str) -> bool {
     return context.get(when, False);
 }
 
-"""Plain mousedown/mousemove/mouseup drag, not `react-resizable-panels` -- the bottom panel's four
-content views are already `display:none`-toggled independently of this container (the established
-mount-once, hide-via-CSS pattern every panel here uses), and folding that into the library's own
-collapse/expand state would fight it rather than compose with it."""
+"""Plain mousedown/mousemove drag, not `react-resizable-panels` -- see ADR 0079."""
 impl app.start_panel_resize(e: any) -> None {
     start_y = e.clientY;
     start_height = bottom_panel_height;

@@ -15,9 +15,7 @@ impl app.open_search -> None {
     search_open = True;
 }
 
-"""Surfaces a failed clipboard read instead of swallowing it -- a silently-blocked
-`navigator.clipboard.readText()` (permissions, an unfocused document) would otherwise look
-identical to a successful paste of empty text: nothing visibly happens either way."""
+"""Surfaces a failed clipboard read instead of swallowing it -- a blocked `readText()` (permissions, unfocused document) would otherwise look identical to a successful empty-text paste."""
 impl app.paste_from_clipboard -> None {
     term = term_ref.current;
     if not term {
@@ -46,8 +44,7 @@ impl app.close_search -> None {
     }
 }
 
-"""Enter finds next, Shift+Enter finds previous, Escape closes -- xterm's own keydown handling on
-the terminal itself never sees these, since focus is on this input."""
+"""Enter finds next, Shift+Enter finds previous, Escape closes -- xterm's own keydown handler never sees these since focus is on this input."""
 impl app.handle_search_key(e: any) -> None {
     search_addon = search_addon_ref.current;
     if not search_addon {
@@ -82,8 +79,7 @@ impl app.handle_terminal_resize(size: any) -> None {
     resize_session(session_id, size.cols, size.rows);
 }
 
-"""Opens (or reattaches to) the session, then consumes `attach_session`'s SSE stream directly --
-RPC stubs cannot consume a stream, so this is a raw `fetch` against the endpoint's own URL."""
+"""Opens/reattaches the session, then consumes `attach_session`'s SSE stream via a raw `fetch` -- RPC stubs cannot consume a stream."""
 impl app.start_session -> None {
     term = term_ref.current;
     if not term {

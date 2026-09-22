@@ -1,9 +1,8 @@
-"""TerminalService: real, reconnectable PTY sessions behind the integrated terminal.
-Deny-by-default, gated by `[terminal] enabled` in `jac.toml`. See ADR 0025, ADR 0078.
-The PTY itself lives in `terminal_session_daemon.py`, a detached subprocess -- an SSE generator
-here runs in a genuinely separate OS process from ordinary calls and shares no `glob` with them
-(tracker 2026-09-22-websocket-walkers-batch-not-stream-and-serialize-messages), so every call in
-this file talks to the daemon only through files under its session directory, never live state."""
+"""TerminalService: real, reconnectable PTY sessions behind the integrated terminal (ADR 0025, ADR 0078).
+Deny-by-default, gated by `[terminal] enabled` in `jac.toml`. The PTY lives in
+`terminal_session_daemon.py`, a detached subprocess -- each SSE call runs in its own OS process
+sharing no `glob` state (tracker 2026-09-22-websocket-walkers-batch-not-stream-and-serialize-messages),
+so this file talks to the daemon only through files under its session directory, never live state."""
 
 import asyncio;
 import glob as glob_module;
@@ -33,8 +32,7 @@ def _terminal_enabled -> bool {
     return bool(section.get("enabled", False));
 }
 
-"""Client-supplied path component -- reject anything that isn't a plain id before it touches a
-filesystem path, or a crafted session_id becomes a path-traversal write outside `_SESSIONS_ROOT`."""
+"""Rejects anything but a plain id before it touches a path -- a crafted session_id would otherwise be a path-traversal write outside `_SESSIONS_ROOT`."""
 def _valid_session_id(session_id: str) -> bool {
     return bool(_SESSION_ID_PATTERN.`match(session_id));
 }
@@ -43,8 +41,7 @@ def _session_dir(session_id: str) -> str {
     return os.path.join(_SESSIONS_ROOT, session_id);
 }
 
-"""Same resolution dap_client.jac uses: inside `jac run`, `sys.executable` is the zig `jac`
-wrapper, not an interpreter that can run a plain .py script."""
+"""Same resolution dap_client.jac uses -- inside `jac run`, `sys.executable` is the zig `jac` wrapper, not a usable interpreter for a plain .py script."""
 def _resolve_embedded_python -> str | None {
     pattern = os.path.join(sys.prefix, "bin", "python3*");
     candidates = sorted(glob_module.`glob(pattern));
@@ -55,9 +52,7 @@ def _daemon_script_path -> str {
     return os.path.join(os.path.dirname(os.path.abspath(__file__)), "terminal_session_daemon.py");
 }
 
-"""`ptyprocess` lands in `.jac/venv` via `jac install`, not the runtime cache the resolved
-interpreter itself lives in (same split dap_client.jac's debugpy check documents) -- the spawned
-daemon only sees it if this process's own `sys.path` is forwarded as its PYTHONPATH."""
+"""`ptyprocess` lives in `.jac/venv`, not the runtime cache the resolved interpreter lives in (same split as dap_client.jac's debugpy check) -- forward this process's `sys.path` as PYTHONPATH or the daemon won't see it."""
 def _build_pythonpath(path_entries: list[str]) -> str {
     entries = [p for p in path_entries if p];
     return os.pathsep.join(entries);
@@ -101,8 +96,7 @@ def _append_command(session_dir: str, payload: dict[str, str | int]) {
     }
 }
 
-"""Ensures a session's daemon is running; idempotent -- a re-mounted terminal panel or a page
-reload calling this again against an already-live session is a no-op, not a duplicate spawn."""
+"""Idempotent: ensures a session's daemon is running -- a re-mounted panel or reload calling this again against a live session is a no-op, not a duplicate spawn."""
 async def:pub open_session(session_id: str, cwd: str, cols: int, rows: int) -> dict[str, str] {
     if not _terminal_enabled() {
         return {"status": "disabled"};
@@ -142,8 +136,7 @@ async def:pub open_session(session_id: str, cwd: str, cols: int, rows: int) -> d
     return {"status": "started"};
 }
 
-"""SSE endpoint: replays the session's buffered output, then tails it live. Ends the stream once
-the daemon has exited and nothing new remains -- otherwise identical to a normal `tail -f`."""
+"""SSE endpoint: replays buffered output then tails it live; ends once the daemon has exited and nothing new remains."""
 async def:pub attach_session(session_id: str) -> Generator[str, None, None] {
     async def stream -> AsyncGenerator[str, None] {
         if not _terminal_enabled() {
@@ -216,8 +209,7 @@ async def:pub attach_session(session_id: str) -> Generator[str, None, None] {
     report stream();
 }
 
-"""Split so a single large paste can't exceed the atomic-append guarantee `_append_command`
-relies on (POSIX `PIPE_BUF`, ~4KB) -- each piece is its own complete JSON line."""
+"""Splits input so no piece exceeds `_append_command`'s atomic-append guarantee (POSIX `PIPE_BUF`, ~4KB)."""
 def _write_input_chunks(session_dir: str, data: str) {
     start = 0;
     while start < len(data) {
@@ -249,9 +241,7 @@ async def:pub resize_session(session_id: str, cols: int, rows: int) -> None {
     _append_command(session_dir, {"type": "resize", "cols": cols, "rows": rows});
 }
 
-"""Not gated on `_terminal_enabled()`, unlike the other session calls -- closing an already-running
-session is a kill switch, not new execution capability, and should still work if the config
-flips off mid-session."""
+"""Not gated on `_terminal_enabled()` -- closing a session is a kill switch, not new capability, and must work even if the config flips off mid-session."""
 async def:pub close_session(session_id: str) -> None {
     if not _valid_session_id(session_id) {
         return;

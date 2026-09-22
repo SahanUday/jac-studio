@@ -1,8 +1,7 @@
-"""Exercises the pure, stateless pieces and the file-based glue directly -- same scope as
-dap_client.test.jac. Real PTY session lifecycle (spawning terminal_session_daemon.py, a live shell)
-needs `[terminal] enabled = true`; verified live instead (PR description). These tests run with
-this project's real `jac.toml`, where the gate is off -- exactly the posture CI runs under, and the
-condition the gating tests below depend on."""
+"""Exercises the pure, stateless pieces and file-based glue only, same scope as dap_client.test.jac
+-- spawning a real PTY needs `[terminal] enabled = true` and was verified live instead. These tests
+run under this project's real `jac.toml`, gate off, matching CI and the condition the gating tests
+below depend on."""
 
 import asyncio;
 import json;

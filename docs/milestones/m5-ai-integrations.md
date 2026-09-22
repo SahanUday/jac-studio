@@ -40,7 +40,7 @@ credentials.
 ## Left open
 - GitHub Copilot, OpenCode, a native `by llm()` provider, and `.claude-plugin/` bundle discovery: real future work, moved to `roadmap.md`'s "Not planned yet" section.
 - The `ChatProvider`-split question in `architecture.md` stays open pending a second provider.
-- No mid-turn cancel, a deliberate v1 scope cut, tracked in `roadmap.md`'s M8.
+- No mid-turn cancel, a deliberate v1 scope cut, tracked in `roadmap.md`'s M9.
 - Post-closure QA (2026-09-05, sponsor's hands-on testing) fixed: collapsed-by-default tool-step cards, "AI Chat" as the primary identity (not "Claude Code"), a resizable sidebar with a maximize toggle, real markdown rendering for assistant messages, a "Thinking…" status row for in-flight turns, a `Math.floor()` cast compile error, a `react-markdown` default-export mismatch, tool-step cards collapsing to thin bars under flex pressure, and a visible OS scrollbar in the message column.
 - Still unconfirmed, no tracker entry yet: a genuine compile error in one client file may silently strip exports from unrelated files in the client bundle, based on one incident (`workspace_service.jac` losing `create_file`'s export after an unrelated `thinking_indicator.jac` compile error) — not yet reproduced in isolation.
 

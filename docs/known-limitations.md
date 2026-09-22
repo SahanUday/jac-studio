@@ -13,7 +13,8 @@ gaps a user could actually hit.
 | **No call hierarchy** | `jaclang.lsp.server.server` ships no call-hierarchy handler, so there is nothing to wire a UI to. | Server-side capability first |
 | **Outline reflects last save, not the live buffer** | A sidebar view can't reach a mounted editor's model without pulling in `loader.init()`'s singleton API. Same trade-off as diagnostics refreshing on save. | Either the singleton API, or routing outline through the editor instance |
 | **Outline highlight doesn't auto-reveal** | The cursor-containment highlight won't expand collapsed ancestors the way real VS Code does. | Tree auto-expansion on highlight |
-| **No PTY in the terminal** | Commands stream over RPC/SSE, so interactive programs, job control and TTY-aware behavior don't work. One command runs at a time. | A real PTY backend |
+| **Windows PTY support is unverified** | `pywinpty` backs the terminal's PTY on Windows (`[optional-dependencies.windows]`), but this machine has no Windows environment to test against. See [ADR 0078](decisions/0078-terminal-real-pty-sessions.md). | Verification on a real Windows machine |
+| **Terminal find bar's Ctrl/Cmd+F keybinding wasn't independently browser-verified** | `jac browse`'s headless automation couldn't reliably synthesize modifier-key chords (also true for Ctrl+C) -- confirmed the addon loads and the handler type-checks, but didn't confirm the keybinding fires end-to-end. | A manual check in a real browser |
 
 ## Unresolved runtime traps
 
@@ -51,7 +52,7 @@ These are deliberate. Don't "fix" them without a reason.
   the file tree has no collapsible-sections concept. An explicit fidelity compromise.
 - **Debugging is one combined panel** — toolbar, status, call stack, variables and output together,
   rather than VS Code's Debug sidebar plus a separate Debug Console. Enough to set a breakpoint and
-  step; splitting it is parity work (M10).
+  step; splitting it is parity work (M11).
 - **The title bar has no window controls or menu bar**, since the browser owns window chrome for a
   web app. The Command Center opens the command palette rather than a unified file-and-command
   search, and the workspace name label is static.

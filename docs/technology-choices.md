@@ -17,7 +17,8 @@ Building Monaco from scratch was attempted, worked, and was still the wrong trad
 | Area | Choice | Notes |
 |---|---|---|
 | Editor engine | `monaco-editor` via `@monaco-editor/react` | Text model, cursor/IME, undo, tokenizers, diff. [notes](libraries/monaco.md) |
-| Terminal rendering | `@xterm/xterm` + `addon-fit` | Rendering only — there is no PTY. [notes](libraries/xterm.md) |
+| Terminal rendering | `@xterm/xterm` + `addon-fit`, `addon-clipboard`, `addon-web-links`, `addon-search`, `addon-serialize`, `addon-unicode11`, `addon-webgl` | [notes](libraries/xterm.md) |
+| Terminal PTY | `ptyprocess` (POSIX) / `pywinpty` (Windows) | Real persistent shell session per tab. See [ADR 0078](decisions/0078-terminal-real-pty-sessions.md), [notes](libraries/ptyprocess.md) |
 | UI primitives | shadcn-in-Jac over Radix | Sidebar, Resizable, Tabs, Command, ContextMenu, Tooltip, ScrollArea |
 | Icons | `@vscode/codicons` | The actual font VS Code ships |
 | Language intelligence | `jac lsp` over stdio JSON-RPC | A real, first-party jaclang LSP server — no extension host needed |
@@ -36,7 +37,6 @@ Real options for when the current approach hits a wall. None are blocking.
 | Workspace search | `ripgrep` as a subprocess | Current search is in-process; switch when repo-scale search gets slow |
 | File tree at scale | `react-arborist` | Current tree is hand-built and must stay lazy-loading; switch if virtualization becomes the bottleneck |
 | Panel docking | `flexlayout-react` | If drag-to-dock layouts are wanted beyond the current Resizable panes |
-| Real shell sessions | a PTY backend | When interactive programs and job control are needed in the terminal |
 | Semantic search | a vector store (e.g. Qdrant) | Only if AI context-building outgrows lexical search |
 | Extension marketplace | Open VSX | Only once an extension host exists to consume it |
 

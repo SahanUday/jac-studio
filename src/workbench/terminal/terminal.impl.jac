@@ -1,73 +1,104 @@
 impl app.handle_resize -> None {
     fit = fit_ref.current;
-    if not fit {
-        return;
-    }
     term = term_ref.current;
-    if not term {
+    if not fit or not term {
         return;
     }
     fit.fit();
-    if not banner_written_ref.current {
-        term.write("jac-studio terminal\r\n$ ");
-        banner_written_ref.current = True;
+    if not started_ref.current {
+        started_ref.current = True;
+        start_session();
+    }
+}
+
+impl app.open_search -> None {
+    search_open = True;
+}
+
+impl app.close_search -> None {
+    search_open = False;
+    search_query = "";
+    search_addon = search_addon_ref.current;
+    if search_addon {
+        search_addon.clearDecorations();
+    }
+    term = term_ref.current;
+    if term {
+        term.focus();
+    }
+}
+
+"""Enter finds next, Shift+Enter finds previous, Escape closes -- xterm's own keydown handling on
+the terminal itself never sees these, since focus is on this input."""
+impl app.handle_search_key(e: any) -> None {
+    search_addon = search_addon_ref.current;
+    if not search_addon {
+        return;
+    }
+    if e.key == "Escape" {
+        close_search();
+        return;
+    }
+    if e.key == "Enter" {
+        if e.shiftKey {
+            search_addon.findPrevious(search_query);
+        } else {
+            search_addon.findNext(search_query);
+        }
     }
 }
 
 impl app.handle_data(data: str) -> None {
-    if running {
+    session_id = session_id_ref.current;
+    if not session_id {
         return;
     }
+    send_input(session_id, data);
+}
+
+impl app.handle_terminal_resize(size: any) -> None {
+    session_id = session_id_ref.current;
+    if not session_id {
+        return;
+    }
+    resize_session(session_id, size.cols, size.rows);
+}
+
+"""Opens (or reattaches to) the session, then consumes `attach_session`'s SSE stream directly --
+RPC stubs cannot consume a stream, so this is a raw `fetch` against the endpoint's own URL."""
+impl app.start_session -> None {
     term = term_ref.current;
     if not term {
         return;
     }
-    if data == "\r" {
-        submit_command();
+    session_id = session_id_ref.current or "";
+    ws = await get_current_workspace();
+    cwd = ws["root_path"] if ws is not None else "";
+
+    result = await open_session(session_id, cwd, term.cols, term.rows);
+    status = result.get("status") if result else "error";
+    if status == "disabled" {
+        term.write("Terminal is disabled. Set [terminal] enabled = true in jac.toml to turn it on.\r\n");
         return;
     }
-    if data == "\x7f" or data == "\b" {
-        if len(input_buffer) > 0 {
-            input_buffer = input_buffer[:-1];
-            term.write("\b \b");
+    if status == "error" or status == "invalid_session_id" {
+        message = result.get("message", "Failed to start the terminal session.") if result else "Failed to start the terminal session.";
+        term.write(f"{message}\r\n");
+        if onNotify {
+            onNotify(message, "error", "Terminal");
         }
         return;
     }
-    if data == "\x03" {
-        input_buffer = "";
-        term.write("^C\r\n$ ");
-        return;
-    }
-    if ord(data[0]) < 32 {
-        return;
-    }
-    input_buffer = input_buffer + data;
-    term.write(data);
-}
 
-impl app.submit_command -> None {
-    command = input_buffer;
-    input_buffer = "";
-    term = term_ref.current;
-    if not term {
-        return;
-    }
-    term.write("\r\n");
-    if command.strip() == "" {
-        term.write("$ ");
-        return;
-    }
-    running = True;
-    resp = await fetch("/function/run_in_terminal", {
+    resp = await fetch("/function/attach_session", {
         "method": "POST",
         "headers": {"Content-Type": "application/json"},
-        "body": JSON.stringify({"command": command, "cwd": ""})
+        "body": JSON.stringify({"session_id": session_id})
     });
     reader = resp.body.getReader();
     decoder = new(TextDecoder);
     nl = chr(10);
     buf = "";
-    exit_marker = "[process exited with code ";
     feeding = True;
     while feeding {
         part = await reader.read();
@@ -82,18 +113,9 @@ impl app.submit_command -> None {
             for line in frame.split(nl) {
                 if line.startswith("data: ") and not frame.startswith("event:") {
                     chunk = JSON.parse(line[6:]) as str;
-                    term.write(chunk.replace(nl, "\r\n"));
-                    if exit_marker in chunk {
-                        tail = chunk.split(exit_marker)[1];
-                        code_str = tail.split("]")[0].strip();
-                        if code_str != "0" and onNotify {
-                            onNotify(f"Command failed (exit {code_str}): {command}", "error", "Terminal");
-                        }
-                    }
+                    term.write(chunk);
                 }
             }
         }
     }
-    running = False;
-    term.write("$ ");
 }

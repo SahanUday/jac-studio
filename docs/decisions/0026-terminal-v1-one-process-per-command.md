@@ -1,7 +1,7 @@
 # 0026 — Terminal v1 spawns one process per command, with no persistent shell session
 
 - **Date**: 2026-08-25
-- **Status**: accepted
+- **Status**: superseded by [0078](0078-terminal-real-pty-sessions.md)
 
 ## Decision
 

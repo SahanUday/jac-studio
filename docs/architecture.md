@@ -22,7 +22,7 @@ what's next is in [`roadmap.md`](roadmap.md).
 | `platform` (DI + services) | Services resolved from the graph under `root` |
 | `editor` (Monaco) | The real `monaco-editor` package behind a thin Jac wrapper |
 | `workbench` | jac-cl components over shadcn-in-Jac primitives |
-| Extension host | None yet — see M11/M12 |
+| Extension host | None yet — see M12/M13 |
 | `code` (Electron main) | `jac nacompile` + OS webview, deferred |
 
 ```
@@ -113,7 +113,7 @@ preview for edits. Tool calls are three events joined by `tool_use_id`. The mode
 
 ## Open questions
 
-- How much `vscode` API compatibility the extension system targets (M11).
+- How much `vscode` API compatibility the extension system targets (M12).
 - Whether installable third-party theme extensions are supported, or themes stay native.
-- Whether `ChatProvider` splits into agent identity and model backend (M9).
-- Sandboxing untrusted extension code — no Jac precedent (M12).
+- Whether `ChatProvider` splits into agent identity and model backend (M10).
+- Sandboxing untrusted extension code — no Jac precedent (M13).

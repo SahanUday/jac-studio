@@ -17,10 +17,12 @@ way land in [`decisions/`](decisions/), not in this file.
 | M3 | Persistence and identity | Session and settings restore, syntax highlighting, diff editor, Quick Open, activity bar, title bar, VS Code default look | [m3](milestones/m3-persistence-and-identity.md) |
 | M4 | Native feature parity | Search, SCM with merge conflicts, tasks and Problems, Output, notifications, LSP client on `jac lsp`, DAP client | [m4](milestones/m4-native-feature-parity.md) |
 | M5 | AI integration | Claude Code chat with tool approval, edit diff review, MCP, AI code actions, inline chat, step cards | [m5](milestones/m5-ai-integrations.md) |
+| M7 | Terminal: real PTY sessions | Persistent, reconnectable shell per session (ADR 0078), replacing the one-shot-subprocess model; copy/paste, links, search, correct Unicode/TUI rendering via previously-unwired xterm.js addons | [m7](milestones/m7-terminal-real-pty-sessions.md) |
 
 **Carried over, not done**: M4's "a fourth feature needs zero workbench changes" criterion is unmet
 — the contribution registry is a centralized list ([ADR 0052](decisions/0052-contribution-registry-is-a-centralized-list.md)).
-M5 named Copilot and OpenCode; only Claude Code was built.
+M5 named Copilot and OpenCode; only Claude Code was built. M7 shipped ahead of M6 — no dependency
+between them, and milestones are ordered by dependency, not sequence number.
 
 ## Next
 
@@ -36,7 +38,7 @@ Make "it works" checkable by something other than a person.
 **Exit**: a PR that breaks a check or a test fails CI; at least the shell's session-restore logic
 is under test.
 
-### M7 — Editor correctness
+### M8 — Editor correctness
 
 Close the gaps a daily user hits. See [`known-limitations.md`](known-limitations.md).
 
@@ -48,7 +50,7 @@ Close the gaps a daily user hits. See [`known-limitations.md`](known-limitations
 **Exit**: every navigation lands on the right line whether or not the tab was open; formatting and
 signature help work on `.jac` files.
 
-### M8 — AI-first editing
+### M9 — AI-first editing
 
 The features that make this AI-first rather than an editor with a chat panel.
 
@@ -58,7 +60,7 @@ The features that make this AI-first rather than an editor with a chat panel.
 
 **Exit**: inline suggestions appear while typing and accept on Tab; a running turn can be stopped.
 
-### M9 — AI providers
+### M10 — AI providers
 
 - A native provider on `by llm(tools=[...])` using the services already built — no external CLI.
 - A second external provider (Copilot or OpenCode), after its own auth/licensing scoping.
@@ -67,15 +69,15 @@ The features that make this AI-first rather than an editor with a chat panel.
 
 **Exit**: a user can switch between at least two providers in the same chat UI.
 
-### M10 — Remaining VS Code parity
+### M11 — Remaining VS Code parity
 
 Work down [`vscode-complete-triage.md`](vscode-complete-triage.md) for what's still uncovered.
 Likely candidates: settings and keybindings editors, menu bar, auxiliary bar, multi-root workspace
-UI, a real PTY for the terminal.
+UI.
 
 **Exit**: no triaged "Scoped" feature area is still missing.
 
-### M11 — Extensions: dynamic loading
+### M12 — Extensions: dynamic loading
 
 Extension-system Phase B ([ADR 0008](decisions/0008-extension-system-phased-trust-model.md)):
 still trusted, but loaded at runtime.
@@ -85,12 +87,12 @@ still trusted, but loaded at runtime.
 
 **Exit**: an extension installs and uninstalls without rebuilding the app.
 
-### M12 — Extensions: sandboxing
+### M13 — Extensions: sandboxing
 
 Phase C. A research track, not integration work — likely built on Jac's WASM target. Don't start
-before M11 has validated the extension API against real use.
+before M12 has validated the extension API against real use.
 
-### M13 — Desktop
+### M14 — Desktop
 
 `jac nacompile` plus the OS webview, bundling the same client. Then per-OS installers, signing, an
 update feed and the in-app update UI.
@@ -102,7 +104,7 @@ update feed and the in-app update UI.
 Revisit later; not decided against.
 
 - Remote development (SSH-style).
-- A marketplace — consuming Open VSX only makes sense after M11.
+- A marketplace — consuming Open VSX only makes sense after M12.
 - Collaborative editing — Jac's `grant`/`revoke`/`root.shared` make it more tractable than usual,
   but it's off the path to a complete single-user editor.
 - `.claude-plugin/` bundle discovery and install.

@@ -73,7 +73,9 @@ The features that make this AI-first rather than an editor with a chat panel.
 
 Work down [`vscode-complete-triage.md`](vscode-complete-triage.md) for what's still uncovered.
 Likely candidates: settings and keybindings editors, menu bar, auxiliary bar, multi-root workspace
-UI.
+UI, multiple/split terminal instances (a real user gap since M7 made the terminal actually worth
+having more than one of -- see `known-limitations.md`; needs a session-id-per-instance scheme, not
+today's one fixed session, plus tab/split UI).
 
 **Exit**: no triaged "Scoped" feature area is still missing.
 

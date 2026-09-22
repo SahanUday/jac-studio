@@ -15,6 +15,7 @@ gaps a user could actually hit.
 | **Outline highlight doesn't auto-reveal** | The cursor-containment highlight won't expand collapsed ancestors the way real VS Code does. | Tree auto-expansion on highlight |
 | **Windows PTY support is unverified** | `pywinpty` backs the terminal's PTY on Windows (`[optional-dependencies.windows]`), but this machine has no Windows environment to test against. See [ADR 0078](decisions/0078-terminal-real-pty-sessions.md). | Verification on a real Windows machine |
 | **Terminal find bar's Ctrl/Cmd+F keybinding wasn't independently browser-verified** | `jac browse`'s headless automation couldn't reliably synthesize modifier-key chords (also true for Ctrl+C) -- confirmed the addon loads and the handler type-checks, but didn't confirm the keybinding fires end-to-end. | A manual check in a real browser |
+| **Only one terminal instance -- no tabs, no split panes** | `terminal.jac` mounts a single `Terminal`/session pair; there's no VS Code-style dropdown to open a second terminal or split the pane. Predates ADR 0078 -- the old one-shot terminal was single-instance too. Real scope, not a quick fix: a session-id-per-instance scheme (today's is one fixed `sessionStorage` key), tab/split UI, and generalizing `terminal.jac` into a component reused per instance. | A dedicated milestone item, not a patch on the current single-session design |
 
 ## Unresolved runtime traps
 

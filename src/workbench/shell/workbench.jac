@@ -14,6 +14,7 @@ import from src.workbench.scm.scm { app as ScmApp }
 import from src.workbench.outline.outline { app as OutlineApp }
 import from src.workbench.ai.ai_chat { app as AIChatApp }
 import from src.workbench.editor_tabs.editor_tabs { app as EditorTabsApp }
+import from src.editor.client.monaco_editor { reveal_position_in_editor }
 import from src.workbench.activity_bar.activity_bar { app as ActivityBarApp }
 import from src.workbench.command_palette.command_palette { app as CommandPaletteApp }
 import from src.workbench.quick_open.quick_open { app as QuickOpenApp }

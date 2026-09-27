@@ -26,6 +26,14 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      # git_service.jac's commit_changes shells out to plain `git commit`, relying
+      # on the committer identity every real dev machine already has configured --
+      # a bare CI runner has none, so tests exercising a real commit need this too.
+      - name: Configure git identity for tests
+        run: |
+          git config --global user.name "jac-studio CI"
+          git config --global user.email "ci@jac-studio.invalid"
+
       - name: Install jac ${{ env.JAC_VERSION }}
         run: |
           set -euo pipefail

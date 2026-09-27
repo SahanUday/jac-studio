@@ -2,9 +2,9 @@
 name = "native-editor-archive"
 version = "0.1.0"
 description = "Archived from-scratch Jac text-editing engine (piece-tree/interval-tree port + native rendering component) -- parked 2026-08-25 when jac-studio switched to embedding the real monaco-editor npm package for v1. See README.md before reviving."
-entry-point = "main.jac"
+entry-point = "main"
 kind = "web-app"
-jac-version = "==0.36.1"
+jac-version = "==0.37.3"
 
 [dependencies]
 [dependencies.npm]

@@ -1,0 +1,49 @@
+name: CI
+
+# jac is a self-contained native binary (bundles its own Python and bun/node
+# runtimes) -- `jac install` needs nothing preinstalled beyond the binary
+# itself. Pinned to v0.37.3, the last jaseci release this project has been
+# validated against; bump JAC_VERSION deliberately when re-syncing to a newer
+# jaseci main, in lockstep with jac.toml's [project] jac-version everywhere
+# in this repo (root, internal/*).
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  JAC_VERSION: "0.37.3"
+
+jobs:
+  check-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install jac ${{ env.JAC_VERSION }}
+        run: |
+          set -euo pipefail
+          asset="jac-${JAC_VERSION}-linux-x86_64"
+          url="https://github.com/jaseci-labs/jaseci/releases/download/v${JAC_VERSION}"
+          curl -fsSL -o jac "${url}/${asset}"
+          curl -fsSL -o jac.sha256 "${url}/${asset}.sha256"
+          echo "$(cut -d' ' -f1 jac.sha256)  jac" | sha256sum -c -
+          chmod +x jac
+          mkdir -p "$HOME/.local/bin"
+          mv jac "$HOME/.local/bin/jac"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: jac install
+        run: jac install
+
+      - name: jac check
+        run: jac check .
+
+      - name: jac test
+        run: jac test src

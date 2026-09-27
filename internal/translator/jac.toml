@@ -2,9 +2,9 @@
 name = "jac-studio-translator"
 version = "0.1.0"
 description = "TS->Jac porting tool for jac-studio: manifest, eligibility guard, extraction, verification"
-entry-point = "main.jac"
+entry-point = "main"
 kind = "cli"
-jac-version = "==0.36.1"
+jac-version = "==0.37.3"
 
 [dependencies]
 tomli-w = "*"

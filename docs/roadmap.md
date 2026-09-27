@@ -18,27 +18,20 @@ way land in [`decisions/`](decisions/), not in this file.
 | M4 | Native feature parity | Search, SCM with merge conflicts, tasks and Problems, Output, notifications, LSP client on `jac lsp`, DAP client | [m4](milestones/m4-native-feature-parity.md) |
 | M5 | AI integration | Claude Code chat with tool approval, edit diff review, MCP, AI code actions, inline chat, step cards | [m5](milestones/m5-ai-integrations.md) |
 | M7 | Terminal: real PTY sessions | Persistent, reconnectable shell per session (ADR 0078), replacing the one-shot-subprocess model; copy/paste, links, search, correct Unicode/TUI rendering via previously-unwired xterm.js addons | [m7](milestones/m7-terminal-real-pty-sessions.md) |
+| M6 | Quality floor | CI on every PR (`jac check`/`jac test src`, pinned `jac` binary); first workbench-state tests (session-restore); M4's contribution-registry criterion retired ([ADR 0080](decisions/0080-retire-self-registering-contribution-criterion.md)) | [m6](milestones/m6-quality-floor.md) |
 
-**Carried over, not done**: M5 named Copilot and OpenCode; only Claude Code was built. M7 shipped
-ahead of M6 — no dependency between them, and milestones are ordered by dependency, not sequence
-number. M4's "a fourth feature needs zero workbench changes" criterion was resolved, not met — the
-contribution registry stays a centralized list, deliberately, and self-registration is deferred to
-M12 ([ADR 0052](decisions/0052-contribution-registry-is-a-centralized-list.md),
-[ADR 0080](decisions/0080-retire-self-registering-contribution-criterion.md)).
+**Carried over, not done**: M5 named Copilot and OpenCode; only Claude Code was built. M6 and M7
+each shipped out of sequence-number order — no dependency between either pair, and milestones are
+ordered by dependency, not sequence number. M4's "a fourth feature needs zero workbench changes"
+criterion was resolved, not met — the contribution registry stays a centralized list, deliberately,
+and self-registration is deferred to M12
+([ADR 0052](decisions/0052-contribution-registry-is-a-centralized-list.md),
+[ADR 0080](decisions/0080-retire-self-registering-contribution-criterion.md)). M6 pinned CI's `jac`
+to release `v0.37.3` rather than jaseci `main` — the local checkout was ~293 commits behind main,
+and true main HEAD fails 14 further checks unrelated to M6; syncing to main is a left-open
+follow-up, not scheduled.
 
 ## Next
-
-### M6 — Quality floor
-
-Make "it works" checkable by something other than a person.
-
-- CI on `main`: `jac check` and `jac test src` on every PR.
-- First tests for workbench state — the entire UI layer has none today.
-- ~~Resolve the M4 contribution-model criterion~~ — retired in
-  [ADR 0080](decisions/0080-retire-self-registering-contribution-criterion.md).
-
-**Exit**: a PR that breaks a check or a test fails CI; at least the shell's session-restore logic
-is under test.
 
 ### M8 — Editor correctness
 

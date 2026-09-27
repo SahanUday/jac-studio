@@ -1,6 +1,5 @@
-"""Pure decision for applying a loaded session to workbench state: an empty session means
-never-saved, so every field passes through unchanged; a non-empty one replaces all five together.
-Extracted from workbench.jac's entry block so it's testable outside the client bundle."""
+"""Session-restore decision for the workbench shell: empty session passes fields through
+unchanged; a saved one replaces all five together."""
 
 def:pub resolve_restored_state(
     session: dict[str, any],
@@ -11,8 +10,7 @@ def:pub resolve_restored_state(
     cursor_positions: dict[str, dict[str, int]]
 ) -> tuple[dict[str, dict[str, int]], str, int, bool, list[dict[str, any]]] {
     if len(session["groups"]) > 0 {
-        # cursor_positions must land before groups: groups going non-empty is what mounts each
-        # tab's MonacoEditorApp, and initialCursor is read exactly once at that mount.
+        # cursor_positions must precede groups, or Monaco's initial mount overwrites it.
         return (
             session["cursorPositions"], session["activeGroupId"], session["nextGroupId"],
             session["terminalOpen"], session["groups"]

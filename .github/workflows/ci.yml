@@ -1,11 +1,7 @@
 name: CI
 
-# jac is a self-contained native binary (bundles its own Python and bun/node
-# runtimes) -- `jac install` needs nothing preinstalled beyond the binary
-# itself. Pinned to v0.37.3, the last jaseci release this project has been
-# validated against; bump JAC_VERSION deliberately when re-syncing to a newer
-# jaseci main, in lockstep with jac.toml's [project] jac-version everywhere
-# in this repo (root, internal/*).
+# Self-contained jac binary; no other toolchain setup needed.
+# Bump JAC_VERSION in lockstep with jac.toml's jac-version everywhere in this repo.
 
 on:
   pull_request:
@@ -26,9 +22,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      # git_service.jac's commit_changes shells out to plain `git commit`, relying
-      # on the committer identity every real dev machine already has configured --
-      # a bare CI runner has none, so tests exercising a real commit need this too.
+      # commit_changes shells out to real git commit; the runner needs an identity.
       - name: Configure git identity for tests
         run: |
           git config --global user.name "jac-studio CI"

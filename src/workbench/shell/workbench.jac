@@ -27,6 +27,7 @@ import from src.workbench.tasks.task_picker { app as TaskPickerApp }
 import from src.workbench.tasks.task_service { run_task }
 import from src.workbench.commands.command_registry { list_commands }
 import from src.workbench.session.session_service { load_session, save_session }
+import from src.workbench.session.session_restore { resolve_restored_state }
 import from components.ui.resizable { ResizablePanelGroup, ResizablePanel, ResizableHandle }
 
 def:pub app(onToggleTheme: any) -> JsxElement {
@@ -90,17 +91,9 @@ def:pub app(onToggleTheme: any) -> JsxElement {
     async can with entry {
         commands = await list_commands();
         session = await load_session();
-        if len(session["groups"]) > 0 {
-            # cursor_positions must land before groups: groups going non-empty is what mounts each
-            # tab's MonacoEditorApp, and initialCursor is read exactly once at that mount. Assign
-            # groups first and every editor reports Monaco's default (1,1) back up, overwriting the
-            # just-restored value and persisting the corruption on the next save.
-            cursor_positions = session["cursorPositions"];
-            active_group_id = session["activeGroupId"];
-            next_group_id = session["nextGroupId"];
-            terminal_open = session["terminalOpen"];
-            groups = session["groups"];
-        }
+        (cursor_positions, active_group_id, next_group_id, terminal_open, groups) = resolve_restored_state(
+            session, groups, active_group_id, next_group_id, terminal_open, cursor_positions
+        );
     }
 
     useEffect(lambda {

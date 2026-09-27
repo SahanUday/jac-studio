@@ -19,10 +19,12 @@ way land in [`decisions/`](decisions/), not in this file.
 | M5 | AI integration | Claude Code chat with tool approval, edit diff review, MCP, AI code actions, inline chat, step cards | [m5](milestones/m5-ai-integrations.md) |
 | M7 | Terminal: real PTY sessions | Persistent, reconnectable shell per session (ADR 0078), replacing the one-shot-subprocess model; copy/paste, links, search, correct Unicode/TUI rendering via previously-unwired xterm.js addons | [m7](milestones/m7-terminal-real-pty-sessions.md) |
 
-**Carried over, not done**: M4's "a fourth feature needs zero workbench changes" criterion is unmet
-— the contribution registry is a centralized list ([ADR 0052](decisions/0052-contribution-registry-is-a-centralized-list.md)).
-M5 named Copilot and OpenCode; only Claude Code was built. M7 shipped ahead of M6 — no dependency
-between them, and milestones are ordered by dependency, not sequence number.
+**Carried over, not done**: M5 named Copilot and OpenCode; only Claude Code was built. M7 shipped
+ahead of M6 — no dependency between them, and milestones are ordered by dependency, not sequence
+number. M4's "a fourth feature needs zero workbench changes" criterion was resolved, not met — the
+contribution registry stays a centralized list, deliberately, and self-registration is deferred to
+M12 ([ADR 0052](decisions/0052-contribution-registry-is-a-centralized-list.md),
+[ADR 0080](decisions/0080-retire-self-registering-contribution-criterion.md)).
 
 ## Next
 
@@ -32,8 +34,8 @@ Make "it works" checkable by something other than a person.
 
 - CI on `main`: `jac check` and `jac test src` on every PR.
 - First tests for workbench state — the entire UI layer has none today.
-- Resolve the M4 contribution-model criterion: make the registry genuinely open, or accept the
-  centralized list and retire the criterion in an ADR.
+- ~~Resolve the M4 contribution-model criterion~~ — retired in
+  [ADR 0080](decisions/0080-retire-self-registering-contribution-criterion.md).
 
 **Exit**: a PR that breaks a check or a test fails CI; at least the shell's session-restore logic
 is under test.

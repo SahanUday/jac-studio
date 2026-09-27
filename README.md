@@ -24,7 +24,7 @@ See [`docs/roadmap.md`](docs/roadmap.md) for what's built and what's next.
 
 ```bash
 jac install          # Jac, Python and npm dependencies
-jac start --dev      # dev server
+jac run --dev        # dev server
 jac browse           # open it
 ```
 

@@ -1,0 +1,51 @@
+name: CI
+
+# Self-contained jac binary; no other toolchain setup needed.
+# Bump JAC_VERSION in lockstep with jac.toml's jac-version everywhere in this repo.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  JAC_VERSION: "0.37.3"
+
+jobs:
+  check-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      # commit_changes shells out to real git commit; the runner needs an identity.
+      - name: Configure git identity for tests
+        run: |
+          git config --global user.name "jac-studio CI"
+          git config --global user.email "ci@jac-studio.invalid"
+
+      - name: Install jac ${{ env.JAC_VERSION }}
+        run: |
+          set -euo pipefail
+          asset="jac-${JAC_VERSION}-linux-x86_64"
+          url="https://github.com/jaseci-labs/jaseci/releases/download/v${JAC_VERSION}"
+          curl -fsSL -o jac "${url}/${asset}"
+          curl -fsSL -o jac.sha256 "${url}/${asset}.sha256"
+          echo "$(cut -d' ' -f1 jac.sha256)  jac" | sha256sum -c -
+          chmod +x jac
+          mkdir -p "$HOME/.local/bin"
+          mv jac "$HOME/.local/bin/jac"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: jac install
+        run: jac install
+
+      - name: jac check
+        run: jac check .
+
+      - name: jac test
+        run: jac test src

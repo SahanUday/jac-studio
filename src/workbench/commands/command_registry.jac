@@ -14,7 +14,7 @@ node Command {
     has keybindings: list[dict[str, str]] = [];
 }
 
-edge Contributes {}
+edge Contributes: CommandRegistry --> Command {}
 
 glob BUILTIN_COMMANDS: list[dict[str, any]] = [
     {"id": "workbench.action.splitEditorRight", "title": "View: Split Editor Right", "keybindings": []},

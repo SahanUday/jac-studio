@@ -4,7 +4,7 @@ reachable via `workspace_service.jac`'s lazy scan.
 Staleness is filtered by the `batch` field, not by edge deletion: edge deletion does not commit
 across separate real HTTP requests (`2026-08-28-edge-deletion-not-committed-across-real-http-requests`)."""
 
-import from src.workbench.workspace.workspace_service { get_file_node_by_path }
+import from src.workbench.workspace.workspace_service { get_file_node_by_path, File }
 
 node Diagnostic {
     has message: str;
@@ -15,7 +15,7 @@ node Diagnostic {
     has batch: float = 0.0;
 }
 
-edge Reports {}
+edge Reports: File --> Diagnostic {}
 
 glob _diagnostic_paths: dict[str, set[str]] = {};
 

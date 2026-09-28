@@ -27,9 +27,9 @@ criterion was resolved, not met — the contribution registry stays a centralize
 and self-registration is deferred to M12
 ([ADR 0052](decisions/0052-contribution-registry-is-a-centralized-list.md),
 [ADR 0080](decisions/0080-retire-self-registering-contribution-criterion.md)). M6 pinned CI's `jac`
-to release `v0.37.3` rather than jaseci `main` — the local checkout was ~293 commits behind main,
-and true main HEAD fails 14 further checks unrelated to M6; syncing to main is a left-open
-follow-up, not scheduled.
+to release `v0.37.3`; the pin now tracks the latest published release as a recurring chore rather
+than staying frozen ([ADR 0081](decisions/0081-jac-pin-tracks-latest-release.md)), currently
+`v0.37.23`.
 
 ## Next
 

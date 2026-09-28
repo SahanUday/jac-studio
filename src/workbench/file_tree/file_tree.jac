@@ -169,7 +169,7 @@ def:pub app(props: any) -> JsxElement {
     has root_name: str = "";
     has input_value: str = "";
     has expanded: dict[str, bool] = {};
-    has children_by_path: dict[str, list[dict]] = {};
+    has children_by_path: dict[str, list[dict[str, any]]] = {};
     has selected_path: str = "";
     has compare_pending_path: str = "";
     has compare_pending_name: str = "";

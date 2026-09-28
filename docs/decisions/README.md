@@ -92,3 +92,4 @@ exist only because a passing test suite lied and a live reproduction found the t
 | [0078](0078-terminal-real-pty-sessions.md) | Terminal moves to real, reconnectable PTY sessions over SSE-down/POST-up | 2026-09-22 | accepted |
 | [0079](0079-panel-resize-is-plain-mousedown-not-resizable-panels.md) | Bottom panel resize is a plain mousedown drag, not `react-resizable-panels` | 2026-09-22 | accepted |
 | [0080](0080-retire-self-registering-contribution-criterion.md) | Retire the self-registering-contribution exit criterion | 2026-09-27 | accepted |
+| [0081](0081-jac-pin-tracks-latest-release.md) | `jac.toml`'s pin tracks the latest published release, not a frozen version | 2026-09-28 | accepted |

@@ -76,7 +76,7 @@ def _build_prompt_with_attachments(prompt: str, attached_paths: list[str]) -> st
 `attached_paths`/`model`/`permission_mode`/`effort` are the client's current picker state, sent
 fresh each turn and threaded straight to the launcher's matching flags -- no validation here beyond
 what the launcher's own `ClaudeAgentOptions` already does."""
-async def:pub start_chat_turn(prompt: str, session_id: str | None, cwd: str | None, attached_paths: list[str], model: str, permission_mode: str, effort: str) -> Generator {
+async def:pub start_chat_turn(prompt: str, session_id: str | None, cwd: str | None, attached_paths: list[str], model: str, permission_mode: str, effort: str) -> None {
     async def stream -> AsyncGenerator[str, None] {
         if not _ai_enabled() {
             yield json.dumps({"type": "error", "message": "AI tool integrations are disabled. Set [terminal] enabled = true in jac.toml to turn them on."});

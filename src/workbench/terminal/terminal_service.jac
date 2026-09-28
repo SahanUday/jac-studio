@@ -137,7 +137,7 @@ async def:pub open_session(session_id: str, cwd: str, cols: int, rows: int) -> d
 }
 
 """SSE endpoint: replays buffered output then tails it live; ends once the daemon has exited and nothing new remains."""
-async def:pub attach_session(session_id: str) -> Generator[str, None, None] {
+async def:pub attach_session(session_id: str) -> None {
     async def stream -> AsyncGenerator[str, None] {
         if not _terminal_enabled() {
             yield "Terminal is disabled. Set [terminal] enabled = true in jac.toml to turn it on.\n";

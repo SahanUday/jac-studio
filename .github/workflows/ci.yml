@@ -1,8 +1,7 @@
 name: CI
 
-# Self-contained jac binary; no other toolchain setup needed.
-# Bump JAC_VERSION in lockstep with the root jac.toml's jac-version. internal/ is archived
-# spike/exploration work, frozen on its own pin, and out of scope for this check.
+# Self-contained jac binary. Bump JAC_VERSION with the root jac.toml's jac-version; internal/
+# is excluded and stays on its own pin.
 
 on:
   pull_request:

@@ -8,7 +8,6 @@ gaps a user could actually hit.
 
 | Gap | Effect | Fix would be |
 |---|---|---|
-| **Cursor doesn't move in an already-open tab** | `initialCursor` is read once at mount, so clicking a search result, problem, go-to-definition or outline entry only jumps the cursor when the tab wasn't already open. Otherwise it just activates the tab. | An imperative `revealLine`/`setPosition` call instead of relying on mount-time props |
 | **Breadcrumbs empty on a freshly opened tab** | `jac lsp` was measured at 30s+ to type-check a 7-line file, and `textDocument/documentSymbol` answers from current state rather than waiting. A single 4s retry is an explicit partial mitigation. | An LSP-side "outline changed" push, which doesn't exist today |
 | **No call hierarchy** | `jaclang.lsp.server.server` ships no call-hierarchy handler, so there is nothing to wire a UI to. | Server-side capability first |
 | **Outline reflects last save, not the live buffer** | A sidebar view can't reach a mounted editor's model without pulling in `loader.init()`'s singleton API. Same trade-off as diagnostics refreshing on save. | Either the singleton API, or routing outline through the editor instance |

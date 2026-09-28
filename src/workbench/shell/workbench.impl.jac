@@ -37,14 +37,24 @@ impl app.open_tab(path: str, name: str) -> None {
     await _save_session();
 }
 
-"""Seeds `cursor_positions[path]` before inserting the tab, so the editor picks the position up as
-`initialCursor` at mount rather than needing an imperative jump."""
+"""Seeds `cursor_positions` if `path` isn't open yet; otherwise jumps its live editor directly."""
 impl app.open_search_result(path: str, name: str, line: int, column: int) -> None {
-    updated_cursor_positions = {**cursor_positions};
-    updated_cursor_positions[path] = {"line": line, "column": column};
-    cursor_positions = updated_cursor_positions;
+    already_open = False;
+    for g in groups {
+        if g["id"] == active_group_id and len([t for t in g["tabs"] if t["path"] == path]) > 0 {
+            already_open = True;
+        }
+    }
+    if not already_open {
+        updated_cursor_positions = {**cursor_positions};
+        updated_cursor_positions[path] = {"line": line, "column": column};
+        cursor_positions = updated_cursor_positions;
+    }
     groups = _upsert_tab_in_active_group({"path": path, "name": name});
     await _save_session();
+    if already_open {
+        reveal_position_in_editor(path, line, column);
+    }
 }
 
 """Stores only `{filePath, staged}`; `scm_diff_editor.jac` fetches the diff content itself on mount."""

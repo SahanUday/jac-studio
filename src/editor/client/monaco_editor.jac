@@ -27,6 +27,16 @@ import from src.editor.client.command_palette_override { register_command_palett
 glob _focused_editor_handlers: dict[str, dict[str, any]] = {};
 glob _global_keybindings_registered: bool = False;
 
+"""Jumps a tab's live editor -- `initialCursor` only applies at mount, not after."""
+def:pub reveal_position_in_editor(path: str, line: int, column: int) -> bool {
+    handlers = _focused_editor_handlers.get(path);
+    if not handlers {
+        return False;
+    }
+    handlers["reveal"](line, column);
+    return True;
+}
+
 """Registered once globally, dispatching by live focus: per-instance `addCommand` does not scope to
 its own editor -- `2026-09-04-monaco-addcommand-does-not-scope-per-standalone-editor-instance`."""
 def _register_global_editor_keybindings(editor: any, monaco: any) -> None {
@@ -109,6 +119,7 @@ def:pub app(path: str, onCursorChange: any, initialCursor: any, onDirtyChange: a
     async def retry_refresh_symbols(current_content: str) -> None;
     def update_breadcrumb -> None;
     def handle_breadcrumb_click(target_line: int, target_column: int) -> None;
+    def handle_reveal_position(line: int, column: int) -> None;
     def toggle_inline_chat -> None;
     def close_inline_chat -> None;
 

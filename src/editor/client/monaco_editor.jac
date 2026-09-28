@@ -27,8 +27,7 @@ import from src.editor.client.command_palette_override { register_command_palett
 glob _focused_editor_handlers: dict[str, dict[str, any]] = {};
 glob _global_keybindings_registered: bool = False;
 
-"""Imperative jump for a tab that's already mounted -- `initialCursor` only fires once, at mount.
-Returns False if `path` has no live editor (never opened, or already unmounted)."""
+"""Jumps a tab's live editor -- `initialCursor` only applies at mount, not after."""
 def:pub reveal_position_in_editor(path: str, line: int, column: int) -> bool {
     handlers = _focused_editor_handlers.get(path);
     if not handlers {

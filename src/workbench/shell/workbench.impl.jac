@@ -37,9 +37,7 @@ impl app.open_tab(path: str, name: str) -> None {
     await _save_session();
 }
 
-"""If `path` isn't open yet, seeds `cursor_positions[path]` so the editor picks it up as
-`initialCursor` at mount. If it's already open, that prop is inert (mount already happened), so
-this jumps the live editor instance imperatively instead."""
+"""Seeds `cursor_positions` if `path` isn't open yet; otherwise jumps its live editor directly."""
 impl app.open_search_result(path: str, name: str, line: int, column: int) -> None {
     already_open = False;
     for g in groups {

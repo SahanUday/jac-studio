@@ -404,7 +404,7 @@ def:pub get_breakpoints(path: str) -> list[int] {
 """The one SSE-streamed entry point. `lines` must be passed by the caller, not read from
 `_dap_breakpoints` -- this runs in a separate process (see `_DAP_COMMAND_FILE`). Failures yield an
 `error` event rather than raising, and nothing guards server-side against a second session."""
-async def:pub start_debug_session(path: str, lines: list[int]) -> Generator {
+async def:pub start_debug_session(path: str, lines: list[int]) -> None {
     async def stream -> AsyncGenerator[str, None] {
         if not _dap_enabled() {
             yield json.dumps({"type": "error", "message": "Debugging is disabled. Set [terminal] enabled = true in jac.toml to turn it on."});

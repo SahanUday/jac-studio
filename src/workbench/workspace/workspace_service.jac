@@ -22,7 +22,7 @@ node File {
     has name: str, path: str;
 }
 
-edge Contains {}
+edge Contains: any --> any {}
 
 glob DEFAULT_EXCLUDED_DIRS: list[str] = [
     "node_modules", ".git", ".jac", "dist", "__pycache__", ".venv", "venv"
@@ -131,7 +131,7 @@ here, and the path de-dup likewise guarantees the display regardless of what the
 skips any `Contains`-edge target that isn't actually a `Folder`/`File` -- a real crash otherwise
 (`2026-09-04-list-children-by-path-crashes-on-unexpected-contains-target`; why one turns up there
 at all is still open)."""
-def:pub list_children_by_path(parent_path: str) -> list[dict] {
+def:pub list_children_by_path(parent_path: str) -> list[dict[str, any]] {
     key = jid(root);
     if key not in _path_index or parent_path not in _path_index[key] {
         return [];

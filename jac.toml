@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "VS Code's workbench reimplemented in Jac, real Monaco as the editor engine -- see docs/architecture.md and docs/roadmap.md"
 entry-point = "main"
 kind = "web-app"
-jac-version = "==0.37.23"
+jac-version = "==0.37.24"
 
 [jac-shadcn]
 style = "nova"
@@ -15,10 +15,6 @@ radius = "small"
 menuAccent = "subtle"
 menuColor = "default"
 [dependencies]
-debugpy = ">=1.8.0"
-claude-agent-sdk = ">=0.1.0"
-watchdog = ">=4.0.0"
-ptyprocess = ">=0.7.0"
 [optional-dependencies.windows]
 pywinpty = ">=2.0.0"
 [dependencies.npm]
@@ -91,3 +87,9 @@ directory = "src"
 # the same trust level as the user opening their own shell.
 [terminal]
 enabled = false
+
+[dependencies.pypi]
+debugpy = ">=1.8.0"
+claude-agent-sdk = ">=0.1.0"
+watchdog = ">=4.0.0"
+ptyprocess = ">=0.7.0"

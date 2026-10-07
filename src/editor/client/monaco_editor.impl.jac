@@ -16,6 +16,7 @@ impl app.handle_before_mount(monaco: any) -> None {
 impl app.handle_mount(editor: any, monaco: any) -> None {
     editor_ref.current = editor;
     monaco_ref.current = monaco;
+    _track_editor(editor, monaco);
     _focused_editor_handlers[path] = {"save": handle_save, "toggleInlineChat": toggle_inline_chat, "reveal": handle_reveal_position};
     _register_global_editor_keybindings(editor, monaco);
     editor.onDidChangeCursorPosition(handle_cursor_change);

@@ -4,6 +4,7 @@
 also has a module docstring."""
 
 import ".styles.global.css";
+import from "react" { useEffect }
 import from src.workbench.shell.workbench { app as WorkbenchApp }
 
 # These four are consumed by raw SSE `fetch` calls, not generated RPC stubs. With no client-side
@@ -25,6 +26,9 @@ def:pub app -> JsxElement {
     }
 
     async def toggle_theme -> None;
+
+    # Radix portals mount on <body>, outside the themed root div, so they need the class too.
+    useEffect(lambda { document.body.className = theme; }, [theme]);
 
     <div className={theme} style={{"background": "var(--background)", "color": "var(--foreground)", "height": "100vh"}}>
         <WorkbenchApp onToggleTheme={toggle_theme} />

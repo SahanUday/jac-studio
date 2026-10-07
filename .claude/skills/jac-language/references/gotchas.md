@@ -115,3 +115,18 @@ Each entry: symptom → fix. Tracker ids point to the full writeup; don't re-der
 - **`jac install --shadcn command` generates a `CommandDialog` that crashes on open** — children
   are not wrapped in the `Command` root that `cmdk` needs. Hand-wrap after every regeneration.
   `2026-08-25-shadcn-command-generator-missing-root-wrapper`
+- **A `glob` imported by another module must be `glob:pub`.** `jac check` and `jac test` accept a
+  bare `glob`; only the client build fails (`E7005: runtime import(s) X are not exported`), so the
+  dev server dies on startup. Hit twice (`THEME_NAME`, `MENUS`).
+- **A comprehension over a client `dict` compiles to `.filter` on a plain object** and throws
+  `x.filter is not a function`. Iterate `d.values()` or `d.items()` (`workbench.impl.jac`'s
+  `_confirm_discard_dirty`).
+- **Tuple-unpack assignment to client `has` fields** compiled to a destructuring of undeclared
+  names, so the handler threw and session restore silently never ran. Fixed on a local jaseci
+  patch. `2026-10-07-client-tuple-unpack-to-has-fields-emits-undeclared-names`
+- **`override` is a reserved word** (E0013), as are `node`/`edge`/`walker`; check names before use.
+- **A lambda inside a `for` loop captures one shared, hoisted variable** (Python late binding, kept
+  in the JS output: the loop variable becomes a function-level `let`). Every handler then sees the
+  last iteration's value. Build handlers through a helper call, or use a comprehension (it compiles
+  to `.map` with a fresh binding). Seen in `menu_bar.jac`.
+

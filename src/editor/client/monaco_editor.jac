@@ -30,6 +30,55 @@ import from src.editor.client.command_palette_override { register_command_palett
 glob _SYMBOLS_SETTLE_MS: int = 2000;
 glob _focused_editor_handlers: dict[str, dict[str, any]] = {};
 glob _global_keybindings_registered: bool = False;
+glob _monaco_instance: any = None;
+glob _last_focused_editor: any = None;
+
+def _track_editor(editor: any, monaco: any) -> None {
+    _monaco_instance = monaco;
+    editor.onDidFocusEditorText(lambda { _last_focused_editor = editor; });
+}
+
+"""Runs a menu or palette command on the live editor showing `path`, preferring the one that last had
+focus (a split can show one file twice). Callers click away from Monaco first, so its own focus
+check can't pick the target."""
+def:pub run_editor_command(path: str, command: str) -> bool {
+    if command == "save" {
+        handlers = _focused_editor_handlers.get(path);
+        if not handlers {
+            return False;
+        }
+        handlers["save"]();
+        return True;
+    }
+    if _monaco_instance is None {
+        return False;
+    }
+    candidates = [e for e in _monaco_instance.editor.getEditors() if e.getModel() and e.getModel().uri.path == path];
+    if len(candidates) == 0 {
+        return False;
+    }
+    target = candidates[0];
+    for e in candidates {
+        if e == _last_focused_editor {
+            target = e;
+        }
+    }
+    target.focus();
+    if command == "selectAll" {
+        target.setSelection(target.getModel().getFullModelRange());
+        return True;
+    }
+    if command in ["undo", "redo"] {
+        target.trigger("menu", command, None);
+        return True;
+    }
+    action = target.getAction(command);
+    if not action {
+        return False;
+    }
+    action.run();
+    return True;
+}
 
 """Jumps a tab's live editor -- `initialCursor` only applies at mount, not after."""
 def:pub reveal_position_in_editor(path: str, line: int, column: int) -> bool {

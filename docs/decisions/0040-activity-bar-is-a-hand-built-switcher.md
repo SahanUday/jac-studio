@@ -1,7 +1,7 @@
 # 0040 — The activity bar is a hand-built view switcher, not the `Sidebar` primitive
 
 - **Date**: 2026-08-28
-- **Status**: accepted
+- **Status**: accepted; the no-menu-bar part is superseded by [0083](0083-title-bar-gets-a-menu-bar.md)
 
 ## Decision
 

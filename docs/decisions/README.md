@@ -94,3 +94,4 @@ exist only because a passing test suite lied and a live reproduction found the t
 | [0080](0080-retire-self-registering-contribution-criterion.md) | Retire the self-registering-contribution exit criterion | 2026-09-27 | accepted |
 | [0081](0081-jac-pin-tracks-latest-release.md) | `jac.toml`'s pin tracks the latest published release, not a frozen version | 2026-09-28 | accepted |
 | [0082](0082-user-level-state-lives-in-json-files.md) | User-level state lives in JSON files under the user data dir | 2026-10-07 | accepted |
+| [0083](0083-title-bar-gets-a-menu-bar.md) | The title bar gets a VS Code-style menu bar | 2026-10-07 | accepted |

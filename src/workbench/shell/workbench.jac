@@ -14,7 +14,8 @@ import from src.workbench.scm.scm { app as ScmApp }
 import from src.workbench.outline.outline { app as OutlineApp }
 import from src.workbench.ai.ai_chat { app as AIChatApp }
 import from src.workbench.editor_tabs.editor_tabs { app as EditorTabsApp }
-import from src.editor.client.monaco_editor { reveal_position_in_editor }
+import from src.editor.client.monaco_editor { reveal_position_in_editor, run_editor_command }
+import from src.workbench.menu_bar.menu_model { EDITOR_COMMANDS }
 import from src.workbench.activity_bar.activity_bar { app as ActivityBarApp }
 import from src.workbench.command_palette.command_palette { app as CommandPaletteApp }
 import from src.workbench.quick_open.quick_open { app as QuickOpenApp }
@@ -139,6 +140,8 @@ def:pub app(onToggleTheme: any) -> JsxElement {
 
     active_group_list = [g for g in groups if g["id"] == active_group_id];
     active_tab_path = active_group_list[0]["activePath"] if len(active_group_list) > 0 else "";
+    active_tab_list = [t for t in (active_group_list[0]["tabs"] if len(active_group_list) > 0 else []) if t["path"] == active_tab_path];
+    active_tab_is_editor = len(active_tab_list) > 0 and not active_tab_list[0].get("kind");
     active_cursor = cursor_positions[active_tab_path] if active_tab_path in cursor_positions else {"line": 1, "column": 1};
 
     panel_count = len(groups);
@@ -179,7 +182,15 @@ def:pub app(onToggleTheme: any) -> JsxElement {
         <QuickOpenApp open={quick_open_open} onOpenChange={set_quick_open_open} onOpenFile={open_tab} />
         <TaskPickerApp open={task_picker_open} onOpenChange={set_task_picker_open} onRunTask={run_selected_task} />
         <FolderPickerApp open={folder_picker_open} mode={folder_picker_mode} onOpenChange={set_folder_picker_open} onPick={open_workspace_folder} />
-        <TitleBarApp onOpenCommandPalette={lambda (e: any) { handle_command("workbench.action.showCommands"); }} workspaceName={workspace_name} />
+        <TitleBarApp
+            onOpenCommandPalette={lambda (e: any) { handle_command("workbench.action.showCommands"); }}
+            workspaceName={workspace_name}
+            commands={commands}
+            hasWorkspace={workspace_path != ""}
+            hasTab={active_tab_path != ""}
+            hasEditor={active_tab_is_editor}
+            onCommand={handle_command}
+        />
         <div style={{"display": "flex", "flex": "1", "overflow": "hidden"}}>
             <ActivityBarApp activeViewId={active_view_id} onSelectView={select_view} />
             <ResizablePanelGroup direction="horizontal" style={{"flex": "1"}}>

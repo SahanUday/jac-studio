@@ -32,6 +32,67 @@ impl app._upsert_tab_in_active_group(tab: dict[str, any]) -> list[dict[str, any]
     return updated_groups;
 }
 
+"""Dirty flags are the only unsaved-work signal the shell has; the buffers live inside Monaco."""
+impl app._confirm_discard_dirty -> bool {
+    unsaved = [flag for flag in dirty_paths.values() if flag];
+    if len(unsaved) == 0 {
+        return True;
+    }
+    return confirm("You have unsaved changes. Discard them and switch workspace?");
+}
+
+"""A different workspace gets a clean editor state; per-workspace session restore is not built."""
+impl app.open_workspace_folder(path: str) -> None {
+    folder_picker_open = False;
+    if path == "" or path == workspace_path {
+        return;
+    }
+    if not _confirm_discard_dirty() {
+        return;
+    }
+    opened = await open_workspace(path);
+    await add_recent_workspace(opened["root_path"]);
+    groups = [{"id": "group-1", "tabs": [], "activePath": ""}];
+    active_group_id = "group-1";
+    next_group_id = 2;
+    dirty_paths = {};
+    cursor_positions = {};
+    symbols_by_path = {};
+    workspace_path = opened["root_path"];
+    workspace_name = opened["name"];
+    await _save_session();
+}
+
+impl app.close_workspace_folder -> None {
+    if workspace_path == "" or not _confirm_discard_dirty() {
+        return;
+    }
+    await close_workspace();
+    groups = [_welcome_group()];
+    active_group_id = "group-1";
+    next_group_id = 2;
+    dirty_paths = {};
+    cursor_positions = {};
+    symbols_by_path = {};
+    workspace_path = "";
+    workspace_name = "";
+    await _save_session();
+}
+
+impl app.open_welcome_tab -> None {
+    groups = _upsert_tab_in_active_group({"path": WELCOME_PATH, "name": "Welcome", "kind": "welcome"});
+    await _save_session();
+}
+
+impl app.set_folder_picker_open(next_open: bool) -> None {
+    folder_picker_open = next_open;
+}
+
+impl app.show_folder_picker(mode: str) -> None {
+    folder_picker_mode = mode;
+    folder_picker_open = True;
+}
+
 impl app.open_tab(path: str, name: str) -> None {
     groups = _upsert_tab_in_active_group({"path": path, "name": name});
     await _save_session();
@@ -205,6 +266,22 @@ impl app.handle_files_changed_externally(paths: list[str]) -> None {
 }
 
 impl app.handle_command(command_id: str) -> None {
+    if command_id == "workbench.action.files.openFolder" {
+        show_folder_picker("browse");
+        return;
+    }
+    if command_id == "workbench.action.openRecent" {
+        show_folder_picker("recent");
+        return;
+    }
+    if command_id == "workbench.action.files.closeFolder" {
+        await close_workspace_folder();
+        return;
+    }
+    if command_id == "workbench.action.showWelcome" {
+        await open_welcome_tab();
+        return;
+    }
     if command_id == "workbench.action.splitEditorRight" {
         await split_group(active_group_id);
         return;

@@ -2,9 +2,9 @@
 No window controls or menu bar -- `kind = "web-app"`, so the browser tab owns window chrome.
 The Command Center pill just opens the command palette (`onOpenCommandPalette`); it is not a
 merged file+command search -- `command_palette.jac`/`quick_open.jac` stay separate providers.
-Static app-name label, not the live workspace name (not worth a state-lifting refactor)."""
+Shows `workspaceName` before the app name, as VS Code does."""
 
-def:pub app(onOpenCommandPalette: any) -> JsxElement {
+def:pub app(onOpenCommandPalette: any, workspaceName: str) -> JsxElement {
     <div
         role="banner"
         style={{
@@ -19,7 +19,7 @@ def:pub app(onOpenCommandPalette: any) -> JsxElement {
             "fontFamily": "system-ui, sans-serif"
         }}
     >
-        <span style={{"fontSize": "12px", "color": "#8C8C8C", "flexShrink": "0"}}>jac-studio</span>
+        <span style={{"fontSize": "12px", "color": "#8C8C8C", "flexShrink": "0"}}>{(workspaceName + " - jac-studio") if workspaceName != "" else "jac-studio"}</span>
         <button
             onClick={onOpenCommandPalette}
             title="Show All Commands"

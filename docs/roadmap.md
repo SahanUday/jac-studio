@@ -74,6 +74,15 @@ UI, multiple/split terminal instances (a real user gap since M7 made the termina
 having more than one of -- see `known-limitations.md`; needs a session-id-per-instance scheme, not
 today's one fixed session, plus tab/split UI).
 
+Pulled ahead of M9, in this order:
+
+1. ~~Workspace opening~~: Welcome tab, Open Folder dialog, Open Recent, Close Folder, workspace name
+   in the title bar ([0082](decisions/0082-user-level-state-lives-in-json-files.md)).
+2. Menu bar in the title bar (reverses the menu-less title bar; its ADR lands with it).
+3. Settings editor over `settings.json` user and workspace files.
+4. Keybindings editor over `keybindings.json`.
+5. Fuller status bar (language, EOL, indentation) and explorer toolbar actions.
+
 **Exit**: no triaged "Scoped" feature area is still missing.
 
 ### M12 — Extensions: dynamic loading

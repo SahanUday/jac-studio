@@ -11,7 +11,7 @@ bundling the same client.
 
 Runs locally as a web app with a real workbench: file tree, editor groups and tabs, command
 palette, quick open, search, SCM, tasks and problems, an integrated terminal, an outline view,
-notifications, and a settings/session layer that persists.
+a Welcome tab with Open Folder, Open Recent and Close Folder, notifications, and a settings/session layer that persists.
 
 Language intelligence is native — a Jac LSP client speaking to `jac lsp`, giving completion, hover,
 go-to-definition, find-references, rename, formatting and semantic highlighting. A DAP client backs debugging. AI assistance runs

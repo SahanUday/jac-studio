@@ -2,7 +2,7 @@
 active path and every callback come from `workbench.jac`, and `groupId` is forwarded as the first
 argument of each callback. Every tab's editor stays mounted and is hidden with `display: none`, so
 switching tabs never refetches content or loses Monaco undo history. A tab's optional `kind`
-(`"diff"` / `"gitdiff"`) selects which editor component renders its panel; both reload on a clean
+(`"diff"` / `"gitdiff"` / `"welcome"`) selects which editor component renders its panel; both reload on a clean
 external change via `filesPendingReload` (ADR 0072), a `"gitdiff"` tab unconditionally since it has
 no dirty state of its own.
 Hide-on-hover here must use opacity, never `display`: codicon's own
@@ -11,6 +11,7 @@ Hide-on-hover here must use opacity, never `display`: codicon's own
 import from src.editor.client.monaco_editor { app as MonacoEditorApp }
 import from src.editor.client.monaco_diff_editor { app as MonacoDiffEditorApp }
 import from src.workbench.scm.scm_diff_editor { app as ScmDiffEditorApp }
+import from src.workbench.welcome.welcome { app as WelcomeApp }
 import from components.ui.button { Button }
 import from src.workbench.file_icons.file_icons { file_icon_class }
 
@@ -49,6 +50,8 @@ def:pub app(props: any) -> JsxElement {
     on_open_location = props["onOpenLocation"];
     on_open_command_palette = props["onOpenCommandPalette"];
     on_ask_ai = props["onAskAI"];
+    on_command = props["onCommand"];
+    on_open_recent = props["onOpenRecent"];
 
     <div style={{"display": "flex", "flexDirection": "column", "height": "100%", "overflow": "hidden"}}>
         <div role="tablist" aria-label="Open editors" style={{"display": "flex", "alignItems": "center", "borderBottom": "1px solid #2A2B2C", "background": "#191A1B", "flexShrink": "0"}}>
@@ -70,7 +73,7 @@ def:pub app(props: any) -> JsxElement {
                         }}
                     >
                         <span
-                            className={"codicon " + ("codicon-diff" if t.get("kind") in ["diff", "gitdiff"] else file_icon_class(t["name"], False, False))}
+                            className={"codicon " + ("codicon-diff" if t.get("kind") in ["diff", "gitdiff"] else "codicon-home" if t.get("kind") == "welcome" else file_icon_class(t["name"], False, False))}
                             style={{"fontSize": "14px", "opacity": "0.85"}}
                         />
                         <span>{t["name"]}</span>
@@ -101,7 +104,7 @@ def:pub app(props: any) -> JsxElement {
                 <span className="codicon codicon-split-horizontal" style={{"fontSize": "16px"}} />
             </Button>
         </div>
-        <div style={{"flex": "1", "overflow": "auto", "padding": "0.75rem"}}>
+        <div style={{"flex": "1", "overflow": "auto", "padding": "0.75rem", "colorScheme": "dark"}}>
             {(
                 [
                     <div
@@ -114,6 +117,8 @@ def:pub app(props: any) -> JsxElement {
                         {(
                             <MonacoDiffEditorApp originalPath={t["originalPath"]} modifiedPath={t["modifiedPath"]} />
                         ) if t.get("kind") == "diff" else (
+                            <WelcomeApp active={t["path"] == active_path} onCommand={on_command} onOpenRecent={on_open_recent} />
+                        ) if t.get("kind") == "welcome" else (
                             <ScmDiffEditorApp
                                 filePath={t["filePath"]}
                                 staged={t["staged"]}

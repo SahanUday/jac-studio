@@ -54,6 +54,10 @@ server (jac, one process per user root)
 - **Settings and session persist by reachability** — no serialization code.
   [0028](decisions/0028-persist-state-by-graph-reachability.md) Ephemeral UI state (dirty flags,
   pending prompts) is deliberately not persisted.
+- **Workspace lifecycle belongs to the workbench**: `workbench.jac` owns the open folder and
+  switches it (Open Folder, Open Recent, Close Folder, the Welcome tab), resetting editor state on
+  a switch; the file tree only follows its `workspacePath`. Recents and the welcome preference are
+  user-level JSON, not graph state. [0082](decisions/0082-user-level-state-lives-in-json-files.md)
 
 ## Editor
 

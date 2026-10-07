@@ -111,11 +111,31 @@ def:pub open_workspace(root_path: str) -> dict[str, str] {
     return {"root_path": ws.root_path, "name": os.path.basename(ws.root_path.rstrip("/")) or ws.root_path};
 }
 
+"""Close Folder. Blanks `root_path` rather than deleting the node, since edge and node deletion does
+not reliably commit across HTTP requests (`2026-08-28-edge-deletion-not-committed-across-real-http-requests`);
+`get_current_workspace` reads a blank path as "none open"."""
+def:pub close_workspace -> None {
+    key = jid(root);
+    existing = [root-->[?:Workspace]];
+    if len(existing) == 0 {
+        return;
+    }
+    with _workspace_lock {
+        ws = jobj(jid(existing[0])) as Workspace;
+        for e in [edge ws ->:Contains:->] {
+            del e;
+        }
+        ws.root_path = "";
+        ws.scanned = False;
+        _path_index.pop(key, None);
+    }
+}
+
 """Session restore. Goes through `get_or_create_workspace` rather than reading the node directly so
 `_path_index` gets populated; passing back the node's own `root_path` never triggers a rescan."""
 def:pub get_current_workspace -> dict[str, str] | None {
     existing = [root-->[?:Workspace]];
-    if len(existing) == 0 {
+    if len(existing) == 0 or existing[0].root_path == "" {
         return None;
     }
     ws = get_or_create_workspace(existing[0].root_path);

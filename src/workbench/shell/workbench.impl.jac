@@ -163,6 +163,12 @@ impl app.handle_cursor_change(path: str, line: int, column: int) -> None {
     cursor_save_timer.current = setTimeout(lambda { _save_session(); }, 800);
 }
 
+impl app.handle_symbols_change(path: str, symbols: list[dict[str, any]]) -> None {
+    updated_symbols = {**symbols_by_path};
+    updated_symbols[path] = symbols;
+    symbols_by_path = updated_symbols;
+}
+
 impl app.handle_dirty_change(path: str, is_dirty: bool) -> None {
     updated_dirty_paths = {**dirty_paths};
     updated_dirty_paths[path] = is_dirty;

@@ -36,6 +36,7 @@ def:pub app(onToggleTheme: any) -> JsxElement {
     has active_group_id: str = "group-1";
     has next_group_id: int = 2;
     has cursor_positions: dict[str, dict[str, int]] = {};
+    has symbols_by_path: dict[str, list[dict[str, any]]] = {};
     has dirty_paths: dict[str, bool] = {};
     has files_pending_reload: dict[str, int] = {};
     has next_reload_nonce: int = 1;
@@ -70,6 +71,7 @@ def:pub app(onToggleTheme: any) -> JsxElement {
     async def split_group(group_id: str) -> None;
     async def handle_command(command_id: str) -> None;
     def handle_cursor_change(path: str, line: int, column: int) -> None;
+    def handle_symbols_change(path: str, symbols: list[dict[str, any]]) -> None;
     def handle_dirty_change(path: str, is_dirty: bool) -> None;
     def handle_files_changed_externally(paths: list[str]) -> None;
     def set_context(key: str, value: bool) -> None;
@@ -121,6 +123,7 @@ def:pub app(onToggleTheme: any) -> JsxElement {
                     onCloseTab={close_tab}
                     onSplitGroup={split_group}
                     onCursorChange={handle_cursor_change}
+                    onSymbolsChange={handle_symbols_change}
                     initialCursors={cursor_positions}
                     dirtyPaths={dirty_paths}
                     onDirtyChange={handle_dirty_change}
@@ -157,8 +160,8 @@ def:pub app(onToggleTheme: any) -> JsxElement {
                     </div>
                     <div style={{"display": "block" if active_view_id == "outline" else "none", "height": "100%"}}>
                         <OutlineApp
-                            active={active_view_id == "outline"}
                             path={active_tab_path}
+                            symbols={symbols_by_path[active_tab_path] if active_tab_path in symbols_by_path else []}
                             onOpenLocation={open_search_result}
                             cursorLine={active_cursor["line"]}
                             cursorColumn={active_cursor["column"]}

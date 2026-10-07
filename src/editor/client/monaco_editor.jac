@@ -27,6 +27,7 @@ import from src.editor.client.breadcrumb_symbols { symbol_path_at_position }
 import from src.workbench.dap.dap_client { get_breakpoints, set_breakpoints }
 import from src.editor.client.command_palette_override { register_command_palette_override }
 
+glob _SYMBOLS_SETTLE_MS: int = 2000;
 glob _focused_editor_handlers: dict[str, dict[str, any]] = {};
 glob _global_keybindings_registered: bool = False;
 
@@ -70,7 +71,7 @@ def _register_global_editor_keybindings(editor: any, monaco: any) -> None {
     });
 }
 
-def:pub app(path: str, onCursorChange: any, initialCursor: any, onDirtyChange: any, onOpenLocation: any, onOpenCommandPalette: any, onAskAI: any, reloadNonce: any) -> JsxElement {
+def:pub app(path: str, onCursorChange: any, initialCursor: any, onDirtyChange: any, onOpenLocation: any, onOpenCommandPalette: any, onAskAI: any, reloadNonce: any, onSymbolsChange: any) -> JsxElement {
     has content: str = "";
     has loaded: bool = False;
     has dirty: bool = False;
@@ -79,6 +80,7 @@ def:pub app(path: str, onCursorChange: any, initialCursor: any, onDirtyChange: a
     has decorations_ref: Ref[any] = Ref();
     has breakpoints_ref: Ref[any] = Ref();
     has suppress_dirty_ref: Ref[any] = Ref();
+    has symbols_timer_ref: Ref[any] = Ref();
     has symbols: list[dict[str, any]] = [];
     has breadcrumb_path: list[dict[str, any]] = [];
     has breakpoint_lines: list[int] = [];
@@ -93,7 +95,7 @@ def:pub app(path: str, onCursorChange: any, initialCursor: any, onDirtyChange: a
         await refresh_symbols(loaded_content);
         if len(symbols) == 0 {
             # documentSymbol answers from `jac lsp`'s hub, empty until the first type-check lands
-            setTimeout(lambda { retry_refresh_symbols(loaded_content); }, 4000);
+            setTimeout(lambda { refresh_symbols_and_breadcrumb(loaded_content); }, 4000);
         }
         breakpoint_lines = await get_breakpoints(path);
     }
@@ -119,7 +121,7 @@ def:pub app(path: str, onCursorChange: any, initialCursor: any, onDirtyChange: a
     def handle_content_change(e: any) -> None;
     async def apply_git_decorations -> None;
     async def refresh_symbols(current_content: str) -> None;
-    async def retry_refresh_symbols(current_content: str) -> None;
+    async def refresh_symbols_and_breadcrumb(current_content: str) -> None;
     def update_breadcrumb -> None;
     def handle_breadcrumb_click(target_line: int, target_column: int) -> None;
     def handle_reveal_position(line: int, column: int) -> None;

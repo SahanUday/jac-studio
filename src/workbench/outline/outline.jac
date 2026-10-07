@@ -1,12 +1,7 @@
-"""Outline sidebar view: `jac lsp`'s `textDocument/documentSymbol` via `lsp_client.jac`, rendered
-as a collapsible symbol tree that defaults to expanded. Refetch is `useEffect([active, path])`,
-not `can with entry` -- the view mounts once at startup and hides via CSS, so an entry ability
-would fire before any file is open and never again. Reads the file's last-saved content through
-`open_document`, not the live Monaco buffer. Handler bodies live in `outline.impl.jac`."""
+"""Outline sidebar view: a collapsible symbol tree, expanded by default, of the symbols the active
+editor publishes (`workbench.jac`'s `symbols_by_path`), so it tracks the live buffer rather than
+the last save. Handler bodies live in `outline.impl.jac`."""
 
-import from "react" { useEffect }
-import from src.workbench.lsp.lsp_client { get_document_symbols }
-import from src.editor.document_service { open_document }
 import from src.workbench.symbol_icons.symbol_icons { symbol_icon_class }
 import from src.editor.client.breadcrumb_symbols { symbol_path_at_position }
 
@@ -90,19 +85,10 @@ def:pub OutlineNode(props: any) -> JsxElement {
     </div>
 }
 
-def:pub app(active: bool, path: str, onOpenLocation: any, cursorLine: int, cursorColumn: int) -> JsxElement {
-    has symbols: list[dict[str, any]] = [];
-    has loading: bool = False;
+def:pub app(path: str, symbols: list[dict[str, any]], onOpenLocation: any, cursorLine: int, cursorColumn: int) -> JsxElement {
     has expanded: dict[str, bool] = {};
 
-    async def refresh_outline -> None;
     def toggle_symbol(id: str) -> None;
-
-    useEffect(lambda {
-        if active and path != "" {
-            refresh_outline();
-        }
-    }, [active, path]);
 
     current_chain = symbol_path_at_position(symbols, cursorLine, cursorColumn);
     current_chain_ids = {_symbol_id(s) for s in current_chain};
@@ -123,31 +109,18 @@ def:pub app(active: bool, path: str, onOpenLocation: any, cursorLine: int, curso
             }}
         >
             <span style={{"flex": "1"}}>Outline</span>
-            <span
-                role="button"
-                title="Refresh"
-                aria-label="Refresh outline"
-                onClick={lambda (e: any) { refresh_outline(); }}
-                className="codicon codicon-refresh"
-                style={{"cursor": "pointer", "opacity": "0.85"}}
-            />
         </div>
         <div style={{"flex": "1", "overflow": "auto"}}>
-            {(
-                <div style={{"padding": "1rem", "fontSize": "12px", "color": "#8C8C8C", "fontFamily": "system-ui, sans-serif"}}>
-                    Loading...
-                </div>
-            ) if loading else None}
             {(
                 <div style={{"padding": "1rem", "fontSize": "12px", "color": "#5A5A5A", "fontFamily": "system-ui, sans-serif"}}>
                     No symbols in this file.
                 </div>
-            ) if (not loading and path != "" and len(symbols) == 0) else None}
+            ) if (path != "" and len(symbols) == 0) else None}
             {(
                 <div style={{"padding": "1rem", "fontSize": "12px", "color": "#5A5A5A", "fontFamily": "system-ui, sans-serif"}}>
                     Open a file to see its outline.
                 </div>
-            ) if (not loading and path == "") else None}
+            ) if path == "" else None}
             {[
                 <OutlineNode
                     key={_symbol_id(s)}

@@ -53,14 +53,15 @@ impl app.handle_save -> None {
     update_breadcrumb();
 }
 
-"""Refetched at content load and after every save, never per keystroke."""
+"""Refetched at load, after every save, and `_SYMBOLS_SETTLE_MS` after typing stops, never per keystroke.
+Publishes upward so the Outline view reads the same list."""
 impl app.refresh_symbols(current_content: str) -> None {
     fetched = await get_document_symbols(path, current_content);
     symbols = fetched;
+    onSymbolsChange(path, fetched);
 }
 
-"""Fires once when the first symbol fetch came back empty; refreshes the visible breadcrumb too."""
-impl app.retry_refresh_symbols(current_content: str) -> None {
+impl app.refresh_symbols_and_breadcrumb(current_content: str) -> None {
     await refresh_symbols(current_content);
     update_breadcrumb();
 }
@@ -158,6 +159,14 @@ impl app.handle_content_change(e: any) -> None {
         dirty = True;
         onDirtyChange(path, True);
     }
+    if symbols_timer_ref.current {
+        clearTimeout(symbols_timer_ref.current);
+    }
+    symbols_timer_ref.current = setTimeout(lambda {
+        if editor_ref.current {
+            refresh_symbols_and_breadcrumb(editor_ref.current.getValue());
+        }
+    }, _SYMBOLS_SETTLE_MS);
 }
 
 # re-checks `dirty` even though workbench.jac already filtered -- closes the race where typing

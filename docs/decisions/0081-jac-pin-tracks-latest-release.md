@@ -44,9 +44,9 @@ diagnostics indefinitely. Treating the bump as a recurring chore instead of a di
   ([jaseci-labs/jac#9606](https://github.com/jaseci-labs/jac/issues/9606), tracker entry
   `2026-09-28-client-test-directory-discovery-breaks-cross-file-binding`); CI shows this one
   failure honestly until it's fixed rather than skipping/xfail-ing it.
-- `0.37.3` → `0.37.23` → `0.37.24` (2026-10-02): `[dependencies]` now lists Jac packages only, so
-  the four Python packages moved to `[dependencies.pypi]`. `jac fix dependencies` can't run on the
-  legacy manifest ([jaseci-labs/jac#9698](https://github.com/jaseci-labs/jac/issues/9698)); the
-  migration used a locally patched compiler. `jac check src` is clean, `jac test src` is unchanged
-  at `503 passed, 1 error` (the #9606 failure above). `0.37.24` has no published release asset yet,
-  so CI stays red until it ships.
+- `0.37.23` → `0.37.25` (2026-10-07): `[dependencies]` now lists Jac packages only, so the four
+  Python packages moved to `[dependencies.pypi]`. `jac fix dependencies` can't run on the legacy
+  manifest ([jaseci-labs/jac#9698](https://github.com/jaseci-labs/jac/issues/9698), still
+  reproduces on `0.37.25`); the migration used a locally patched compiler. `jac check src` is
+  clean and `jac test src` is `507 passed` on the released binary: [#9606](https://github.com/jaseci-labs/jac/issues/9606)
+  is fixed. `0.37.24` was tagged but never released, so the bump skips it.

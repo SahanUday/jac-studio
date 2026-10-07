@@ -14,7 +14,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  JAC_VERSION: "0.37.24"
+  JAC_VERSION: "0.37.25"
 
 jobs:
   check-and-test:

@@ -18,7 +18,7 @@ import from src.workbench.terminal.terminal_service { open_session, send_input, 
 
 glob _SESSION_STORAGE_KEY: str = "jac-studio-terminal-session-id";
 
-def:pub app(onFocusChange: any, onNotify: any) -> JsxElement {
+def:pub app(onFocusChange: any, onNotify: any, fontSize: int) -> JsxElement {
     has container_ref: Ref[any] = Ref();
     has term_ref: Ref[any] = Ref();
     has fit_ref: Ref[any] = Ref();
@@ -39,7 +39,7 @@ def:pub app(onFocusChange: any, onNotify: any) -> JsxElement {
 
     can with entry {
         # allowProposedApi: Unicode11Addon's version-switching API is still proposed in xterm.js.
-        term = new(Terminal, {"convertEol": False, "fontSize": 13, "cursorBlink": True, "allowProposedApi": True});
+        term = new(Terminal, {"convertEol": False, "fontSize": fontSize, "cursorBlink": True, "allowProposedApi": True});
         fit = new(FitAddon);
         search_addon = new(SearchAddon);
         term.loadAddon(fit);
@@ -84,6 +84,13 @@ def:pub app(onFocusChange: any, onNotify: any) -> JsxElement {
         }
         session_id_ref.current = session_id;
     }
+
+    useEffect(lambda {
+        if term_ref.current {
+            term_ref.current.options.fontSize = fontSize;
+            handle_resize();
+        }
+    }, [fontSize]);
 
     useEffect(lambda {
         # rAF-deferred: fitting synchronously inside the callback trips ResizeObserver's loop guard

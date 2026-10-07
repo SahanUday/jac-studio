@@ -1,5 +1,5 @@
-"""Recent workspaces and the welcome-page preference, in `workbench-state.json` under the user
-data dir. A missing or corrupt file reads as defaults. See ADR 0082."""
+"""Recent workspaces, in `workbench-state.json` under the user data dir. A missing or corrupt file reads
+as an empty list. See ADR 0082."""
 
 import os;
 import from src.workbench.user_data.user_data { read_user_json, write_user_json }
@@ -61,15 +61,5 @@ def:pub add_recent_workspace(path: str) -> None {
 def:pub remove_recent_workspace(path: str) -> None {
     state = _load_state();
     state["recent"] = [p for p in _recent_paths() if p != path];
-    _save_state(state);
-}
-
-def:pub get_show_welcome -> bool {
-    return bool(_load_state().get("showWelcomeOnStartup", True));
-}
-
-def:pub set_show_welcome(show: bool) -> None {
-    state = _load_state();
-    state["showWelcomeOnStartup"] = show;
     _save_state(state);
 }

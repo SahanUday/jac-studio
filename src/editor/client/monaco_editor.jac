@@ -10,6 +10,7 @@ import from "@monaco-editor/react" { Editor }
 import from src.editor.document_service { open_document, save_document }
 import from src.editor.client.jac_language { register_jac_language }
 import from src.editor.client.jac_theme { register_jac_theme, THEME_NAME }
+import from src.editor.client.editor_settings { monaco_options_from_settings }
 import from src.editor.client.jac_completion_provider { register_jac_completion_provider }
 import from src.editor.client.jac_hover_provider { register_jac_hover_provider }
 import from src.editor.client.jac_formatting_provider { register_jac_formatting_provider }
@@ -31,7 +32,22 @@ glob _SYMBOLS_SETTLE_MS: int = 2000;
 glob _focused_editor_handlers: dict[str, dict[str, any]] = {};
 glob _global_keybindings_registered: bool = False;
 glob _monaco_instance: any = None;
+glob _editor_settings: dict[str, any] = {};
 glob _last_focused_editor: any = None;
+
+"""Stores the effective settings and pushes them to every live editor; later mounts and re-renders read
+`_editor_settings` too, since the `options` prop would otherwise reset them (`@monaco-editor/react`
+re-applies it on each render)."""
+def:pub apply_editor_settings(settings: dict[str, any]) -> None {
+    _editor_settings = settings;
+    if _monaco_instance is None {
+        return;
+    }
+    options = monaco_options_from_settings(settings);
+    for e in _monaco_instance.editor.getEditors() {
+        e.updateOptions(options);
+    }
+}
 
 def _track_editor(editor: any, monaco: any) -> None {
     _monaco_instance = monaco;
@@ -226,7 +242,7 @@ def:pub app(path: str, onCursorChange: any, initialCursor: any, onDirtyChange: a
                     onMount={handle_mount}
                     onChange={handle_content_change}
                     keepCurrentModel={True}
-                    options={{"automaticLayout": True, "minimap": {"enabled": True}, "glyphMargin": True, "semanticHighlighting.enabled": True}}
+                    options={{"automaticLayout": True, "glyphMargin": True, "semanticHighlighting.enabled": True, **monaco_options_from_settings(_editor_settings)}}
                 />
             ) if loaded else (
                 <div style={{"padding": "1rem", "fontSize": "12px", "color": "#8C8C8C", "fontFamily": "system-ui, sans-serif"}}>

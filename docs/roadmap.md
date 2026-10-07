@@ -79,7 +79,7 @@ Pulled ahead of M9, in this order:
 1. ~~Workspace opening~~: Welcome tab, Open Folder dialog, Open Recent, Close Folder, workspace name
    in the title bar ([0082](decisions/0082-user-level-state-lives-in-json-files.md)).
 2. ~~Menu bar~~ in the title bar ([0083](decisions/0083-title-bar-gets-a-menu-bar.md), reverses the menu-less title bar).
-3. Settings editor over `settings.json` user and workspace files.
+3. ~~Settings editor~~ over `settings.json` user and workspace files ([0084](decisions/0084-settings-are-json-files-with-a-schema.md)).
 4. Keybindings editor over `keybindings.json`.
 5. Fuller status bar (language, EOL, indentation) and explorer toolbar actions.
 

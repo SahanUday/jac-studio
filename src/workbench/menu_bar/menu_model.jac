@@ -29,6 +29,9 @@ glob:pub MENUS: list[dict[str, any]] = [
         _item("workbench.action.files.save", "Save", "editor", "Ctrl+S"),
         _item("workbench.action.closeActiveEditor", "Close Editor", "tab", ""),
         SEPARATOR,
+        _item("workbench.action.openSettings", "Settings", "", ""),
+        _item("workbench.action.openSettingsJson", "Open Settings (JSON)", "", ""),
+        _item("workbench.action.openWorkspaceSettingsJson", "Open Workspace Settings (JSON)", "workspace", ""),
         _item("workbench.action.toggleColorTheme", "Toggle Color Theme", "", "")
     ]},
     {"label": "Edit", "items": [

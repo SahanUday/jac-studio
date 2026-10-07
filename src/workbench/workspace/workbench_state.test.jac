@@ -45,20 +45,10 @@ test "list_recent_workspaces drops a folder that no longer exists, remove_recent
     assert list_recent_workspaces() == [];
 }
 
-test "show-welcome defaults on and persists the choice" {
-    use_temp_user_dir();
-    assert get_show_welcome() == True;
-    set_show_welcome(False);
-    assert get_show_welcome() == False;
-    set_show_welcome(True);
-    assert get_show_welcome() == True;
-}
-
 test "a corrupt state file reads as defaults instead of raising" {
     directory = use_temp_user_dir();
     with open(os.path.join(directory, "workbench-state.json"), "w") as f {
         f.write("{not json");
     }
     assert list_recent_workspaces() == [];
-    assert get_show_welcome() == True;
 }

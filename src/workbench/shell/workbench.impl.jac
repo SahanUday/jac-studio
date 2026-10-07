@@ -84,6 +84,27 @@ impl app.open_welcome_tab -> None {
     await _save_session();
 }
 
+impl app.refresh_settings -> None {
+    latest = await get_effective_settings();
+    settings = latest;
+    apply_editor_settings(latest);
+    onThemeChange(latest["workbench.colorTheme"]);
+}
+
+impl app.open_settings_tab -> None {
+    groups = _upsert_tab_in_active_group({"path": "settings://", "name": "Settings", "kind": "settings"});
+    await _save_session();
+}
+
+impl app.open_settings_json(scope: str) -> None {
+    path = await ensure_settings_file(scope);
+    if path == "" {
+        add_notification("Open a folder to edit workspace settings.", "info", "Settings");
+        return;
+    }
+    await open_tab(path, "settings.json (User)" if scope == "user" else "settings.json (Workspace)");
+}
+
 impl app.set_folder_picker_open(next_open: bool) -> None {
     folder_picker_open = next_open;
 }
@@ -234,6 +255,10 @@ impl app.handle_dirty_change(path: str, is_dirty: bool) -> None {
     updated_dirty_paths = {**dirty_paths};
     updated_dirty_paths[path] = is_dirty;
     dirty_paths = updated_dirty_paths;
+    # saving a settings.json applies it immediately, as in VS Code
+    if not is_dirty and path.endswith("/settings.json") {
+        refresh_settings();
+    }
 }
 
 # bumps a shared nonce for any open path (plain tab by `path`, gitdiff tab by `filePath`) whose
@@ -276,6 +301,18 @@ impl app.handle_command(command_id: str) -> None {
     }
     if command_id == "workbench.action.files.closeFolder" {
         await close_workspace_folder();
+        return;
+    }
+    if command_id == "workbench.action.openSettings" {
+        await open_settings_tab();
+        return;
+    }
+    if command_id == "workbench.action.openSettingsJson" {
+        await open_settings_json("user");
+        return;
+    }
+    if command_id == "workbench.action.openWorkspaceSettingsJson" {
+        await open_settings_json("workspace");
         return;
     }
     if command_id == "workbench.action.showWelcome" {

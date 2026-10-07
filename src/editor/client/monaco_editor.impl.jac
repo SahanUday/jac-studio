@@ -42,6 +42,12 @@ impl app.handle_save -> None {
     if not editor_ref.current {
         return;
     }
+    if _editor_settings.get("editor.formatOnSave", False) and path.endswith(".jac") {
+        format_action = editor_ref.current.getAction("editor.action.formatDocument");
+        if format_action {
+            await format_action.run();
+        }
+    }
     saved_content = editor_ref.current.getValue();
     await save_document(path, saved_content);
     if dirty {

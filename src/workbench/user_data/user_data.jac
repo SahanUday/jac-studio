@@ -15,8 +15,7 @@ def:pub user_data_dir -> str {
 }
 
 """`fallback` for a missing or unparseable file -- a corrupt state file must not break startup."""
-def:pub read_user_json(name: str, fallback: any) -> any {
-    path = os.path.join(user_data_dir(), name);
+def:pub read_json_path(path: str, fallback: any) -> any {
     try {
         with open(path, "r") as f {
             return json.load(f);
@@ -27,13 +26,19 @@ def:pub read_user_json(name: str, fallback: any) -> any {
 }
 
 """Writes a temp file then renames, so a crash mid-write never leaves a truncated file."""
-def:pub write_user_json(name: str, data: any) -> None {
-    directory = user_data_dir();
-    os.makedirs(directory, exist_ok=True);
-    path = os.path.join(directory, name);
+def:pub write_json_path(path: str, data: any) -> None {
+    os.makedirs(os.path.dirname(path), exist_ok=True);
     tmp = path + ".tmp";
     with open(tmp, "w") as f {
         json.dump(data, f, indent=2);
     }
     os.replace(tmp, path);
+}
+
+def:pub read_user_json(name: str, fallback: any) -> any {
+    return read_json_path(os.path.join(user_data_dir(), name), fallback);
+}
+
+def:pub write_user_json(name: str, data: any) -> None {
+    write_json_path(os.path.join(user_data_dir(), name), data);
 }

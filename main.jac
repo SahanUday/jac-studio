@@ -26,11 +26,12 @@ def:pub app -> JsxElement {
     }
 
     async def toggle_theme -> None;
+    def set_theme(next_theme: str) -> None;
 
     # Radix portals mount on <body>, outside the themed root div, so they need the class too.
     useEffect(lambda { document.body.className = theme; }, [theme]);
 
     <div className={theme} style={{"background": "var(--background)", "color": "var(--foreground)", "height": "100vh"}}>
-        <WorkbenchApp onToggleTheme={toggle_theme} />
+        <WorkbenchApp onToggleTheme={toggle_theme} onThemeChange={set_theme} />
     </div>
 }

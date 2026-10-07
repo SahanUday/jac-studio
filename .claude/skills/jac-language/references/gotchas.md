@@ -129,4 +129,9 @@ Each entry: symptom → fix. Tracker ids point to the full writeup; don't re-der
   in the JS output: the loop variable becomes a function-level `let`). Every handler then sees the
   last iteration's value. Build handlers through a helper call, or use a comprehension (it compiles
   to `.map` with a fresh binding). Seen in `menu_bar.jac`.
+- **Client JS lacks some `str` methods, e.g. `isupper()`.** Run alone, a test of a pure module
+  executes as Python and passes; in `jac test src` a module pinned `client` runs as JS and throws
+  `'str' object has no attribute 'isupper'`. Compare with `ch.lower() != ch`, or check the suite,
+  not just the single file, for client-pinned modules.
+  `2026-10-07-client-runtime-lacks-str-isupper`
 

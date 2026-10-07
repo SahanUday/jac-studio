@@ -11,8 +11,8 @@ State that belongs to the person, not to a workspace or a jac `root`, is stored 
 
 | File | Holds | Since |
 |---|---|---|
-| `workbench-state.json` | recent workspaces, the show-welcome-on-startup preference | this ADR |
-| `settings.json` | user settings (replaces the graph `Settings` node) | next: settings editor |
+| `workbench-state.json` | recent workspaces | this ADR |
+| `settings.json` | user settings (replaces the graph `Settings` node) | [0084](0084-settings-are-json-files-with-a-schema.md) |
 
 Writes go through a temp file and rename; a missing or corrupt file reads as defaults.
 

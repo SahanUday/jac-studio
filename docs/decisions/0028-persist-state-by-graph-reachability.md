@@ -1,7 +1,7 @@
 # 0028 — Persist settings, keybindings and workspace state by graph reachability
 
 - **Date**: 2026-08-28
-- **Status**: accepted
+- **Status**: accepted; the settings half is superseded by [0084](0084-settings-are-json-files-with-a-schema.md)
 
 ## Decision
 

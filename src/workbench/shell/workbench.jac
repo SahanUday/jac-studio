@@ -14,7 +14,7 @@ import from src.workbench.scm.scm { app as ScmApp }
 import from src.workbench.outline.outline { app as OutlineApp }
 import from src.workbench.ai.ai_chat { app as AIChatApp }
 import from src.workbench.editor_tabs.editor_tabs { app as EditorTabsApp }
-import from src.editor.client.monaco_editor { reveal_position_in_editor, run_editor_command }
+import from src.editor.client.monaco_editor { reveal_position_in_editor, run_editor_command, apply_editor_settings }
 import from src.workbench.menu_bar.menu_model { EDITOR_COMMANDS }
 import from src.workbench.activity_bar.activity_bar { app as ActivityBarApp }
 import from src.workbench.command_palette.command_palette { app as CommandPaletteApp }
@@ -30,7 +30,8 @@ import from src.workbench.tasks.task_service { run_task }
 import from src.workbench.commands.command_registry { list_commands }
 import from src.workbench.session.session_service { load_session, save_session }
 import from src.workbench.workspace.workspace_service { open_workspace, close_workspace, get_current_workspace }
-import from src.workbench.workspace.workbench_state { add_recent_workspace, get_show_welcome }
+import from src.workbench.workspace.workbench_state { add_recent_workspace }
+import from src.workbench.settings.settings_service { get_effective_settings, ensure_settings_file }
 import from src.workbench.workspace.folder_picker { app as FolderPickerApp }
 import from src.workbench.session.session_restore { resolve_restored_state }
 import from components.ui.resizable { ResizablePanelGroup, ResizablePanel, ResizableHandle }
@@ -42,7 +43,7 @@ def _welcome_group -> dict[str, any] {
     return {"id": "group-1", "tabs": [tab], "activePath": WELCOME_PATH};
 }
 
-def:pub app(onToggleTheme: any) -> JsxElement {
+def:pub app(onToggleTheme: any, onThemeChange: any) -> JsxElement {
     has groups: list[dict[str, any]] = [{"id": "group-1", "tabs": [], "activePath": ""}];
     has active_group_id: str = "group-1";
     has next_group_id: int = 2;
@@ -67,6 +68,7 @@ def:pub app(onToggleTheme: any) -> JsxElement {
     has workspace_path: str = "";
     has workspace_name: str = "";
     has folder_picker_open: bool = False;
+    has settings: dict[str, any] = {};
     has folder_picker_mode: str = "browse";
     has ai_pending_prompt: str = "";
     has ai_pending_auto_send: bool = False;
@@ -80,6 +82,9 @@ def:pub app(onToggleTheme: any) -> JsxElement {
     async def open_workspace_folder(path: str) -> None;
     async def close_workspace_folder -> None;
     async def open_welcome_tab -> None;
+    async def refresh_settings -> None;
+    async def open_settings_tab -> None;
+    async def open_settings_json(scope: str) -> None;
     def set_folder_picker_open(next_open: bool) -> None;
     def show_folder_picker(mode: str) -> None;
     def _upsert_tab_in_active_group(tab: dict[str, any]) -> list[dict[str, any]];
@@ -115,6 +120,9 @@ def:pub app(onToggleTheme: any) -> JsxElement {
     async can with entry {
         commands = await list_commands();
         session = await load_session();
+        loaded_settings = await get_effective_settings();
+        settings = loaded_settings;
+        apply_editor_settings(loaded_settings);
         restored_workspace = await get_current_workspace();
         if restored_workspace is not None {
             workspace_path = restored_workspace["root_path"];
@@ -125,7 +133,7 @@ def:pub app(onToggleTheme: any) -> JsxElement {
             session, groups, active_group_id, next_group_id, terminal_open, cursor_positions
         );
         # a saved session with every tab closed still has one empty group, so test the tab count
-        if sum([len(g["tabs"]) for g in session["groups"]]) == 0 and await get_show_welcome() {
+        if sum([len(g["tabs"]) for g in session["groups"]]) == 0 and loaded_settings["workbench.startupEditor"] == "welcomePage" {
             groups = [_welcome_group()];
             active_group_id = "group-1";
             next_group_id = 2;
@@ -168,6 +176,8 @@ def:pub app(onToggleTheme: any) -> JsxElement {
                     onAskAI={handle_ask_ai}
                     onCommand={handle_command}
                     onOpenRecent={open_workspace_folder}
+                    onSettingsChanged={refresh_settings}
+                    onOpenSettingsJson={open_settings_json}
                 />
             </ResizablePanel>
         );
@@ -326,6 +336,7 @@ def:pub app(onToggleTheme: any) -> JsxElement {
                     <TerminalApp
                         onFocusChange={lambda (focused: bool) { set_context("terminalFocus", focused); }}
                         onNotify={add_notification}
+                        fontSize={settings.get("terminal.integrated.fontSize", 13)}
                     />
                 </div>
                 <div style={{"display": "block" if active_bottom_panel == "output" else "none", "height": "100%"}}>

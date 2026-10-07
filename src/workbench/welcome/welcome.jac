@@ -3,9 +3,8 @@ actions that exist are listed. Refetches on activation since tabs mount once and
 Handler bodies live in `welcome.impl.jac`."""
 
 import from "react" { useEffect }
-import from src.workbench.workspace.workbench_state {
-    list_recent_workspaces, get_show_welcome, set_show_welcome
-}
+import from src.workbench.workspace.workbench_state { list_recent_workspaces }
+import from src.workbench.settings.settings_service { get_setting, set_setting }
 
 glob RECENT_SHOWN: int = 5;
 

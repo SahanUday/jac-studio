@@ -51,9 +51,10 @@ server (jac, one process per user root)
   HTTP requests and check-then-create can't be made atomic, so the file tree checks the filesystem
   and reads de-duplicate. [0030](decisions/0030-filesystem-authoritative-file-tree-reads.md),
   [0023](decisions/0023-read-side-dedup-not-write-side-locking.md)
-- **Settings and session persist by reachability** — no serialization code.
+- **Session persists by reachability** — no serialization code.
   [0028](decisions/0028-persist-state-by-graph-reachability.md) Ephemeral UI state (dirty flags,
-  pending prompts) is deliberately not persisted.
+  pending prompts) is deliberately not persisted. **Settings are the exception:** user and workspace
+  `settings.json` files merged over one schema. [0084](decisions/0084-settings-are-json-files-with-a-schema.md)
 - **Workspace lifecycle belongs to the workbench**: `workbench.jac` owns the open folder and
   switches it (Open Folder, Open Recent, Close Folder, the Welcome tab), resetting editor state on
   a switch; the file tree only follows its `workspacePath`. Recents and the welcome preference are

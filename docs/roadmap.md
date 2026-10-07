@@ -42,7 +42,7 @@ Close the gaps a daily user hits. See [`known-limitations.md`](known-limitations
 - ~~Semantic tokens~~ from `jac lsp`, coloured by the `jac-dark` theme.
 - Signature help: **`jac lsp` does not serve it** (no handler as of `v0.37.25`), so it needs a
   server-side capability first.
-- Outline reads the live buffer, not the last save.
+- ~~Outline reads the live buffer~~, not the last save.
 
 **Exit**: every navigation lands on the right line whether or not the tab was open; formatting works on
 `.jac` files and names are coloured by role; signature help waits on the server.

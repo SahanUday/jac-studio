@@ -41,6 +41,7 @@ def:pub app(props: any) -> JsxElement {
     on_close_tab = props["onCloseTab"];
     on_split_group = props["onSplitGroup"];
     on_cursor_change = props["onCursorChange"];
+    on_symbols_change = props["onSymbolsChange"];
     initial_cursors = props["initialCursors"];
     dirty_paths = props["dirtyPaths"];
     on_dirty_change = props["onDirtyChange"];
@@ -128,6 +129,7 @@ def:pub app(props: any) -> JsxElement {
                                 onOpenLocation={on_open_location}
                                 onOpenCommandPalette={on_open_command_palette}
                                 onAskAI={on_ask_ai}
+                                onSymbolsChange={on_symbols_change}
                             />
                         )}
                     </div>

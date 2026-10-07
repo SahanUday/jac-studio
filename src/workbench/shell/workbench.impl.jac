@@ -282,6 +282,26 @@ impl app.handle_command(command_id: str) -> None {
         await open_welcome_tab();
         return;
     }
+    if command_id == "workbench.action.files.save" {
+        run_editor_command(active_tab_path, "save");
+        return;
+    }
+    if command_id == "workbench.view.explorer" {
+        select_view("explorer");
+        return;
+    }
+    if command_id == "workbench.view.outline" {
+        select_view("outline");
+        return;
+    }
+    if command_id == "workbench.view.aiChat" {
+        select_view("ai_chat");
+        return;
+    }
+    if command_id in EDITOR_COMMANDS {
+        run_editor_command(active_tab_path, command_id);
+        return;
+    }
     if command_id == "workbench.action.splitEditorRight" {
         await split_group(active_group_id);
         return;

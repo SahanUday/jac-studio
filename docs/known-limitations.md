@@ -53,6 +53,7 @@ These are deliberate. Don't "fix" them without a reason.
 - **Debugging is one combined panel** — toolbar, status, call stack, variables and output together,
   rather than VS Code's Debug sidebar plus a separate Debug Console. Enough to set a breakpoint and
   step; splitting it is parity work (M11).
-- **The title bar has no window controls or menu bar**, since the browser owns window chrome for a
-  web app. The Command Center opens the command palette rather than a unified file-and-command
-  search, and the workspace name label is static.
+- **The title bar has no window controls**, since the browser owns window chrome for a web app. The
+  Command Center opens the command palette rather than a unified file-and-command search. The menu
+  bar has no Alt-key mnemonics, submenus or narrow-width overflow, and no Cut/Copy/Paste items
+  (browsers block script-driven paste); see [0083](decisions/0083-title-bar-gets-a-menu-bar.md).

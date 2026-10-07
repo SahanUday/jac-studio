@@ -5,25 +5,9 @@ Command Center button and `Ctrl+Shift+P` both dispatch `workbench.action.showCom
 `recent_ids` is in-memory, session-only, capped at 5 -- doesn't survive a restart, by design."""
 
 import from src.workbench.commands.command_registry { list_commands }
+import from src.workbench.commands.keybinding_label { format_keybinding }
 import from components.ui.command {
     CommandDialog, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem, CommandShortcut
-}
-
-"""Prefers the always-on keybinding (`when == ""`) over a context-scoped one, so a shortcut only
-live while e.g. the terminal has focus isn't shown as the command's general shortcut."""
-def format_keybinding(keybindings: list[dict[str, str]]) -> str {
-    if len(keybindings) == 0 {
-        return "";
-    }
-    primary = keybindings[0];
-    for kb in keybindings {
-        if kb["when"] == "" {
-            primary = kb;
-            break;
-        }
-    }
-    parts = primary["key"].split("+");
-    return "+".join([p.capitalize() for p in parts]);
 }
 
 def:pub app(open: bool, onOpenChange: any, onRunCommand: any) -> JsxElement {

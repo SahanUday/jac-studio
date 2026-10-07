@@ -17,6 +17,10 @@ node Command {
 edge Contributes: CommandRegistry --> Command {}
 
 glob BUILTIN_COMMANDS: list[dict[str, any]] = [
+    {"id": "workbench.action.files.openFolder", "title": "File: Open Folder...", "keybindings": []},
+    {"id": "workbench.action.openRecent", "title": "File: Open Recent...", "keybindings": []},
+    {"id": "workbench.action.files.closeFolder", "title": "File: Close Folder", "keybindings": []},
+    {"id": "workbench.action.showWelcome", "title": "Help: Welcome", "keybindings": []},
     {"id": "workbench.action.splitEditorRight", "title": "View: Split Editor Right", "keybindings": []},
     {"id": "workbench.action.closeActiveEditor", "title": "View: Close Editor", "keybindings": []},
     {

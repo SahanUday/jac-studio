@@ -28,8 +28,18 @@ import from src.workbench.tasks.task_picker { app as TaskPickerApp }
 import from src.workbench.tasks.task_service { run_task }
 import from src.workbench.commands.command_registry { list_commands }
 import from src.workbench.session.session_service { load_session, save_session }
+import from src.workbench.workspace.workspace_service { open_workspace, close_workspace, get_current_workspace }
+import from src.workbench.workspace.workbench_state { add_recent_workspace, get_show_welcome }
+import from src.workbench.workspace.folder_picker { app as FolderPickerApp }
 import from src.workbench.session.session_restore { resolve_restored_state }
 import from components.ui.resizable { ResizablePanelGroup, ResizablePanel, ResizableHandle }
+
+glob WELCOME_PATH: str = "welcome://";
+
+def _welcome_group -> dict[str, any] {
+    tab = {"path": WELCOME_PATH, "name": "Welcome", "kind": "welcome"};
+    return {"id": "group-1", "tabs": [tab], "activePath": WELCOME_PATH};
+}
 
 def:pub app(onToggleTheme: any) -> JsxElement {
     has groups: list[dict[str, any]] = [{"id": "group-1", "tabs": [], "activePath": ""}];
@@ -53,6 +63,10 @@ def:pub app(onToggleTheme: any) -> JsxElement {
     has notification_panel_open: bool = False;
     has git_status_by_path: dict[str, str] = {};
     has task_picker_open: bool = False;
+    has workspace_path: str = "";
+    has workspace_name: str = "";
+    has folder_picker_open: bool = False;
+    has folder_picker_mode: str = "browse";
     has ai_pending_prompt: str = "";
     has ai_pending_auto_send: bool = False;
     has ai_pending_nonce: int = 0;
@@ -61,6 +75,12 @@ def:pub app(onToggleTheme: any) -> JsxElement {
 
     async def _save_session -> None;
     async def _toggle_panel(panel_id: str) -> None;
+    def _confirm_discard_dirty -> bool;
+    async def open_workspace_folder(path: str) -> None;
+    async def close_workspace_folder -> None;
+    async def open_welcome_tab -> None;
+    def set_folder_picker_open(next_open: bool) -> None;
+    def show_folder_picker(mode: str) -> None;
     def _upsert_tab_in_active_group(tab: dict[str, any]) -> list[dict[str, any]];
     async def open_tab(path: str, name: str) -> None;
     async def open_search_result(path: str, name: str, line: int, column: int) -> None;
@@ -94,9 +114,21 @@ def:pub app(onToggleTheme: any) -> JsxElement {
     async can with entry {
         commands = await list_commands();
         session = await load_session();
+        restored_workspace = await get_current_workspace();
+        if restored_workspace is not None {
+            workspace_path = restored_workspace["root_path"];
+            workspace_name = restored_workspace["name"];
+            await add_recent_workspace(restored_workspace["root_path"]);
+        }
         (cursor_positions, active_group_id, next_group_id, terminal_open, groups) = resolve_restored_state(
             session, groups, active_group_id, next_group_id, terminal_open, cursor_positions
         );
+        # a saved session with every tab closed still has one empty group, so test the tab count
+        if sum([len(g["tabs"]) for g in session["groups"]]) == 0 and await get_show_welcome() {
+            groups = [_welcome_group()];
+            active_group_id = "group-1";
+            next_group_id = 2;
+        }
     }
 
     useEffect(lambda {
@@ -131,6 +163,8 @@ def:pub app(onToggleTheme: any) -> JsxElement {
                     onOpenLocation={open_search_result}
                     onOpenCommandPalette={lambda (e: any) { handle_command("workbench.action.showCommands"); }}
                     onAskAI={handle_ask_ai}
+                    onCommand={handle_command}
+                    onOpenRecent={open_workspace_folder}
                 />
             </ResizablePanel>
         );
@@ -144,13 +178,14 @@ def:pub app(onToggleTheme: any) -> JsxElement {
         <CommandPaletteApp open={command_palette_open} onOpenChange={set_command_palette_open} onRunCommand={handle_command} />
         <QuickOpenApp open={quick_open_open} onOpenChange={set_quick_open_open} onOpenFile={open_tab} />
         <TaskPickerApp open={task_picker_open} onOpenChange={set_task_picker_open} onRunTask={run_selected_task} />
-        <TitleBarApp onOpenCommandPalette={lambda (e: any) { handle_command("workbench.action.showCommands"); }} />
+        <FolderPickerApp open={folder_picker_open} mode={folder_picker_mode} onOpenChange={set_folder_picker_open} onPick={open_workspace_folder} />
+        <TitleBarApp onOpenCommandPalette={lambda (e: any) { handle_command("workbench.action.showCommands"); }} workspaceName={workspace_name} />
         <div style={{"display": "flex", "flex": "1", "overflow": "hidden"}}>
             <ActivityBarApp activeViewId={active_view_id} onSelectView={select_view} />
             <ResizablePanelGroup direction="horizontal" style={{"flex": "1"}}>
                 <ResizablePanel defaultSize={18} minSize={12} maxSize={60} style={{"borderRight": "1px solid #2A2B2C", "overflow": "hidden", "position": "relative", "background": "#191A1B"}}>
                     <div style={{"display": "block" if active_view_id == "explorer" else "none", "height": "100%"}}>
-                        <FileTreeApp onOpenFile={open_tab} onCompareFiles={open_diff_tab} gitStatus={git_status_by_path} onFilesChangedExternally={handle_files_changed_externally} />
+                        <FileTreeApp workspacePath={workspace_path} onOpenFolder={lambda { show_folder_picker("browse"); }} onOpenFile={open_tab} onCompareFiles={open_diff_tab} gitStatus={git_status_by_path} onFilesChangedExternally={handle_files_changed_externally} />
                     </div>
                     <div style={{"display": "block" if active_view_id == "search" else "none", "height": "100%"}}>
                         <SearchApp onOpenResult={open_search_result} />

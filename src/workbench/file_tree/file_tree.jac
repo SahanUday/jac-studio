@@ -9,13 +9,14 @@ connection (ADR 0071), polling and refreshing only the directories it has loaded
 
 import from "react" { useEffect }
 import from src.workbench.workspace.workspace_service {
-    open_workspace, list_children_by_path, get_current_workspace,
+    open_workspace, list_children_by_path,
     create_file, create_folder, rename_path, delete_path
 }
 import from src.workbench.workspace.workspace_watcher {
     check_workspace_changes, start_or_switch_watch
 }
 import from src.workbench.file_icons.file_icons { file_icon_class }
+import from components.ui.button { Button }
 
 import from components.ui.sidebar {
     SidebarProvider, Sidebar, SidebarHeader, SidebarContent
@@ -164,10 +165,11 @@ def:pub app(props: any) -> JsxElement {
     has on_open_file: any = props["onOpenFile"];
     has on_compare_files: any = props["onCompareFiles"];
     has on_files_changed_externally: any = props["onFilesChangedExternally"] if "onFilesChangedExternally" in props else None;
+    has on_open_folder: any = props["onOpenFolder"];
+    workspace_path: str = props["workspacePath"];
     has opened: bool = False;
     has root_path: str = "";
     has root_name: str = "";
-    has input_value: str = "";
     has expanded: dict[str, bool] = {};
     has children_by_path: dict[str, list[dict[str, any]]] = {};
     has selected_path: str = "";
@@ -177,7 +179,7 @@ def:pub app(props: any) -> JsxElement {
     git_status = props["gitStatus"] if "gitStatus" in props else {};
 
     async def _open_path_into_tree(path: str) -> None;
-    async def open_folder -> None;
+    def _clear_tree -> None;
     async def toggle_folder(path: str) -> None;
     async def refresh_children(parent_path: str) -> None;
     def select_file(path: str, name: str) -> None;
@@ -197,26 +199,19 @@ def:pub app(props: any) -> JsxElement {
         return lambda { clearInterval(timer); };
     }, [root_path]);
 
-    async can with entry {
-        restored = await get_current_workspace();
-        if restored is not None {
-            await _open_path_into_tree(restored["root_path"]);
+    useEffect(lambda {
+        if workspace_path != "" and workspace_path != root_path {
+            _open_path_into_tree(workspace_path);
+        } elif workspace_path == "" and opened {
+            _clear_tree();
         }
-    }
+    }, [workspace_path]);
 
     <SidebarProvider>
         <Sidebar collapsible="none" style={{"width": "100%", "minWidth": "0"}}>
             <SidebarHeader>
-                <div style={{"padding": "0.5rem", "display": "flex", "gap": "0.4rem", "fontFamily": "system-ui, sans-serif"}}>
-                    <input
-                        value={input_value}
-                        placeholder="Absolute folder path..."
-                        onChange={lambda (e: any) { input_value = e.target.value; }}
-                        style={{"flex": "1", "fontSize": "12px", "padding": "0.3rem 0.4rem"}}
-                    />
-                    <button onClick={lambda (e: any) { open_folder(); }} style={{"fontSize": "12px", "padding": "0.3rem 0.6rem"}}>
-                        Open
-                    </button>
+                <div style={{"padding": "0.5rem 0.5rem 0.2rem", "fontSize": "11px", "textTransform": "uppercase", "letterSpacing": "0.04em", "color": "#8C8C8C", "fontFamily": "system-ui, sans-serif"}}>
+                    Explorer
                 </div>
                 {(
                     <ContextMenu>
@@ -264,8 +259,9 @@ def:pub app(props: any) -> JsxElement {
                             ]}
                         </div>
                     ) if opened else (
-                        <div style={{"padding": "1rem", "fontSize": "12px", "color": "#8C8C8C", "fontFamily": "system-ui, sans-serif"}}>
-                            Enter a folder path above and click Open.
+                        <div style={{"padding": "1rem", "fontSize": "13px", "color": "#8C8C8C", "fontFamily": "system-ui, sans-serif", "display": "flex", "flexDirection": "column", "gap": "0.75rem"}}>
+                            <span>You have not yet opened a folder.</span>
+                            <Button onClick={lambda (e: any) { on_open_folder(); }}>Open Folder</Button>
                         </div>
                     )}
                 </ScrollArea>

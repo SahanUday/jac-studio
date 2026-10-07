@@ -6,7 +6,6 @@ impl app._open_path_into_tree(path: str) -> None {
     result = await open_workspace(path);
     root_path = result["root_path"];
     root_name = result["name"];
-    input_value = root_path;
     expanded = {};
     selected_path = "";
     top_children = await list_children_by_path(root_path);
@@ -43,12 +42,13 @@ impl app.poll_workspace_changes -> None {
     }
 }
 
-impl app.open_folder -> None {
-    path = input_value.strip();
-    if path == "" {
-        return;
-    }
-    await _open_path_into_tree(path);
+impl app._clear_tree -> None {
+    opened = False;
+    root_path = "";
+    root_name = "";
+    expanded = {};
+    selected_path = "";
+    children_by_path = {};
 }
 
 impl app.toggle_folder(path: str) -> None {

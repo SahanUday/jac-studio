@@ -47,7 +47,7 @@ def:pub app(open: bool, onOpenChange: any, onRunCommand: any) -> JsxElement {
             {(
                 <CommandGroup heading="recently used">
                     {[
-                        <CommandItem key={c["id"]} value={c["id"]} onSelect={handle_select}>
+                        <CommandItem key={c["id"]} value={c["id"]} keywords={[c["title"]]} onSelect={handle_select}>
                             {c["title"]}
                             {(<CommandShortcut>{format_keybinding(c["keybindings"])}</CommandShortcut>) if len(c["keybindings"]) > 0 else None}
                         </CommandItem>
@@ -57,7 +57,7 @@ def:pub app(open: bool, onOpenChange: any, onRunCommand: any) -> JsxElement {
             ) if len(recent_commands) > 0 else None}
             <CommandGroup heading="other commands">
                 {[
-                    <CommandItem key={c["id"]} value={c["id"]} onSelect={handle_select}>
+                    <CommandItem key={c["id"]} value={c["id"]} keywords={[c["title"]]} onSelect={handle_select}>
                         {c["title"]}
                         {(<CommandShortcut>{format_keybinding(c["keybindings"])}</CommandShortcut>) if len(c["keybindings"]) > 0 else None}
                     </CommandItem>

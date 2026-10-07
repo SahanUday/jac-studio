@@ -93,3 +93,4 @@ exist only because a passing test suite lied and a live reproduction found the t
 | [0079](0079-panel-resize-is-plain-mousedown-not-resizable-panels.md) | Bottom panel resize is a plain mousedown drag, not `react-resizable-panels` | 2026-09-22 | accepted |
 | [0080](0080-retire-self-registering-contribution-criterion.md) | Retire the self-registering-contribution exit criterion | 2026-09-27 | accepted |
 | [0081](0081-jac-pin-tracks-latest-release.md) | `jac.toml`'s pin tracks the latest published release, not a frozen version | 2026-09-28 | accepted |
+| [0082](0082-user-level-state-lives-in-json-files.md) | User-level state lives in JSON files under the user data dir | 2026-10-07 | accepted |

@@ -524,3 +524,22 @@ test "ensure_path_reachable falls back to a graph query and still works when its
     assert found is not None;
     assert found.name == "b.txt";
 }
+
+test "close_workspace makes get_current_workspace report nothing open, and a later open works again" {
+    _reset_workspace_cache_for_tests();
+    fixture = make_fixture();
+    open_workspace(fixture);
+    close_workspace();
+    assert get_current_workspace() is None;
+    assert list_children_by_path(fixture) == [];
+
+    reopened = open_workspace(fixture);
+    assert reopened["root_path"] == fixture;
+    assert len(list_children_by_path(fixture)) > 0;
+}
+
+test "close_workspace is a no-op when nothing was ever opened" {
+    _reset_workspace_cache_for_tests();
+    close_workspace();
+    assert get_current_workspace() is None;
+}

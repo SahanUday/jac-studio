@@ -372,6 +372,28 @@ async def:pub get_references(path: str, content: str, line: int, column: int) ->
     return locations;
 }
 
+"""One file's LSP `TextEdit`s as 1-based per-edit dicts."""
+def:pub _lsp_text_edits_to_list(path: str, text_edits: any) -> list[dict[str, any]] {
+    if not isinstance(text_edits, list) {
+        return [];
+    }
+    edits = [];
+    for text_edit in text_edits {
+        range_ = text_edit.get("range", {});
+        start = range_.get("start", {});
+        end = range_.get("end", {});
+        edits.append({
+            "path": path,
+            "startLine": int(start.get("line", 0)) + 1,
+            "startColumn": int(start.get("character", 0)) + 1,
+            "endLine": int(end.get("line", 0)) + 1,
+            "endColumn": int(end.get("character", 0)) + 1,
+            "newText": text_edit.get("newText", "")
+        });
+    }
+    return edits;
+}
+
 """Flattens an LSP `WorkspaceEdit` into 1-based per-edit dicts -- callers re-group by Monaco model
 existence, not by file."""
 def:pub _lsp_workspace_edit_to_list(workspace_edit: any) -> list[dict[str, any]] {
@@ -384,23 +406,7 @@ def:pub _lsp_workspace_edit_to_list(workspace_edit: any) -> list[dict[str, any]]
     }
     edits = [];
     for (uri, text_edits) in changes.items() {
-        if not isinstance(text_edits, list) {
-            continue;
-        }
-        path = _uri_to_path(uri);
-        for text_edit in text_edits {
-            range_ = text_edit.get("range", {});
-            start = range_.get("start", {});
-            end = range_.get("end", {});
-            edits.append({
-                "path": path,
-                "startLine": int(start.get("line", 0)) + 1,
-                "startColumn": int(start.get("character", 0)) + 1,
-                "endLine": int(end.get("line", 0)) + 1,
-                "endColumn": int(end.get("character", 0)) + 1,
-                "newText": text_edit.get("newText", "")
-            });
-        }
+        edits += _lsp_text_edits_to_list(_uri_to_path(uri), text_edits);
     }
     return edits;
 }
@@ -536,4 +542,20 @@ async def:pub get_completions(path: str, content: str, line: int, column: int) -
         });
     }
     return completions;
+}
+
+async def:pub get_formatting_edits(path: str, content: str) -> list[dict[str, any]] {
+    if not _is_jac_file(path) {
+        return [];
+    }
+    handle = await _ensure_process();
+    if handle is None {
+        return [];
+    }
+    await _sync_content(handle, path, content);
+    result = await _send_request(handle, "textDocument/formatting", {
+        "textDocument": {"uri": _path_to_uri(path)},
+        "options": {"tabSize": 4, "insertSpaces": True}
+    });
+    return _lsp_text_edits_to_list(path, result);
 }

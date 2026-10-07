@@ -37,13 +37,15 @@ than staying frozen ([ADR 0081](decisions/0081-jac-pin-tracks-latest-release.md)
 
 Close the gaps a daily user hits. See [`known-limitations.md`](known-limitations.md).
 
-- Move the cursor when navigating into an already-open tab (search, problems, definition, outline).
-- Wire what `jac lsp` already serves but the editor doesn't consume: signature help, formatting,
-  semantic tokens.
+- ~~Move the cursor when navigating into an already-open tab~~ (#87).
+- ~~Document formatting~~ via `jac lsp`'s `textDocument/formatting`.
+- Semantic tokens: served by `jac lsp`, not yet consumed.
+- Signature help: **`jac lsp` does not serve it** (no handler in the jaseci checkout), so it needs a
+  server-side capability first.
 - Outline reads the live buffer, not the last save.
 
-**Exit**: every navigation lands on the right line whether or not the tab was open; formatting and
-signature help work on `.jac` files.
+**Exit**: every navigation lands on the right line whether or not the tab was open; formatting works on
+`.jac` files; semantic tokens and signature help follow.
 
 ### M9 — AI-first editing
 

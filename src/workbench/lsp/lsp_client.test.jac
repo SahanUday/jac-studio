@@ -179,6 +179,18 @@ test "_lsp_workspace_edit_to_list returns an empty list when changes is missing"
     assert _lsp_workspace_edit_to_list({}) == [];
 }
 
+test "_lsp_text_edits_to_list converts a whole-document formatting edit to 1-based, overshooting end line intact" {
+    server_edits = [{"range": {"start": {"line": 0, "character": 0}, "end": {"line": 4, "character": 0}}, "newText": "glob x = 1;\n"}];
+    assert _lsp_text_edits_to_list("/p/a.jac", server_edits) == [
+        {"path": "/p/a.jac", "startLine": 1, "startColumn": 1, "endLine": 5, "endColumn": 1, "newText": "glob x = 1;\n"}
+    ];
+}
+
+test "_lsp_text_edits_to_list returns an empty list for a None or non-list result" {
+    assert _lsp_text_edits_to_list("/p/a.jac", None) == [];
+    assert _lsp_text_edits_to_list("/p/a.jac", {"not": "a list"}) == [];
+}
+
 """`_apply_text_edits` is what `apply_disk_rename_edits` uses to rename a symbol in a file with no
 open Monaco model -- pure string splicing, no I/O, so it's tested directly against real multi-edit,
 same-line and cross-line cases rather than only through a live subprocess round-trip."""

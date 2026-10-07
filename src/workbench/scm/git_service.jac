@@ -58,6 +58,16 @@ glob _EMPTY_STATUS: dict[str, any] = {
 two-letter code is one (`MM` is ordinary staged-then-modified)."""
 glob _CONFLICT_CODES: set[str] = {"UU", "AA", "DD", "AU", "UA", "DU", "UD"};
 
+"""The checked-out branch for the status bar, without the full `git status` scan; `""` outside a repo."""
+def:pub get_git_branch -> str {
+    repo_root = _repo_root();
+    if repo_root is None {
+        return "";
+    }
+    (code, out, err) = _run_git(["rev-parse", "--abbrev-ref", "HEAD"], repo_root);
+    return out.strip() if code == 0 else "";
+}
+
 """Parses `git status --porcelain=v1 -z`; `-z` is required so paths with spaces round-trip unquoted,
 and a rename/copy entry carries an extra NUL-delimited old path this loop consumes and discards.
 Conflicts are routed out before the staged/unstaged split, which would otherwise put `UU` in both."""

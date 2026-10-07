@@ -70,6 +70,7 @@ glob:pub MENUS: list[dict[str, any]] = [
         _item("workbench.view.aiChat", "AI Chat", "", ""),
         SEPARATOR,
         _item("workbench.action.terminal.toggle", "Terminal", "", ""),
+        _item("workbench.actions.view.problems", "Problems", "", ""),
         _item("workbench.action.output.toggle", "Output", "", ""),
         _item("workbench.action.debug.toggle", "Debug Console", "", ""),
         SEPARATOR,

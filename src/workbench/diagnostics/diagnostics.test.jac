@@ -181,3 +181,19 @@ test "list_all_diagnostics stops reporting a file once its diagnostics are clear
 
     assert list_all_diagnostics() == [];
 }
+
+test "get_diagnostic_counts totals errors and warnings across files and ignores info and hints" {
+    file_path = make_scanned_file();
+    add_diagnostic(file_path, "e1", "error", 1, 1, "t", 1.0);
+    add_diagnostic(file_path, "e2", "error", 2, 1, "t", 1.0);
+    add_diagnostic(file_path, "w1", "warning", 3, 1, "t", 1.0);
+    add_diagnostic(file_path, "i1", "info", 4, 1, "t", 1.0);
+    add_diagnostic(file_path, "h1", "hint", 5, 1, "t", 1.0);
+
+    assert get_diagnostic_counts() == {"error": 2, "warning": 1};
+}
+
+test "get_diagnostic_counts is zero when nothing is reported" {
+    reset_diagnostics_state();
+    assert get_diagnostic_counts() == {"error": 0, "warning": 0};
+}

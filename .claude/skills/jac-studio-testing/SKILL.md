@@ -53,6 +53,11 @@ Two failure classes are invisible to it. Claiming "tests pass, it works" on eith
 - **Anything client-side.** `jac check` and `jac test` never compile or exercise the client bundle,
   so jac2js miscompiles, broken RPC route names and dead event wiring all pass cleanly. Client and
   UI changes need a live `jac browse` pass. Stop the dev server and clear ports 8000/8001 after.
+  Keep **one** browser tab. `jac browse close` and repeated `open` calls can leave stale tabs, each
+  running the app and holding a terminal stream; past six, Chrome's per-host connection limit starves
+  every request and the page hangs (editors stuck on "Loading...", `fetch` never returning) while
+  `curl` stays instant. If that happens, count the tabs (`curl localhost:<cdp port>/json`) before
+  suspecting the code, and kill Chrome and any `terminal_session_daemon` processes when done.
 
 ## Don't test the library
 

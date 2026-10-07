@@ -384,6 +384,10 @@ impl app.handle_command(command_id: str) -> None {
         await _toggle_panel("output");
         return;
     }
+    if command_id == "workbench.actions.view.problems" {
+        await _toggle_panel("problems");
+        return;
+    }
     if command_id == "workbench.action.debug.toggle" {
         await _toggle_panel("debug");
         return;

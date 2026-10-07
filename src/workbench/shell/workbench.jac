@@ -360,6 +360,9 @@ def:pub app(onToggleTheme: any, onThemeChange: any) -> JsxElement {
             line={active_cursor["line"]}
             column={active_cursor["column"]}
             path={active_tab_path}
+            hasEditor={active_tab_is_editor}
+            hasWorkspace={workspace_path != ""}
+            onCommand={handle_command}
             notifications={notifications}
             notificationPanelOpen={notification_panel_open}
             onNotificationPanelChange={set_notification_panel_open}

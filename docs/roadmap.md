@@ -81,7 +81,7 @@ Pulled ahead of M9, in this order:
 2. ~~Menu bar~~ in the title bar ([0083](decisions/0083-title-bar-gets-a-menu-bar.md), reverses the menu-less title bar).
 3. ~~Settings editor~~ over `settings.json` user and workspace files ([0084](decisions/0084-settings-are-json-files-with-a-schema.md)).
 4. ~~Keybindings editor~~ over `keybindings.json` ([0085](decisions/0085-keybindings-are-a-json-rule-list.md)).
-5. Fuller status bar (language, EOL, indentation) and explorer toolbar actions.
+5. ~~Fuller status bar~~ (branch, problems, indentation, encoding, line ending, language) and ~~explorer toolbar~~ (new file, new folder, refresh, collapse).
 
 **Exit**: no triaged "Scoped" feature area is still missing.
 

@@ -299,3 +299,18 @@ test "commit_changes with nothing staged fails" {
 
     assert result["success"] == False;
 }
+
+test "get_git_branch names the checked-out branch" {
+    repo_root = make_repo();
+    open_repo(repo_root);
+    assert get_git_branch() == "main";
+
+    _git(repo_root, ["checkout", "-b", "feature/status-bar"]);
+    assert get_git_branch() == "feature/status-bar";
+}
+
+test "get_git_branch is empty outside a git repository" {
+    _reset_workspace_cache_for_tests();
+    open_workspace(tempfile.mkdtemp());
+    assert get_git_branch() == "";
+}

@@ -17,6 +17,7 @@ import from src.workbench.workspace.workspace_watcher {
 }
 import from src.workbench.file_icons.file_icons { file_icon_class }
 import from components.ui.button { Button }
+import from src.workbench.file_tree.explorer_target { target_directory }
 
 import from components.ui.sidebar {
     SidebarProvider, Sidebar, SidebarHeader, SidebarContent
@@ -161,6 +162,17 @@ def:pub FileTreeNode(props: any) -> JsxElement {
     </div>
 }
 
+def:pub ToolbarButton(props: any) -> JsxElement {
+    <button
+        title={props["label"]}
+        aria-label={props["label"]}
+        onClick={lambda (e: any) { props["onRun"](); }}
+        style={{"background": "none", "border": "none", "color": "#cccccc", "cursor": "pointer", "padding": "0.15rem 0.25rem", "opacity": "0.8"}}
+    >
+        <span className={"codicon " + props["icon"]} style={{"fontSize": "15px"}} />
+    </button>
+}
+
 def:pub app(props: any) -> JsxElement {
     has on_open_file: any = props["onOpenFile"];
     has on_compare_files: any = props["onCompareFiles"];
@@ -181,6 +193,10 @@ def:pub app(props: any) -> JsxElement {
     async def _open_path_into_tree(path: str) -> None;
     def _clear_tree -> None;
     async def toggle_folder(path: str) -> None;
+    async def new_file_here -> None;
+    async def new_folder_here -> None;
+    async def refresh_all -> None;
+    def collapse_all -> None;
     async def refresh_children(parent_path: str) -> None;
     def select_file(path: str, name: str) -> None;
     def compare_select(path: str, name: str) -> None;
@@ -210,8 +226,16 @@ def:pub app(props: any) -> JsxElement {
     <SidebarProvider>
         <Sidebar collapsible="none" style={{"width": "100%", "minWidth": "0"}}>
             <SidebarHeader>
-                <div style={{"padding": "0.5rem 0.5rem 0.2rem", "fontSize": "11px", "textTransform": "uppercase", "letterSpacing": "0.04em", "color": "#8C8C8C", "fontFamily": "system-ui, sans-serif"}}>
-                    Explorer
+                <div style={{"display": "flex", "alignItems": "center", "padding": "0.5rem 0.5rem 0.2rem", "fontSize": "11px", "textTransform": "uppercase", "letterSpacing": "0.04em", "color": "#8C8C8C", "fontFamily": "system-ui, sans-serif"}}>
+                    <span style={{"flex": "1"}}>Explorer</span>
+                    {(
+                        <span style={{"display": "flex", "gap": "0.1rem"}}>
+                            <ToolbarButton label="New File..." icon="codicon-new-file" onRun={new_file_here} />
+                            <ToolbarButton label="New Folder..." icon="codicon-new-folder" onRun={new_folder_here} />
+                            <ToolbarButton label="Refresh Explorer" icon="codicon-refresh" onRun={refresh_all} />
+                            <ToolbarButton label="Collapse Folders in Explorer" icon="codicon-collapse-all" onRun={collapse_all} />
+                        </span>
+                    ) if opened else None}
                 </div>
                 {(
                     <ContextMenu>

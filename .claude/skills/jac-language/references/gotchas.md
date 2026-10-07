@@ -138,4 +138,8 @@ Each entry: symptom → fix. Tracker ids point to the full writeup; don't re-der
   `jac test <file>` runs it as Python, where the other module has no importable names
   (`ImportError: cannot import name ...`). `jac test src` runs both as JS and works, so test such
   modules through the whole suite.
+- **`entry` is a reserved word** (E0013), so `for entry in listing` fails; use `item`.
+- **A list of dicts mixing strings and functions in JSX** (`[{"label": "x", "run": fn}]`) is typed as
+  a union and `jac check` rejects it where a prop expects `str` (E1103). Use a small component with
+  separate props instead (`ToolbarButton`).
 

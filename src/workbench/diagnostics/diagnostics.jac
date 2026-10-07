@@ -85,3 +85,15 @@ def:pub list_all_diagnostics -> list[dict[str, any]] {
     }
     return results;
 }
+
+"""Error and warning totals for the status bar; info and hints are not counted, as in VS Code."""
+def:pub get_diagnostic_counts -> dict[str, int] {
+    counts = {"error": 0, "warning": 0};
+    for d in list_all_diagnostics() {
+        if d["severity"] in counts {
+            counts[d["severity"]] += 1;
+        }
+    }
+    return counts;
+}
+

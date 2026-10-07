@@ -52,6 +52,7 @@ impl app._clear_tree -> None {
 }
 
 impl app.toggle_folder(path: str) -> None {
+    selected_path = path;
     is_open = expanded[path] if path in expanded else False;
     if is_open {
         updated_expanded = {**expanded};
@@ -96,6 +97,25 @@ impl app.refresh_children(parent_path: str) -> None {
     updated_children = {**children_by_path};
     updated_children[parent_path] = fetched;
     children_by_path = updated_children;
+}
+
+impl app.new_file_here -> None {
+    await create_new_file(target_directory(selected_path, root_path, children_by_path));
+}
+
+impl app.new_folder_here -> None {
+    await create_new_folder(target_directory(selected_path, root_path, children_by_path));
+}
+
+"""Relists every directory the tree has loaded, so a file made outside the app shows up at once."""
+impl app.refresh_all -> None {
+    for dir_path in children_by_path.keys() {
+        await refresh_children(dir_path);
+    }
+}
+
+impl app.collapse_all -> None {
+    expanded = {};
 }
 
 impl app.create_new_file(parent_path: str) -> None {

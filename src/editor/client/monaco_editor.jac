@@ -54,9 +54,83 @@ def _track_editor(editor: any, monaco: any) -> None {
     editor.onDidFocusEditorText(lambda { _last_focused_editor = editor; });
 }
 
-"""Runs a menu or palette command on the live editor showing `path`, preferring the one that last had
-focus (a split can show one file twice). Callers click away from Monaco first, so its own focus
-check can't pick the target."""
+"""The live editor showing `path`, preferring the one that last had focus (a split can show one file
+twice). Callers click away from Monaco first, so its own focus check can't pick the target."""
+def _editor_for(path: str) -> any {
+    if _monaco_instance is None {
+        return None;
+    }
+    candidates = [e for e in _monaco_instance.editor.getEditors() if e.getModel() and e.getModel().uri.path == path];
+    if len(candidates) == 0 {
+        return None;
+    }
+    target = candidates[0];
+    for e in candidates {
+        if e == _last_focused_editor {
+            target = e;
+        }
+    }
+    return target;
+}
+
+def _language_name(language_id: str) -> str {
+    for lang in _monaco_instance.languages.getLanguages() {
+        if lang.id == language_id {
+            return lang.aliases[0] if (lang.aliases and len(lang.aliases) > 0) else language_id;
+        }
+    }
+    return language_id;
+}
+
+"""Language, line ending and indentation of the editor showing `path`, for the status bar; `None` when
+no editor shows it."""
+def:pub get_editor_status(path: str) -> dict[str, any] | None {
+    editor = _editor_for(path);
+    if editor is None {
+        return None;
+    }
+    model = editor.getModel();
+    options = model.getOptions();
+    language_id = model.getLanguageId();
+    return {
+        "language": language_id,
+        "languageName": _language_name(language_id),
+        "eol": "CRLF" if model.getEOL() == "\r\n" else "LF",
+        "insertSpaces": options.insertSpaces,
+        "tabSize": options.tabSize
+    };
+}
+
+"""Every language Monaco knows, by display name."""
+def:pub list_editor_languages -> list[dict[str, str]] {
+    if _monaco_instance is None {
+        return [];
+    }
+    named = [{"id": l.id, "name": _language_name(l.id)} for l in _monaco_instance.languages.getLanguages()];
+    return sorted(named, key=lambda (l: dict[str, str]) { l["name"].lower(); });
+}
+
+"""`kind` is `indent` (value `{insertSpaces, tabSize}`), `eol` (`"LF"` or `"CRLF"`) or `language` (an id).
+Applies to this editor's model only; nothing is written to settings."""
+def:pub set_editor_option(path: str, kind: str, value: any) -> bool {
+    editor = _editor_for(path);
+    if editor is None {
+        return False;
+    }
+    model = editor.getModel();
+    if kind == "indent" {
+        model.updateOptions(value);
+    } elif kind == "eol" {
+        model.setEOL(1 if value == "CRLF" else 0);
+    } elif kind == "language" {
+        _monaco_instance.editor.setModelLanguage(model, value);
+    } else {
+        return False;
+    }
+    return True;
+}
+
+"""Runs a menu or palette command on the active editor; see `_editor_for` for which one."""
 def:pub run_editor_command(path: str, command: str) -> bool {
     if command == "save" {
         handlers = _focused_editor_handlers.get(path);
@@ -66,18 +140,9 @@ def:pub run_editor_command(path: str, command: str) -> bool {
         handlers["save"]();
         return True;
     }
-    if _monaco_instance is None {
+    target = _editor_for(path);
+    if target is None {
         return False;
-    }
-    candidates = [e for e in _monaco_instance.editor.getEditors() if e.getModel() and e.getModel().uri.path == path];
-    if len(candidates) == 0 {
-        return False;
-    }
-    target = candidates[0];
-    for e in candidates {
-        if e == _last_focused_editor {
-            target = e;
-        }
     }
     target.focus();
     if command == "selectAll" {

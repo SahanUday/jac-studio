@@ -11,6 +11,7 @@ import from src.editor.document_service { open_document, save_document }
 import from src.editor.client.jac_language { register_jac_language }
 import from src.editor.client.jac_completion_provider { register_jac_completion_provider }
 import from src.editor.client.jac_hover_provider { register_jac_hover_provider }
+import from src.editor.client.jac_formatting_provider { register_jac_formatting_provider }
 import from src.editor.client.jac_definition_provider { register_jac_definition_provider }
 import from src.editor.client.jac_reference_provider { register_jac_reference_provider }
 import from src.editor.client.jac_rename_provider { register_jac_rename_provider }

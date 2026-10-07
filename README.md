@@ -14,7 +14,7 @@ palette, quick open, search, SCM, tasks and problems, an integrated terminal, an
 notifications, and a settings/session layer that persists.
 
 Language intelligence is native — a Jac LSP client speaking to `jac lsp`, giving completion, hover,
-go-to-definition, find-references and rename. A DAP client backs debugging. AI assistance runs
+go-to-definition, find-references, rename and document formatting. A DAP client backs debugging. AI assistance runs
 through Claude Code with tool approval, multi-file edit diff review, inline chat (`Ctrl+I`), and
 AI-backed code actions.
 

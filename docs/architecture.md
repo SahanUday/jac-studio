@@ -53,8 +53,10 @@ server (jac, one process per user root)
   [0023](decisions/0023-read-side-dedup-not-write-side-locking.md)
 - **Session persists by reachability** — no serialization code.
   [0028](decisions/0028-persist-state-by-graph-reachability.md) Ephemeral UI state (dirty flags,
-  pending prompts) is deliberately not persisted. **Settings are the exception:** user and workspace
-  `settings.json` files merged over one schema. [0084](decisions/0084-settings-are-json-files-with-a-schema.md)
+  pending prompts) is deliberately not persisted. **Settings and keybindings are the exception:** user and workspace
+  `settings.json` files merged over one schema ([0084](decisions/0084-settings-are-json-files-with-a-schema.md)),
+  and keybindings are a `keybindings.json` rule list over each command's defaults
+  ([0085](decisions/0085-keybindings-are-a-json-rule-list.md)).
 - **Workspace lifecycle belongs to the workbench**: `workbench.jac` owns the open folder and
   switches it (Open Folder, Open Recent, Close Folder, the Welcome tab), resetting editor state on
   a switch; the file tree only follows its `workspacePath`. Recents and the welcome preference are

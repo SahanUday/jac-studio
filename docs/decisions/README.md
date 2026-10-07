@@ -96,3 +96,4 @@ exist only because a passing test suite lied and a live reproduction found the t
 | [0082](0082-user-level-state-lives-in-json-files.md) | User-level state lives in JSON files under the user data dir | 2026-10-07 | accepted |
 | [0083](0083-title-bar-gets-a-menu-bar.md) | The title bar gets a VS Code-style menu bar | 2026-10-07 | accepted |
 | [0084](0084-settings-are-json-files-with-a-schema.md) | Settings are `settings.json` files, validated against one schema | 2026-10-07 | accepted |
+| [0085](0085-keybindings-are-a-json-rule-list.md) | Keybindings are a `keybindings.json` rule list over the built-in defaults | 2026-10-07 | accepted |

@@ -14,3 +14,10 @@ test "format_keybinding prefers the always-on binding over a context-scoped one"
 test "format_keybinding falls back to the first binding when every one is context-scoped" {
     assert format_keybinding([{"key": "escape", "when": "terminalFocus"}]) == "Escape";
 }
+
+test "format_keybinding spells arrow, page and plus keys readably" {
+    assert format_keybinding([{"key": "ctrl+alt+arrowup", "when": ""}]) == "Ctrl+Alt+Up";
+    assert format_keybinding([{"key": "shift+pagedown", "when": ""}]) == "Shift+PageDown";
+    assert format_keybinding([{"key": "ctrl+plus", "when": ""}]) == "Ctrl++";
+}
+

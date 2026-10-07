@@ -4,6 +4,7 @@ Open/close state lives in `workbench.jac`, not a local keydown listener, so `tit
 Command Center button and `Ctrl+Shift+P` both dispatch `workbench.action.showCommands` the same way.
 `recent_ids` is in-memory, session-only, capped at 5 -- doesn't survive a restart, by design."""
 
+import from "react" { useEffect }
 import from src.workbench.commands.command_registry { list_commands }
 import from src.workbench.commands.keybinding_label { format_keybinding }
 import from components.ui.command {
@@ -19,6 +20,13 @@ def:pub app(open: bool, onOpenChange: any, onRunCommand: any) -> JsxElement {
     }
 
     def handle_select(command_id: str) -> None;
+    async def refresh_commands -> None;
+
+    useEffect(lambda {
+        if open {
+            refresh_commands();
+        }
+    }, [open]);
 
     by_id = {c["id"]: c for c in commands};
     recent_commands = [by_id[cid] for cid in recent_ids if cid in by_id];

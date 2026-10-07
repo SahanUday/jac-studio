@@ -31,6 +31,8 @@ glob:pub MENUS: list[dict[str, any]] = [
         SEPARATOR,
         _item("workbench.action.openSettings", "Settings", "", ""),
         _item("workbench.action.openSettingsJson", "Open Settings (JSON)", "", ""),
+        _item("workbench.action.openKeybindings", "Keyboard Shortcuts", "", ""),
+        _item("workbench.action.openKeybindingsJson", "Open Keyboard Shortcuts (JSON)", "", ""),
         _item("workbench.action.openWorkspaceSettingsJson", "Open Workspace Settings (JSON)", "workspace", ""),
         _item("workbench.action.toggleColorTheme", "Toggle Color Theme", "", "")
     ]},

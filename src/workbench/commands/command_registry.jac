@@ -1,10 +1,15 @@
 """Command metadata as graph contributions; execution is entirely client-side in `workbench.jac`.
-Commands are seeded lazily on the first `list_commands` call; user keybinding overrides live in their
-own node so `register_command`'s per-call resync from `BUILTIN_COMMANDS` can't revert them, and that
-node caches the jid and re-resolves via `jobj()` before mutating
-(`2026-08-28-field-mutation-on-cached-node-not-persisted`)."""
+Commands are seeded lazily on the first `list_commands` call. User keybindings are not graph state:
+they come from `keybindings.json` (VS Code's format, rules in `keybindings_model.jac`) merged over
+each command's defaults on every call, so a resync from `BUILTIN_COMMANDS` can never revert them."""
 
+import os;
 import threading;
+import from src.workbench.user_data.user_data { user_data_dir, read_json_path, write_json_path }
+import from src.workbench.commands.keybindings_model {
+    normalize_key, key_error, resolve_command_keybindings, is_modified,
+    rules_without_command, rules_cleared, rules_with_binding
+}
 
 node CommandRegistry {}
 
@@ -43,6 +48,8 @@ glob BUILTIN_COMMANDS: list[dict[str, any]] = [
     {"id": "editor.action.gotoLine", "title": "Go: Go to Line...", "keybindings": []},
     {"id": "editor.action.quickOutline", "title": "Go: Go to Symbol in Editor...", "keybindings": []},
     {"id": "workbench.action.openSettings", "title": "Preferences: Open Settings", "keybindings": [{"key": "ctrl+,", "when": ""}]},
+    {"id": "workbench.action.openKeybindings", "title": "Preferences: Open Keyboard Shortcuts", "keybindings": []},
+    {"id": "workbench.action.openKeybindingsJson", "title": "Preferences: Open Keyboard Shortcuts (JSON)", "keybindings": []},
     {"id": "workbench.action.openSettingsJson", "title": "Preferences: Open Settings (JSON)", "keybindings": []},
     {"id": "workbench.action.openWorkspaceSettingsJson", "title": "Preferences: Open Workspace Settings (JSON)", "keybindings": []},
     {"id": "workbench.action.showWelcome", "title": "Help: Welcome", "keybindings": []},
@@ -83,44 +90,25 @@ glob BUILTIN_COMMANDS: list[dict[str, any]] = [
     {"id": "workbench.action.showNotifications", "title": "Notifications: Show", "keybindings": []}
 ];
 
-node KeybindingOverrides {
-    has overrides: dict[str, list[dict[str, str]]] = {};
-}
-
 glob _cached_command_registries: dict[str, CommandRegistry] = {};
-glob _cached_keybinding_overrides_jid: dict[str, str] = {};
 
-def:pub _reset_keybinding_overrides_cache_for_tests {
-    _cached_keybinding_overrides_jid.clear();
+def:pub _keybindings_file -> str {
+    return os.path.join(user_data_dir(), "keybindings.json");
 }
 
-def get_keybinding_overrides -> KeybindingOverrides {
-    key = jid(root);
-    if key not in _cached_keybinding_overrides_jid {
-        existing = [root-->[?:KeybindingOverrides]];
-        overrides_node = existing[0] if existing else root ++> KeybindingOverrides();
-        _cached_keybinding_overrides_jid[key] = jid(overrides_node);
-        return overrides_node;
+"""Anything that isn't a JSON list reads as no rules, so a corrupt file can't break startup."""
+def _read_rules -> list[any] {
+    data = read_json_path(_keybindings_file(), []);
+    return data if isinstance(data, list) else [];
+}
+
+def _builtin_defaults(command_id: str) -> list[dict[str, str]] | None {
+    for spec in BUILTIN_COMMANDS {
+        if spec["id"] == command_id {
+            return spec["keybindings"];
+        }
     }
-    return jobj(_cached_keybinding_overrides_jid[key]) as KeybindingOverrides;
-}
-
-"""Replaces a command's whole `keybindings` list; there is no per-entry patch."""
-def:pub set_keybinding_override(command_id: str, keybindings: list[dict[str, str]]) {
-    store = get_keybinding_overrides();
-    updated = {**store.overrides};
-    updated[command_id] = keybindings;
-    store.overrides = updated;
-}
-
-def:pub clear_keybinding_override(command_id: str) -> None {
-    store = get_keybinding_overrides();
-    if command_id not in store.overrides {
-        return;
-    }
-    updated = {**store.overrides};
-    del updated[command_id];
-    store.overrides = updated;
+    return None;
 }
 
 """Only narrows the create-duplicate race -- a `def:pub`'s commit happens after this lock releases,
@@ -150,8 +138,12 @@ def register_command(command_id: str, title: str, keybindings: list[dict[str, st
     matches = [reg->:Contributes:->[?:Command]];
     for existing_command in matches {
         if existing_command.command_id == command_id {
-            existing_command.title = title;
-            existing_command.keybindings = keybindings;
+            # only write on a real change: concurrent callers each rewriting an unchanged node
+            # raise WriteConflict
+            if existing_command.title != title or existing_command.keybindings != keybindings {
+                existing_command.title = title;
+                existing_command.keybindings = keybindings;
+            }
             return existing_command;
         }
     }
@@ -161,7 +153,8 @@ def register_command(command_id: str, title: str, keybindings: list[dict[str, st
 }
 
 """De-dupes by `command_id` on the read path -- keeping the first match is safe since any duplicate
-came from the same `BUILTIN_COMMANDS` entry."""
+came from the same `BUILTIN_COMMANDS` entry. A node whose id is no longer built in (a command removed
+in a later release) is left in the graph but never returned."""
 def:pub list_commands -> list[dict[str, any]] {
     with _registry_lock {
         for spec in BUILTIN_COMMANDS {
@@ -169,17 +162,64 @@ def:pub list_commands -> list[dict[str, any]] {
         }
         reg = get_command_registry();
         commands = [reg->:Contributes:->[?:Command]];
-        overrides = get_keybinding_overrides().overrides;
+        rules = _read_rules();
+        builtin_ids = {spec["id"] for spec in BUILTIN_COMMANDS};
         seen_ids: set[str] = set();
         deduped = [];
         for c in commands {
-            if c.command_id in seen_ids {
+            if c.command_id in seen_ids or c.command_id not in builtin_ids {
                 continue;
             }
             seen_ids.add(c.command_id);
-            keybindings = overrides[c.command_id] if c.command_id in overrides else c.keybindings;
-            deduped.append({"id": c.command_id, "title": c.title, "keybindings": keybindings});
+            deduped.append({
+                "id": c.command_id,
+                "title": c.title,
+                "keybindings": resolve_command_keybindings(c.command_id, c.keybindings, rules),
+                "defaults": c.keybindings,
+                "modified": is_modified(c.command_id, rules)
+            });
         }
         return deduped;
     }
+}
+
+"""Rebinds `command_id` to a single chord, replacing its defaults and earlier user bindings. The
+result is `{"ok", "error"}` so the editor can show the message inline."""
+def:pub set_command_keybinding(command_id: str, key: str, when: str) -> dict[str, any] {
+    defaults = _builtin_defaults(command_id);
+    if defaults is None {
+        return {"ok": False, "error": "Unknown command: " + command_id};
+    }
+    error = key_error(key);
+    if error != "" {
+        return {"ok": False, "error": error};
+    }
+    write_json_path(_keybindings_file(), rules_with_binding(_read_rules(), command_id, defaults, key, when));
+    return {"ok": True, "error": ""};
+}
+
+"""Leaves the command with no binding at all."""
+def:pub clear_command_keybinding(command_id: str) -> None {
+    defaults = _builtin_defaults(command_id);
+    if defaults is None {
+        return;
+    }
+    write_json_path(_keybindings_file(), rules_cleared(_read_rules(), command_id, defaults));
+}
+
+"""Drops every user rule for the command, restoring its defaults."""
+def:pub reset_command_keybinding(command_id: str) -> None {
+    rules = _read_rules();
+    if is_modified(command_id, rules) {
+        write_json_path(_keybindings_file(), rules_without_command(rules, command_id));
+    }
+}
+
+"""Creates an empty rule list so the editor tab opens on something saveable."""
+def:pub ensure_keybindings_file -> str {
+    path = _keybindings_file();
+    if not os.path.exists(path) {
+        write_json_path(path, []);
+    }
+    return path;
 }

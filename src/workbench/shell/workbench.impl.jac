@@ -91,6 +91,20 @@ impl app.refresh_settings -> None {
     onThemeChange(latest["workbench.colorTheme"]);
 }
 
+impl app.refresh_commands -> None {
+    commands = await list_commands();
+}
+
+impl app.open_keybindings_tab -> None {
+    groups = _upsert_tab_in_active_group({"path": "keybindings://", "name": "Keyboard Shortcuts", "kind": "keybindings"});
+    await _save_session();
+}
+
+impl app.open_keybindings_json -> None {
+    path = await ensure_keybindings_file();
+    await open_tab(path, "keybindings.json");
+}
+
 impl app.open_settings_tab -> None {
     groups = _upsert_tab_in_active_group({"path": "settings://", "name": "Settings", "kind": "settings"});
     await _save_session();
@@ -259,6 +273,9 @@ impl app.handle_dirty_change(path: str, is_dirty: bool) -> None {
     if not is_dirty and path.endswith("/settings.json") {
         refresh_settings();
     }
+    if not is_dirty and path.endswith("/keybindings.json") {
+        refresh_commands();
+    }
 }
 
 # bumps a shared nonce for any open path (plain tab by `path`, gitdiff tab by `filePath`) whose
@@ -305,6 +322,14 @@ impl app.handle_command(command_id: str) -> None {
     }
     if command_id == "workbench.action.openSettings" {
         await open_settings_tab();
+        return;
+    }
+    if command_id == "workbench.action.openKeybindings" {
+        await open_keybindings_tab();
+        return;
+    }
+    if command_id == "workbench.action.openKeybindingsJson" {
+        await open_keybindings_json();
         return;
     }
     if command_id == "workbench.action.openSettingsJson" {
@@ -510,15 +535,14 @@ impl app.start_panel_resize(e: any) -> None {
 }
 
 impl app.handle_keydown(e: any) -> None {
-    parts = [];
-    if e.ctrlKey or e.metaKey {
-        parts.append("ctrl");
+    # the shortcut recorder owns every key while it has focus
+    if e.target and e.target.closest and e.target.closest("[data-recording-keybinding]") {
+        return;
     }
-    if e.shiftKey {
-        parts.append("shift");
+    combo = chord_from_event(e.ctrlKey or e.metaKey, e.shiftKey, e.altKey, e.key);
+    if combo == "" {
+        return;
     }
-    parts.append(e.key.lower());
-    combo = "+".join(parts);
     for cmd in commands {
         for kb in cmd["keybindings"] {
             if kb["key"] == combo and context_matches(kb["when"]) {

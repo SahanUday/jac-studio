@@ -27,7 +27,8 @@ import from src.workbench.tasks.problems { app as ProblemsApp }
 import from src.workbench.debug.debug_console { app as DebugConsoleApp }
 import from src.workbench.tasks.task_picker { app as TaskPickerApp }
 import from src.workbench.tasks.task_service { run_task }
-import from src.workbench.commands.command_registry { list_commands }
+import from src.workbench.commands.command_registry { list_commands, ensure_keybindings_file }
+import from src.workbench.commands.keybinding_chord { chord_from_event }
 import from src.workbench.session.session_service { load_session, save_session }
 import from src.workbench.workspace.workspace_service { open_workspace, close_workspace, get_current_workspace }
 import from src.workbench.workspace.workbench_state { add_recent_workspace }
@@ -84,6 +85,9 @@ def:pub app(onToggleTheme: any, onThemeChange: any) -> JsxElement {
     async def open_welcome_tab -> None;
     async def refresh_settings -> None;
     async def open_settings_tab -> None;
+    async def refresh_commands -> None;
+    async def open_keybindings_tab -> None;
+    async def open_keybindings_json -> None;
     async def open_settings_json(scope: str) -> None;
     def set_folder_picker_open(next_open: bool) -> None;
     def show_folder_picker(mode: str) -> None;
@@ -177,6 +181,8 @@ def:pub app(onToggleTheme: any, onThemeChange: any) -> JsxElement {
                     onCommand={handle_command}
                     onOpenRecent={open_workspace_folder}
                     onSettingsChanged={refresh_settings}
+                    onCommandsChanged={refresh_commands}
+                    onOpenKeybindingsJson={open_keybindings_json}
                     onOpenSettingsJson={open_settings_json}
                 />
             </ResizablePanel>

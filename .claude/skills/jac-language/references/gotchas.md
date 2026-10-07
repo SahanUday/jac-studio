@@ -134,4 +134,8 @@ Each entry: symptom → fix. Tracker ids point to the full writeup; don't re-der
   `'str' object has no attribute 'isupper'`. Compare with `ch.lower() != ch`, or check the suite,
   not just the single file, for client-pinned modules.
   `2026-10-07-client-runtime-lacks-str-isupper`
+- **A `client`-pinned module that imports another `client`-pinned module can't be tested on its own.**
+  `jac test <file>` runs it as Python, where the other module has no importable names
+  (`ImportError: cannot import name ...`). `jac test src` runs both as JS and works, so test such
+  modules through the whole suite.
 

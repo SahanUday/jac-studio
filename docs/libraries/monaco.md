@@ -18,6 +18,7 @@ Where it's wired in: `src/editor/client/monaco_editor.jac`, `monaco_diff_editor.
 | CodeLens | `registerCodeLensProvider` | `git_conflict_codelens_provider.jac` |
 | Inline widgets anchored at the cursor | `editor.addContentWidget` | `inline_chat_widget.jac` |
 | Cross-file navigation | `editor.registerEditorOpener` | `jac_definition_provider.jac` |
+| Semantic highlighting | `registerDocumentSemanticTokensProvider`, `editor.defineTheme` (`jac-dark`) | `jac_semantic_tokens_provider.jac`, `jac_theme.jac` |
 | Minimap, breadcrumbs | editor options | `monaco_editor.jac` |
 
 ## Available but not yet used
@@ -27,7 +28,6 @@ Where it's wired in: `src/editor/client/monaco_editor.jac`, `monaco_diff_editor.
 | Ghost-text inline completion | `registerInlineCompletionsProvider` | Copilot-style suggestions — the API is already reachable, no extension host needed |
 | Signature help | `registerSignatureHelpProvider` | `jac lsp` already returns this category of data |
 | Document/range formatting | `registerDocumentFormattingEditProvider` | `jac lsp` implements `formatting` already |
-| Semantic tokens | `registerDocumentSemanticTokensProvider` | richer than the Monarch tokenizer; `jac lsp` implements `semantic_tokens_full` |
 | Folding ranges, link detection, colour picker | `registerFoldingRangeProvider`, `registerLinkProvider` | ordinary editor polish |
 | Standalone colourization | `editor.colorize`, `editor.tokenize` | rendering code snippets outside an editor instance |
 

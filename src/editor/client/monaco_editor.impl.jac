@@ -1,8 +1,10 @@
 impl app.handle_before_mount(monaco: any) -> None {
     register_jac_language(monaco);
+    register_jac_theme(monaco);
     register_jac_completion_provider(monaco);
     register_jac_hover_provider(monaco);
     register_jac_formatting_provider(monaco);
+    register_jac_semantic_tokens_provider(monaco);
     register_jac_definition_provider(monaco, onOpenLocation);
     register_jac_reference_provider(monaco);
     register_jac_rename_provider(monaco);

@@ -9,9 +9,11 @@ import from "react" { useEffect }
 import from "@monaco-editor/react" { Editor }
 import from src.editor.document_service { open_document, save_document }
 import from src.editor.client.jac_language { register_jac_language }
+import from src.editor.client.jac_theme { register_jac_theme, THEME_NAME }
 import from src.editor.client.jac_completion_provider { register_jac_completion_provider }
 import from src.editor.client.jac_hover_provider { register_jac_hover_provider }
 import from src.editor.client.jac_formatting_provider { register_jac_formatting_provider }
+import from src.editor.client.jac_semantic_tokens_provider { register_jac_semantic_tokens_provider }
 import from src.editor.client.jac_definition_provider { register_jac_definition_provider }
 import from src.editor.client.jac_reference_provider { register_jac_reference_provider }
 import from src.editor.client.jac_rename_provider { register_jac_rename_provider }
@@ -168,12 +170,12 @@ def:pub app(path: str, onCursorChange: any, initialCursor: any, onDirtyChange: a
                 <Editor
                     path={path}
                     defaultValue={content}
-                    theme="vs-dark"
+                    theme={THEME_NAME}
                     beforeMount={handle_before_mount}
                     onMount={handle_mount}
                     onChange={handle_content_change}
                     keepCurrentModel={True}
-                    options={{"automaticLayout": True, "minimap": {"enabled": True}, "glyphMargin": True}}
+                    options={{"automaticLayout": True, "minimap": {"enabled": True}, "glyphMargin": True, "semanticHighlighting.enabled": True}}
                 />
             ) if loaded else (
                 <div style={{"padding": "1rem", "fontSize": "12px", "color": "#8C8C8C", "fontFamily": "system-ui, sans-serif"}}>

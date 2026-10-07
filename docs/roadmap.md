@@ -39,13 +39,13 @@ Close the gaps a daily user hits. See [`known-limitations.md`](known-limitations
 
 - ~~Move the cursor when navigating into an already-open tab~~ (#87).
 - ~~Document formatting~~ via `jac lsp`'s `textDocument/formatting`.
-- Semantic tokens: served by `jac lsp`, not yet consumed.
-- Signature help: **`jac lsp` does not serve it** (no handler in the jaseci checkout), so it needs a
+- ~~Semantic tokens~~ from `jac lsp`, coloured by the `jac-dark` theme.
+- Signature help: **`jac lsp` does not serve it** (no handler as of `v0.37.25`), so it needs a
   server-side capability first.
 - Outline reads the live buffer, not the last save.
 
 **Exit**: every navigation lands on the right line whether or not the tab was open; formatting works on
-`.jac` files; semantic tokens and signature help follow.
+`.jac` files and names are coloured by role; signature help waits on the server.
 
 ### M9 — AI-first editing
 

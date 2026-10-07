@@ -87,6 +87,8 @@ obj LspProcess {
     has pending: dict[int, any] = {};
     has next_id: int = 1;
     has open_versions: dict[str, int] = {};
+    has semantic_legend: dict[str, list[str]] = {};
+    has ready: any = None;
 }
 
 glob _lsp_processes: dict[str, LspProcess] = {};
@@ -206,11 +208,16 @@ async def _ensure_process -> LspProcess | None {
     if key in _lsp_processes {
         existing = _lsp_processes[key];
         if existing.process is not None and existing.process.returncode is None {
+            # The handle is registered before `initialize` returns; wait so callers see the legend.
+            if existing.ready is not None {
+                await existing.ready;
+            }
             return existing;
         }
     }
 
     handle = LspProcess();
+    handle.ready = asyncio.get_event_loop().create_future();
     try {
         handle.process = await asyncio.create_subprocess_exec(
             "jac", "lsp",
@@ -227,12 +234,14 @@ async def _ensure_process -> LspProcess | None {
     asyncio.create_task(_drain_stderr(handle));
     _lsp_processes[key] = handle;
 
-    await _send_request(handle, "initialize", {
+    init_result = await _send_request(handle, "initialize", {
         "processId": None,
         "rootUri": _path_to_uri(ws["root_path"]),
         "capabilities": {}
     });
+    handle.semantic_legend = _lsp_semantic_legend(init_result);
     await _send_notification(handle, "initialized", {});
+    handle.ready.set_result(True);
     return handle;
 }
 
@@ -509,6 +518,55 @@ async def:pub get_document_symbols(path: str, content: str) -> list[dict[str, an
         "textDocument": {"uri": _path_to_uri(path)}
     });
     return _lsp_document_symbols_to_list(result);
+}
+
+"""`initialize`'s `semanticTokensProvider.legend` as `{tokenTypes, tokenModifiers}`; empty when the
+server doesn't advertise one."""
+def:pub _lsp_semantic_legend(init_result: any) -> dict[str, list[str]] {
+    if not isinstance(init_result, dict) {
+        return {};
+    }
+    provider = init_result.get("capabilities", {}).get("semanticTokensProvider");
+    if not isinstance(provider, dict) {
+        return {};
+    }
+    legend = provider.get("legend", {});
+    return {
+        "tokenTypes": list(legend.get("tokenTypes", [])),
+        "tokenModifiers": list(legend.get("tokenModifiers", []))
+    };
+}
+
+"""The raw delta-encoded `data` array, which is exactly what Monaco's `SemanticTokens.data` takes."""
+def:pub _lsp_semantic_tokens_to_list(result: any) -> list[int] {
+    if not isinstance(result, dict) {
+        return [];
+    }
+    data = result.get("data", []);
+    return list(data) if isinstance(data, list) else [];
+}
+
+async def:pub get_semantic_legend -> dict[str, list[str]] {
+    handle = await _ensure_process();
+    if handle is None {
+        return {};
+    }
+    return handle.semantic_legend;
+}
+
+async def:pub get_semantic_tokens(path: str, content: str) -> list[int] {
+    if not _is_jac_file(path) {
+        return [];
+    }
+    handle = await _ensure_process();
+    if handle is None {
+        return [];
+    }
+    await _sync_content(handle, path, content);
+    result = await _send_request(handle, "textDocument/semanticTokens/full", {
+        "textDocument": {"uri": _path_to_uri(path)}
+    });
+    return _lsp_semantic_tokens_to_list(result);
 }
 
 """`kind` stays the raw LSP integer -- `jac_completion_provider.jac` maps it onto Monaco's own enum."""

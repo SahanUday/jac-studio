@@ -291,3 +291,19 @@ test "_lsp_document_symbols_to_list returns an empty list for a None response" {
 test "_lsp_document_symbols_to_list skips a non-dict entry rather than raising" {
     assert _lsp_document_symbols_to_list(["not a symbol"]) == [];
 }
+
+test "_lsp_semantic_legend reads the legend off initialize's capabilities" {
+    init_result = {"capabilities": {"semanticTokensProvider": {"legend": {"tokenTypes": ["class", "function"], "tokenModifiers": ["declaration"]}}}};
+    assert _lsp_semantic_legend(init_result) == {"tokenTypes": ["class", "function"], "tokenModifiers": ["declaration"]};
+}
+
+test "_lsp_semantic_legend is empty when the server advertises none or the reply is missing" {
+    assert _lsp_semantic_legend(None) == {};
+    assert _lsp_semantic_legend({"capabilities": {}}) == {};
+}
+
+test "_lsp_semantic_tokens_to_list returns the delta-encoded data, empty for anything malformed" {
+    assert _lsp_semantic_tokens_to_list({"data": [0, 0, 3, 1, 0, 1, 4, 5, 2, 1]}) == [0, 0, 3, 1, 0, 1, 4, 5, 2, 1];
+    assert _lsp_semantic_tokens_to_list(None) == [];
+    assert _lsp_semantic_tokens_to_list({"data": "nope"}) == [];
+}

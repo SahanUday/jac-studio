@@ -32,6 +32,10 @@ The integrated terminal is **deny-by-default**: it refuses to run anything until
 enabled` is set in `jac.toml`. That's deliberate — granting it is the same trust level as opening
 your own shell.
 
+For manual testing, `scripts/dev.sh --manual` runs with an isolated user config and a throwaway copy
+of `testing-workspace/`, with the terminal enabled for that run only. `scripts/dev.sh --help` lists
+the other options.
+
 Stop the dev server when you're done; ports 8000 and 8001 should be clear.
 
 ## Docs
